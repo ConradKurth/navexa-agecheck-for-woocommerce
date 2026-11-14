@@ -7,14 +7,24 @@
 // {"code","message"} with Connect's HTTP status; an RPC the engine does not
 // serve is connect-go's plain-text 404. Zero dependencies (Node 20+).
 //
-// Served RPCs: GetIntegrationInfo (engine PR E10a; not in prod yet). Later
-// milestones add CreateVerification, GetVerification, AttachOrder, ...
+// Served RPCs:
+//   GetIntegrationInfo (engine PR E10a; not in prod yet)
+//   CreateVerification (with E4a's optional identity, document_name_check,
+//     intended_ship_to and return_url; E3's US-only ship-to), GetVerification,
+//     AttachOrder, GetClearance, ReportShipment, ListVerifications
+//   SendVerificationLink (E8c; only with config links: "served")
+// Mutating RPCs replay their first answer per idempotency key (a different
+// request under the same key is invalid_argument), like the engine.
+// A new verification is needs_doc; identity.name ending in Docpass passes
+// (doc_only), Docdecline fails, Dataunattested passes as db_unattested.
 //
 // Control endpoints for tests (never part of the engine):
 //   GET  /__mock/health    {ok: true}
 //   POST /__mock/reset     restore the default state (any body)
-//   POST /__mock/config    merge {org?, integrationInfo?: "served"|"absent", keys?}
+//   POST /__mock/config    merge {org?, integrationInfo?: "served"|"absent", links?: "served"|"absent", keys?}
 //   POST /__mock/faults    queue {rpc?: "*"|Rpc, status?, code?, message?, retryAfter?, delayMs?, times?}
+//   POST /__mock/verifications  update {id, status?, passClass?, consumed?}: decide a verification as the shopper would
+//   GET  /__mock/verifications  every verification (no identity), plus shipments and links
 //   GET  /__mock/requests  recorded calls: {rpc, key (fixture name or null), headers, body}; never the key itself
 //
 // Run: node tests/mock-agecheck/server.mjs [--port 8787] [--host 127.0.0.1]
@@ -63,10 +73,64 @@ function defaultState() {
       allowedOrigins: ["http://localhost:8888", "http://localhost:8889"],
     },
     integrationInfo: "served",
+    links: "absent",
     keys: structuredClone(FIXTURE_KEYS),
     faults: [],
     requests: [],
+    verifications: new Map(),
+    idempotency: new Map(),
+    shipments: [],
+    linksSent: [],
+    nextId: 1,
   }
+}
+
+const US_COUNTRIES = new Set(["US", "PR", "GU", "VI", "AS", "MP", "UM"])
+const STATUS = {
+  created: "VERIFICATION_STATUS_CREATED",
+  passed: "VERIFICATION_STATUS_PASSED",
+  needs_doc: "VERIFICATION_STATUS_NEEDS_DOC",
+  doc_pending: "VERIFICATION_STATUS_DOC_PENDING",
+  held: "VERIFICATION_STATUS_HELD",
+  failed: "VERIFICATION_STATUS_FAILED",
+  awaiting_identity: "VERIFICATION_STATUS_AWAITING_IDENTITY",
+}
+const PASS_CLASS = {
+  db_verified: "PASS_CLASS_DB_VERIFIED",
+  db_unattested: "PASS_CLASS_DB_UNATTESTED",
+  doc_only: "PASS_CLASS_DOC_ONLY",
+  merchant_override: "PASS_CLASS_MERCHANT_OVERRIDE",
+  data_verified: "PASS_CLASS_DATA_VERIFIED",
+}
+
+/** The engine's ShipToCanonical: folded lines, postal code without whitespace, country; city and region left out. */
+function shipToKey(a) {
+  if (!a || typeof a !== "object") return null
+  const fold = (v) => String(v ?? "").toLowerCase().split(/\s+/).filter(Boolean).join(" ")
+  return JSON.stringify([fold(a.line1), fold(a.line2), String(a.postalCode ?? "").replace(/\s+/g, "").toUpperCase(), String(a.country ?? "").trim().toUpperCase()])
+}
+
+/** Address problems as the engine reports them (field name only), or null. */
+function addressProblem(a, field) {
+  if (!a || typeof a !== "object") return `${field}: is required`
+  for (const f of ["line1", "city", "region", "postalCode"]) {
+    if (typeof a[f] !== "string" || a[f].trim() === "") return `${field}.${f}: is required`
+  }
+  if (!/^[A-Za-z]{2}$/.test(a.country ?? "")) return `${field}.country: must be an ISO 3166-1 alpha-2 code`
+  if (!US_COUNTRIES.has(a.country.toUpperCase())) return "AgeCheck verifies US addresses only"
+  return null
+}
+
+function verificationMessage(v) {
+  return omitZero({
+    id: v.id,
+    status: STATUS[v.status],
+    passClass: v.status === "passed" ? PASS_CLASS[v.passClass] : undefined,
+    orderExternalId: v.orderExternalId,
+    createdAt: v.createdAt,
+    decidedAt: v.decidedAt,
+    livemode: v.livemode,
+  })
 }
 
 /** Proto3 JSON leaves out fields holding their zero value. */
@@ -125,8 +189,168 @@ function parseJSONObject(text) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
+/** Runs a mutating RPC under its idempotency key: a retry replays the first answer. */
+function idempotent(state, key, request, rpc, fn) {
+  const ikey = request.idempotencyKey
+  if (typeof ikey !== "string" || ikey.length < 1 || ikey.length > 255) return ["invalid_argument", "idempotency_key: must be 1 to 255 characters"]
+  const scope = `${key.livemode ? "live" : "test"}:${rpc}:${ikey}`
+  const fingerprint = JSON.stringify(request)
+  const seen = state.idempotency.get(scope)
+  if (seen) return seen.fingerprint === fingerprint ? seen.result : ["invalid_argument", "idempotency_key was used with a different request"]
+  const result = fn()
+  // The engine stores answers, not validation refusals.
+  if (!result[0] || !["invalid_argument"].includes(result[0])) state.idempotency.set(scope, { fingerprint, result })
+  return result
+}
+
+function findVerification(state, key, id) {
+  const v = state.verifications.get(id)
+  return v && v.livemode === key.livemode ? v : null
+}
+
+function boundTo(state, key, orderExternalId) {
+  for (const v of state.verifications.values()) {
+    if (v.livemode === key.livemode && v.orderExternalId === orderExternalId) return v
+  }
+  return null
+}
+
+function requireScope(key, scope) {
+  return key.scopes.includes(scope) ? null : ["permission_denied", `the API key lacks the ${scope} scope`]
+}
+
 /** RPC handlers: (state, keyEntry, request) => [code?, responseOrMessage]. */
 const RPCS = {
+  CreateVerification(state, key, request) {
+    return requireScope(key, "agecheck:verify") ?? idempotent(state, key, request, "CreateVerification", () => {
+      const hasOrder = typeof request.orderExternalId === "string" && request.orderExternalId !== ""
+      if (hasOrder !== (request.shipTo !== undefined)) return ["invalid_argument", "ship_to is required with order_external_id, and allowed only with it"]
+      if (request.intendedShipTo !== undefined && hasOrder) return ["invalid_argument", "intended_ship_to is allowed only without order_external_id"]
+      const identity = request.identity ?? {}
+      if (request.documentNameCheck === "DOCUMENT_NAME_CHECK_REQUIRED" && !identity.name) return ["invalid_argument", "identity.name: is required with document_name_check REQUIRED"]
+      if (hasOrder) {
+        const problem = addressProblem(request.shipTo, "ship_to")
+        if (problem) return ["invalid_argument", problem]
+        if (boundTo(state, key, request.orderExternalId)) return ["already_exists", "agecheck: order is already bound to a verification"]
+      }
+      if (request.intendedShipTo !== undefined) {
+        const problem = addressProblem(request.intendedShipTo, "intended_ship_to")
+        if (problem) return ["invalid_argument", problem]
+      }
+      const name = String(identity.name ?? "")
+      let status = "needs_doc"
+      let passClass
+      if (/docpass$/i.test(name)) [status, passClass] = ["passed", "doc_only"]
+      else if (/docdecline$/i.test(name)) status = "failed"
+      else if (/dataunattested$/i.test(name)) [status, passClass] = ["passed", "db_unattested"]
+      const id = `acv_mock${String(state.nextId++).padStart(6, "0")}`
+      const now = new Date().toISOString()
+      const v = {
+        id,
+        status,
+        passClass,
+        livemode: key.livemode,
+        orderExternalId: hasOrder ? request.orderExternalId : "",
+        shipToKey: hasOrder ? shipToKey(request.shipTo) : null,
+        intendedShipToKey: request.intendedShipTo ? shipToKey(request.intendedShipTo) : null,
+        hasEmail: typeof identity.email === "string" && identity.email !== "",
+        documentNameCheck: request.documentNameCheck ?? "DOCUMENT_NAME_CHECK_UNSPECIFIED",
+        returnUrl: request.returnUrl ?? "",
+        consumed: false,
+        createdAt: now,
+        decidedAt: status === "passed" || status === "failed" ? now : undefined,
+      }
+      state.verifications.set(id, v)
+      const message = verificationMessage(v)
+      if (status === "needs_doc") message.hostedUrl = `https://verify.mock.invalid/v/session-for-${id}`
+      return [null, { verification: message }]
+    })
+  },
+
+  GetVerification(state, key, request) {
+    const denied = requireScope(key, "agecheck:verify")
+    if (denied) return denied
+    const v = findVerification(state, key, request.id)
+    return v ? [null, { verification: verificationMessage(v) }] : ["not_found", "agecheck: verification not found"]
+  },
+
+  AttachOrder(state, key, request) {
+    return requireScope(key, "agecheck:verify") ?? idempotent(state, key, request, "AttachOrder", () => {
+      const problem = addressProblem(request.shipTo, "ship_to")
+      if (problem) return ["invalid_argument", problem]
+      const v = findVerification(state, key, request.verificationId)
+      if (!v) return ["not_found", "agecheck: verification not found"]
+      if (v.orderExternalId) return ["failed_precondition", "agecheck: verification is already bound to an order"]
+      if (boundTo(state, key, request.orderExternalId)) return ["already_exists", "agecheck: order is already bound to a verification"]
+      const target = shipToKey(request.shipTo)
+      if (v.intendedShipToKey && v.intendedShipToKey !== target) return ["failed_precondition", "ship_to_changed"]
+      v.orderExternalId = request.orderExternalId
+      v.shipToKey = target
+      return [null, { verification: verificationMessage(v) }]
+    })
+  },
+
+  GetClearance(state, key, request) {
+    return requireScope(key, "agecheck:clearance") ?? idempotent(state, key, request, "GetClearance", () => {
+      const problem = addressProblem(request.shipTo, "ship_to")
+      if (problem && problem !== "AgeCheck verifies US addresses only") return ["invalid_argument", problem]
+      const answer = (decision, reason, v) =>
+        [null, omitZero({ decision: `CLEARANCE_DECISION_${decision}`, verificationId: v?.id, reason, livemode: key.livemode })]
+      const v = boundTo(state, key, request.orderExternalId)
+      if (!v) return answer("DENIED", "no_verification")
+      if (v.shipToKey !== shipToKey(request.shipTo)) return answer("DENIED", "ship_to_mismatch", v)
+      if (v.status === "failed") return answer("DENIED", "not_verified", v)
+      if (v.status !== "passed") return answer("HOLD", "pending", v)
+      if (v.passClass === "db_unattested") return answer("HOLD", "unattested", v)
+      if (v.consumed) return answer("DENIED", "replayed", v)
+      v.consumed = true
+      return answer("CLEARED", "verified", v)
+    })
+  },
+
+  ReportShipment(state, key, request) {
+    const denied = requireScope(key, "agecheck:clearance")
+    if (denied) return denied
+    if (typeof request.orderExternalId !== "string" || request.orderExternalId === "") return ["invalid_argument", "order_external_id: is required"]
+    if (typeof request.shippedAt !== "string") return ["invalid_argument", "shipped_at: is required"]
+    if (!state.shipments.some((s) => s.orderExternalId === request.orderExternalId && s.livemode === key.livemode)) {
+      const v = boundTo(state, key, request.orderExternalId)
+      state.shipments.push({
+        orderExternalId: request.orderExternalId,
+        shippedAt: request.shippedAt,
+        livemode: key.livemode,
+        flagged: !v || !v.consumed,
+      })
+    }
+    return [null, {}]
+  },
+
+  ListVerifications(state, key, request) {
+    const denied = requireScope(key, "agecheck:verify")
+    if (denied) return denied
+    const entries = [...state.verifications.values()]
+      .filter((v) => v.livemode === key.livemode)
+      .filter((v) => !request.orderExternalId || v.orderExternalId === request.orderExternalId)
+      .reverse()
+      .slice(0, request.pageSize || 50)
+      .map((v) => omitZero({ verification: verificationMessage(v), pactDbVerified: v.status === "passed" && v.passClass === "db_verified" }))
+    return [null, omitZero({ verifications: entries })]
+  },
+
+  SendVerificationLink(state, key, request) {
+    if (state.links !== "served") return null
+    return requireScope(key, "agecheck:verify") ?? idempotent(state, key, request, "SendVerificationLink", () => {
+      const v = findVerification(state, key, request.verificationId)
+      if (!v) return ["not_found", "agecheck: verification not found"]
+      if (!["needs_doc", "doc_pending", "awaiting_identity"].includes(v.status)) return ["failed_precondition", "the verification takes no link in its state"]
+      if (!v.hasEmail) return ["failed_precondition", "the verification has no email"]
+      if (!state.org.displayName) return ["failed_precondition", "set a display name first"]
+      const linkId = `acl_mock${String(state.linksSent.length + 1).padStart(6, "0")}`
+      state.linksSent.push({ linkId, verificationId: v.id })
+      return [null, { linkId, expiresAt: new Date(Date.now() + 7 * 86400e3).toISOString(), emailQueued: true }]
+    })
+  },
+
   GetIntegrationInfo(state, key, request) {
     if (state.integrationInfo !== "served") return null
     if (!key.scopes.includes("agecheck:verify")) return ["permission_denied", "the API key lacks the agecheck:verify scope"]
@@ -164,6 +388,9 @@ export function createMockAgeCheck() {
   async function handleControl(req, res, url) {
     if (req.method === "GET" && url.pathname === "/__mock/health") return sendJSON(res, 200, { ok: true })
     if (req.method === "GET" && url.pathname === "/__mock/requests") return sendJSON(res, 200, state.requests)
+    if (req.method === "GET" && url.pathname === "/__mock/verifications") {
+      return sendJSON(res, 200, { verifications: [...state.verifications.values()], shipments: state.shipments, links: state.linksSent })
+    }
     if (req.method !== "POST") return sendNotFound(res)
     const text = await readBody(req)
     if (url.pathname === "/__mock/reset") {
@@ -176,8 +403,21 @@ export function createMockAgeCheck() {
       case "/__mock/config":
         if (body.org) state.org = { ...state.org, ...body.org }
         if (body.integrationInfo) state.integrationInfo = body.integrationInfo
+        if (body.links) state.links = body.links
         if (body.keys) state.keys = { ...state.keys, ...body.keys }
         return sendJSON(res, 200, { ok: true })
+      case "/__mock/verifications": {
+        const v = state.verifications.get(body.id)
+        if (!v) return sendJSON(res, 404, { error: "no such verification" })
+        if (body.status) {
+          if (!STATUS[body.status]) return sendJSON(res, 400, { error: "unknown status" })
+          v.status = body.status
+          v.decidedAt = ["passed", "failed"].includes(body.status) ? new Date().toISOString() : undefined
+          if (body.status === "passed") v.passClass = body.passClass ?? v.passClass ?? "doc_only"
+        }
+        if (body.consumed !== undefined) v.consumed = Boolean(body.consumed)
+        return sendJSON(res, 200, { ok: true, verification: v })
+      }
       case "/__mock/faults":
         state.faults.push({ rpc: "*", times: 1, ...body })
         return sendJSON(res, 200, { ok: true, queued: state.faults.length })

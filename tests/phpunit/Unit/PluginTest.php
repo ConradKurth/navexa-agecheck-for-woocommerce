@@ -21,6 +21,9 @@ final class PluginTest extends TestCase {
 		Functions\expect( 'register_activation_hook' )
 			->once()
 			->with( '/plugins/navexa-agecheck-for-woocommerce/navexa-agecheck-for-woocommerce.php', array( Install::class, 'activate' ) );
+		Functions\expect( 'register_deactivation_hook' )
+			->once()
+			->with( '/plugins/navexa-agecheck-for-woocommerce/navexa-agecheck-for-woocommerce.php', array( \Navexa\AgeCheck\Sweep::class, 'unschedule' ) );
 
 		Plugin::boot( '/plugins/navexa-agecheck-for-woocommerce/navexa-agecheck-for-woocommerce.php' );
 
@@ -48,6 +51,28 @@ final class PluginTest extends TestCase {
 		$this->assertNotFalse( has_action( 'admin_post_' . Install::CONFIRM_ACTION, array( Install::class, 'handle_confirm' ) ) );
 		$this->assertNotFalse( has_action( 'admin_notices', array( Mode::class, 'test_mode_notice' ) ) );
 		$this->assertNotFalse( has_filter( 'woocommerce_get_settings_pages', array( Plugin::class, 'add_settings_page' ) ) );
+
+		// W1 hold core.
+		$this->assertNotFalse( has_action( 'woocommerce_before_order_object_save', array( \Navexa\AgeCheck\Hold::class, 'backstop' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_before_order_object_save', array( \Navexa\AgeCheck\AddressGuard::class, 'guard' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_checkout_order_processed', array( \Navexa\AgeCheck\Binding::class, 'on_classic_order_processed' ) ) );
+		$this->assertNotFalse( has_action( \Navexa\AgeCheck\Release::HOOK, array( \Navexa\AgeCheck\Release::class, 'run_job' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_order_status_refunded', array( \Navexa\AgeCheck\Denial::class, 'resolved' ) ) );
+		$this->assertNotFalse( has_action( 'rest_api_init', array( \Navexa\AgeCheck\Webhook::class, 'register_route' ) ) );
+		$this->assertNotFalse( has_action( \Navexa\AgeCheck\Sweep::HOOK, array( \Navexa\AgeCheck\Sweep::class, 'run_job' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_order_status_completed', array( \Navexa\AgeCheck\Shipment::class, 'on_completed' ) ) );
+		$this->assertNotFalse( has_filter( 'wcs_renewal_order_created', array( \Navexa\AgeCheck\Subscriptions::class, 'on_renewal_created' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_before_pay_action', array( \Navexa\AgeCheck\Checkout\OrderPay::class, 'before_pay' ) ) );
+		$this->assertFalse( has_action( 'add_meta_boxes', array( \Navexa\AgeCheck\Admin\OrderPanel::class, 'add_box' ) ), 'admin screens only' );
+	}
+
+	public function test_wire_registers_admin_components_in_the_admin(): void {
+		$this->is_admin = true;
+		Plugin::wire();
+		$this->assertNotFalse( has_action( 'add_meta_boxes', array( \Navexa\AgeCheck\Admin\OrderPanel::class, 'add_box' ) ) );
+		$this->assertNotFalse( has_filter( 'woocommerce_order_list_table_prepare_items_query_args', array( \Navexa\AgeCheck\Admin\OrdersFilter::class, 'filter_hpos_args' ) ) );
+		$this->assertNotFalse( has_action( 'admin_notices', array( \Navexa\AgeCheck\Admin\Notices::class, 'render' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_product_options_general_product_data', array( \Navexa\AgeCheck\Admin\ProductField::class, 'render' ) ) );
 	}
 
 	public function test_settings_page_is_appended(): void {

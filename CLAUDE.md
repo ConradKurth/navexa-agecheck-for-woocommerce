@@ -14,6 +14,18 @@ The plan is §5 of `~/.cache/agecheck-gap-2026-11-13/design-final.md` (layout, m
 - **Order external ids** are `wc:{install_id}:{blog_id}:{order_id}`. They are stored in order meta at bind and never recomputed, because `Install::confirm_site()` rotates the install_id.
 - **`add_option()` is not a mutex.** WordPress runs `INSERT ... ON DUPLICATE KEY UPDATE` after a read, so two racing writers both "win". Locks and webhook dedupe need an atomic primitive, such as a plain `INSERT` into a plugin table with a unique key, or `$wpdb->query( "INSERT IGNORE ..." )` and a check of rows affected.
 
+## Holds (W1)
+- **Only this plugin leaves `wc-agecheck-hold`.** The backstop (`woocommerce_before_order_object_save`) refuses every exit except cancelled, refunded, failed and trash; `Hold::release()` sets a per-order flag so its own save passes. Release only orders with `_navexa_agecheck_held=yes`.
+- **GetClearance spends the clearance.** Ask it only for an order in the hold, store the key on the order before the call (`save_meta_data()` first), reuse it until an answer is recorded, rotate after HOLD/DENIED. DENIED `replayed` means released, never denied.
+- **Required is sticky.** `Requirement::is_required()` never turns a stored `yes` back to `no`. Unknown counts as required. Local pickup (owner Q11c) is the only shipping-method exemption.
+- **The webhook only queues a release run.** Never act on a webhook body's state; the run asks GetClearance.
+- **External ids are never minted while paused** (`Binding::external_id()`), so a copied site cannot reuse the original install_id.
+- **Order meta is copyable.** Duplicate-order plugins, imports and WooCommerce Subscriptions (parent to subscription to renewal) copy `_navexa_agecheck_*`. Record a release only with `Meta::mark_released()`: `Meta::is_released()` trusts it only on the order it names (`RELEASED_FOR`). `Binding::forget_foreign()` drops state whose external id names another order (every `external_id()` call and every release run). Read an external id for an RPC through `Binding::external_id()` or `owned_external_id()`, never the raw meta.
+- **Never pass `$unique = true` to Action Scheduler.** Before AS 4.0 (WooCommerce 9.9 bundles 3.9.2) it matches hook and group only, so one order's pending action silently drops every other order's. Use `Release::queue_once()` (args-aware, pending only).
+- **Verification links only for `BOUND_BY=create`** (owner Q7: emailed links need document_name_check REQUIRED). Checkout (attach) and adopted verifications are never emailed.
+- **Store API order-pay saves before it validates**, and the guard reverts the ship-to in that save, so `Checkout\OrderPay` reads `AddressGuard::ship_to_change_requested()`, not unsaved changes.
+- **Unit tests** use the `WC_Order` stand-in in `tests/phpunit/stubs.php` (`WC_Order::make()`, `$order->meta`, `$order->notes`); `wire_order_hooks()` runs the backstop, the guard and the hold-entry action on `save()`, since Brain Monkey never runs added hooks. `FakeWpdb` understands exactly `Lock`'s SQL.
+
 ## Style
 - WordPress Coding Standards (`phpcs.xml.dist`): long array syntax, Yoda conditions, snake_case methods, a docblock on everything. PHP 7.4 syntax only. `includes/` is PSR-4, so the WordPress file-name sniff is off there.
 - Tests are Brain Monkey unit tests in `tests/phpunit/Unit` (in-memory options, transients and HTTP in `TestCase`), plus `tests/wp-env/smoke.php` for behaviour that only real WooCommerce shows. The mock engine (`tests/mock-agecheck/server.mjs`) gains RPCs as milestones need them. Keep its answers proto3 JSON: lowerCamelCase, zero values omitted.

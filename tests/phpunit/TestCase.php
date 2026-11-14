@@ -52,6 +52,48 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 	/** @var FakeLogger */
 	protected $logger;
 
+	/** @var bool What is_admin() answers. */
+	public $is_admin = false;
+
+	/** @var int What get_current_user_id() answers. */
+	public $current_user = 0;
+
+	/** @var array<int, \WP_User> get_userdata() answers. */
+	public $users = array();
+
+	/** @var array<int, array{hook: string, args: array, group: string, unique: bool, when: int, status: string}> Actions queued through the Action Scheduler stand-in. */
+	public $scheduled = array();
+
+	/** @var callable|null Called with ( $url, $args ) before each wp_remote_post() answer. */
+	public $before_http = null;
+
+	/** @var array<int, \WC_Product> wc_get_product() answers. */
+	public $products = array();
+
+	/** @var array<int, array<string, int[]>> product id => taxonomy => term ids. */
+	public $product_terms = array();
+
+	/** @var FakeWC */
+	public $wc;
+
+	/** @var FakeWpdb */
+	public $wpdb;
+
+	/** @var array<string, mixed> Transients for user meta, keyed "{user}:{key}". */
+	public $user_meta = array();
+
+	/** @var mixed What wc_get_payment_gateway_by_order() answers. */
+	public $gateway = null;
+
+	/** @var array<int, array> wc_create_refund() calls. */
+	public $refunds = array();
+
+	/** @var mixed What wc_create_refund() answers (null: a refund object). */
+	public $refund_result = null;
+
+	/** @var array<int, int> wc_maybe_reduce_stock_levels() calls. */
+	public $stock_reduced = array();
+
 	protected function setUp(): void {
 		parent::setUp();
 		Monkey\setUp();
@@ -88,6 +130,140 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 				},
 				'wp_nonce_field'      => static function ( $action ) {
 					echo '<input type="hidden" name="_wpnonce" value="nonce-' . $action . '" />'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+				},
+			)
+		);
+
+		\WC_Order::$store          = array();
+		\WC_Order::$before_save    = array();
+		\WC_Order::$after_save     = array();
+		\WC_Order::$status_actions = array();
+		$this->wc                   = new FakeWC();
+		$this->wpdb                 = new FakeWpdb( $this->options );
+		$GLOBALS['wpdb']            = $this->wpdb;
+
+		Functions\stubs(
+			array(
+				'is_admin'                     => static function () use ( $test ) {
+					return $test->is_admin;
+				},
+				'get_current_user_id'          => static function () use ( $test ) {
+					return $test->current_user;
+				},
+				'get_userdata'                 => static function ( $id ) use ( $test ) {
+					return isset( $test->users[ $id ] ) ? $test->users[ $id ] : false;
+				},
+				'sanitize_key'                 => static function ( $key ) {
+					return preg_replace( '/[^a-z0-9_\-]/', '', strtolower( (string) $key ) );
+				},
+				'sanitize_textarea_field'      => static function ( $value ) {
+					return trim( (string) $value );
+				},
+				'absint'                       => static function ( $value ) {
+					return abs( (int) $value );
+				},
+				'is_email'                     => static function ( $email ) {
+					return false !== filter_var( $email, FILTER_VALIDATE_EMAIL ) ? $email : false;
+				},
+				'wp_date'                      => static function ( $format, $ts = null ) {
+					return gmdate( $format, null === $ts ? time() : $ts );
+				},
+				'rest_url'                     => static function ( $path = '' ) {
+					return 'https://shop.example/wp-json/' . ltrim( $path, '/' );
+				},
+				'WC'                           => static function () use ( $test ) {
+					return $test->wc;
+				},
+				'wc_get_order'                 => static function ( $id ) {
+					return isset( \WC_Order::$store[ (int) $id ] ) ? \WC_Order::$store[ (int) $id ] : false;
+				},
+				'wc_get_product'               => static function ( $id ) use ( $test ) {
+					return isset( $test->products[ $id ] ) ? $test->products[ $id ] : false;
+				},
+				'wc_get_product_term_ids'      => static function ( $id, $taxonomy ) use ( $test ) {
+					return isset( $test->product_terms[ $id ][ $taxonomy ] ) ? $test->product_terms[ $id ][ $taxonomy ] : array();
+				},
+				'is_taxonomy_hierarchical'     => static function ( $taxonomy ) {
+					return 'product_cat' === $taxonomy;
+				},
+				'get_ancestors'                => static function ( $term_id ) {
+					return 12 === (int) $term_id ? array( 11 ) : array();
+				},
+				'wc_get_order_statuses'        => static function () {
+					return array(
+						'wc-pending'       => 'Pending payment',
+						'wc-agecheck-hold' => 'Awaiting age check',
+						'wc-processing'    => 'Processing',
+						'wc-on-hold'       => 'On hold',
+						'wc-completed'     => 'Completed',
+						'wc-cancelled'     => 'Cancelled',
+						'wc-refunded'      => 'Refunded',
+						'wc-failed'        => 'Failed',
+						'wc-shipped'       => 'Shipped',
+					);
+				},
+				'wc_get_order_status_name'     => static function ( $status ) {
+					return ucfirst( (string) $status );
+				},
+				'wc_maybe_reduce_stock_levels' => static function ( $id ) use ( $test ) {
+					$test->stock_reduced[] = $id;
+				},
+				'wc_get_payment_gateway_by_order' => static function () use ( $test ) {
+					return $test->gateway;
+				},
+				'wc_create_refund'             => static function ( $args ) use ( $test ) {
+					$test->refunds[] = $args;
+					return null === $test->refund_result ? new \stdClass() : $test->refund_result;
+				},
+				'wc_format_decimal'            => static function ( $value, $dp = 2 ) {
+					return number_format( (float) $value, (int) $dp, '.', '' );
+				},
+				'wc_get_price_decimals'        => 2,
+				'get_user_meta'                => static function ( $user, $key ) use ( $test ) {
+					return isset( $test->user_meta[ $user . ':' . $key ] ) ? $test->user_meta[ $user . ':' . $key ] : '';
+				},
+				'update_user_meta'             => static function ( $user, $key, $value ) use ( $test ) {
+					$test->user_meta[ $user . ':' . $key ] = $value;
+					return true;
+				},
+				'as_enqueue_async_action'      => static function ( $hook, $args = array(), $group = '', $unique = false ) use ( $test ) {
+					return $test->as_queue( 0, $hook, $args, $group, $unique );
+				},
+				'as_schedule_single_action'    => static function ( $when, $hook, $args = array(), $group = '', $unique = false ) use ( $test ) {
+					return $test->as_queue( $when, $hook, $args, $group, $unique );
+				},
+				'as_get_scheduled_actions'     => static function ( $query = array(), $format = 'OBJECT' ) use ( $test ) {
+					$ids = array();
+					foreach ( $test->scheduled as $i => $action ) {
+						if ( ( isset( $query['hook'] ) && $query['hook'] !== $action['hook'] )
+							|| ( isset( $query['group'] ) && $query['group'] !== $action['group'] )
+							|| ( array_key_exists( 'args', $query ) && null !== $query['args'] && $query['args'] !== $action['args'] )
+							|| ( isset( $query['status'] ) && $query['status'] !== $action['status'] ) ) {
+							continue;
+						}
+						$ids[] = $i + 1;
+					}
+					return isset( $query['per_page'] ) ? array_slice( $ids, 0, (int) $query['per_page'] ) : $ids;
+				},
+				'wc_get_orders'                => static function ( $args ) use ( $test ) {
+					return $test->query_orders( $args );
+				},
+				'get_terms'                    => static function ( $args ) {
+					return 'product_cat' === $args['taxonomy'] ? array( 11 => 'Vapes', 12 => 'Disposables' ) : array();
+				},
+				'wp_roles'                     => static function () {
+					return new class() {
+						public function get_names() {
+							return array(
+								'administrator' => 'Administrator',
+								'customer'      => 'Customer',
+								'wholesale'     => 'Wholesale',
+							);
+						}
+					};
+				},
+				'translate_user_role'          => static function ( $name ) {
+					return $name;
 				},
 			)
 		);
@@ -152,6 +328,9 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 					'url'  => $url,
 					'args' => $args,
 				);
+				if ( null !== $test->before_http ) {
+					( $test->before_http )( $url, $args );
+				}
 				if ( empty( $test->http_responses ) ) {
 					throw new \RuntimeException( 'unexpected HTTP call to ' . $url );
 				}
@@ -180,6 +359,159 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 				}
 				return '';
 			}
+		);
+	}
+
+	/**
+	 * Action Scheduler stand-in for as_enqueue_async_action() and
+	 * as_schedule_single_action(). $unique behaves as in Action Scheduler 3.9
+	 * (WooCommerce 9.9): any pending action with the same hook and group, whatever
+	 * its args, blocks the new one, which returns 0.
+	 *
+	 * @return int Action id, or 0.
+	 */
+	public function as_queue( int $when, string $hook, array $args, string $group, bool $unique ): int {
+		if ( $unique ) {
+			foreach ( $this->scheduled as $action ) {
+				if ( $hook === $action['hook'] && $group === $action['group'] && 'pending' === $action['status'] ) {
+					return 0;
+				}
+			}
+		}
+		$this->scheduled[] = array(
+			'hook'   => $hook,
+			'args'   => $args,
+			'group'  => $group,
+			'unique' => $unique,
+			'when'   => $when,
+			'status' => 'pending',
+		);
+		return count( $this->scheduled );
+	}
+
+	/**
+	 * A small wc_get_orders(): status, meta_query (=, !=, <, NOT EXISTS, OR),
+	 * limit, paged, return ids.
+	 *
+	 * @param array $args Query args.
+	 * @return array
+	 */
+	public function query_orders( array $args ): array {
+		$out = array();
+		foreach ( \WC_Order::$store as $order ) {
+			if ( isset( $args['status'] ) ) {
+				$statuses = array_map(
+					static function ( $s ) {
+						return 0 === strpos( $s, 'wc-' ) ? substr( $s, 3 ) : $s;
+					},
+					(array) $args['status']
+				);
+				if ( ! in_array( $order->get_status(), $statuses, true ) ) {
+					continue;
+				}
+			}
+			if ( isset( $args['meta_query'] ) && ! $this->meta_matches( $order, $args['meta_query'] ) ) {
+				continue;
+			}
+			// OrderQuery's posts-table bridge, as cpt_meta_query() applies it.
+			if ( isset( $args[ \Navexa\AgeCheck\OrderQuery::QUERY_VAR ] ) && ! $this->meta_matches( $order, $args[ \Navexa\AgeCheck\OrderQuery::QUERY_VAR ] ) ) {
+				continue;
+			}
+			$out[] = $order;
+		}
+		$limit  = isset( $args['limit'] ) ? (int) $args['limit'] : 10;
+		$offset = isset( $args['paged'] ) ? ( (int) $args['paged'] - 1 ) * $limit : 0;
+		$out    = array_slice( $out, $offset, $limit );
+		if ( isset( $args['return'] ) && 'ids' === $args['return'] ) {
+			return array_map(
+				static function ( $o ) {
+					return $o->get_id();
+				},
+				$out
+			);
+		}
+		return $out;
+	}
+
+	private function meta_matches( \WC_Order $order, array $query ): bool {
+		$relation = isset( $query['relation'] ) ? $query['relation'] : 'AND';
+		unset( $query['relation'] );
+		$results = array();
+		foreach ( $query as $clause ) {
+			if ( ! isset( $clause['key'] ) ) {
+				$results[] = $this->meta_matches( $order, $clause );
+				continue;
+			}
+			$exists  = array_key_exists( $clause['key'], $order->meta );
+			$value   = $exists ? $order->meta[ $clause['key'] ] : null;
+			$compare = isset( $clause['compare'] ) ? $clause['compare'] : '=';
+			switch ( $compare ) {
+				case 'NOT EXISTS':
+					$results[] = ! $exists;
+					break;
+				case '!=':
+					$results[] = $exists && (string) $value !== (string) $clause['value'];
+					break;
+				case '<':
+					$results[] = $exists && (float) $value < (float) $clause['value'];
+					break;
+				default:
+					$results[] = $exists && (string) $value === (string) $clause['value'];
+			}
+		}
+		return 'OR' === $relation ? in_array( true, $results, true ) : ! in_array( false, $results, true );
+	}
+
+	/**
+	 * Registers the plugin's order-save and status callbacks on the WC_Order
+	 * stand-in, as WordPress would run them.
+	 */
+	protected function wire_order_hooks(): void {
+		\WC_Order::$before_save = array(
+			array( \Navexa\AgeCheck\Hold::class, 'backstop' ),
+			array( \Navexa\AgeCheck\AddressGuard::class, 'guard' ),
+		);
+		\WC_Order::$status_actions = array(
+			\Navexa\AgeCheck\Hold::STATUS => array( array( \Navexa\AgeCheck\Hold::class, 'entered' ) ),
+		);
+	}
+
+	/**
+	 * A restricted (rule: every product) order with one line item.
+	 *
+	 * @param string $status Status.
+	 */
+	protected function restricted_order( string $status = 'pending' ): \WC_Order {
+		$order = \WC_Order::make( $status );
+		$order->add_test_item( new \WC_Order_Item_Product( new \WC_Product( 7 ), 1, 20.0 ) );
+		$order->add_test_item( new \WC_Order_Item_Shipping( 'flat_rate', 5.0 ) );
+		return $order;
+	}
+
+	/** Every Action Scheduler call for $hook. */
+	protected function scheduled_for( string $hook ): array {
+		return array_values(
+			array_filter(
+				$this->scheduled,
+				static function ( $call ) use ( $hook ) {
+					return $hook === $call['hook'];
+				}
+			)
+		);
+	}
+
+	/** The JSON body of recorded HTTP request $i. */
+	protected function request_body( int $i ): array {
+		return json_decode( $this->http_requests[ $i ]['args']['body'], true );
+	}
+
+	/** The RPC names called, in order. */
+	protected function rpcs(): array {
+		return array_map(
+			static function ( $request ) {
+				return substr( $request['url'], strrpos( $request['url'], '/' ) + 1 );
+			},
+			$this->http_requests
 		);
 	}
 

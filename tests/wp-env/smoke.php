@@ -1,6 +1,7 @@
 <?php
 /**
- * wp-env smoke test for the W0 scaffold, run inside WordPress:
+ * wp-env smoke test for the W0 scaffold and the W1 hold core
+ * (smoke-hold.php), run inside WordPress:
  *
  *   npm run smoke   (wp eval-file .../tests/wp-env/smoke.php)
  *
@@ -201,6 +202,9 @@ remove_filter( 'wp_die_handler', $navexa_smoke_die, PHP_INT_MAX );
 navexa_smoke_check( Install::confirm_site() && $before !== Install::install_id() && ! Install::is_paused(), 'confirming rotates the install_id and unpauses' );
 remove_filter( 'pre_option_home', $navexa_smoke_copy );
 navexa_smoke_check( Install::is_paused() && Install::confirm_site() && ! Install::is_paused(), 'moving back pauses again; re-confirmed for the next run' );
+
+// W1: holds, binding, release, webhook, sweep, shipment.
+require __DIR__ . '/smoke-hold.php';
 
 delete_option( Options::START_KEY );
 delete_option( Options::FULFILMENT_KEY );

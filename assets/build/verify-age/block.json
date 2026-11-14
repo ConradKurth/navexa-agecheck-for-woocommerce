@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schemas.wp.org/trunk/block.json",
+  "apiVersion": 3,
+  "name": "navexa-agecheck/verify-age",
+  "version": "0.1.0",
+  "title": "Age verification",
+  "description": "Navexa AgeCheck: the Verify age button for orders with age-restricted items. Shown only when the cart needs it.",
+  "category": "woocommerce",
+  "keywords": [
+    "age",
+    "verification",
+    "navexa"
+  ],
+  "textdomain": "navexa-agecheck-for-woocommerce",
+  "parent": [
+    "woocommerce/checkout-payment-block"
+  ],
+  "supports": {
+    "html": false,
+    "align": false,
+    "multiple": false,
+    "reusable": false,
+    "inserter": false,
+    "lock": false
+  },
+  "attributes": {
+    "lock": {
+      "type": "object",
+      "default": {
+        "remove": true,
+        "move": false
+      }
+    }
+  },
+  "editorScript": "file:./index.js"
+}

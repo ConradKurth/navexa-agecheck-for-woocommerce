@@ -2,7 +2,7 @@
 	"name": "navexa-agecheck-for-woocommerce",
 	"version": "0.1.0",
 	"private": true,
-	"description": "Development tooling for Navexa AgeCheck for WooCommerce: the mock AgeCheck engine now, the loader and block builds from W1/W2.",
+	"description": "Development tooling for Navexa AgeCheck for WooCommerce: the mock AgeCheck engine, the loader (esbuild) and the checkout block (wp-scripts).",
 	"license": "GPL-2.0-or-later",
 	"type": "module",
 	"engines": {
@@ -11,7 +11,19 @@
 	"scripts": {
 		"mock": "node tests/mock-agecheck/server.mjs",
 		"test:mock": "node --test \"tests/mock-agecheck/*.test.mjs\"",
+		"test:loader": "node --test \"assets/src/loader/*.test.ts\"",
+		"typecheck": "tsc -p tsconfig.json",
+		"build:loader": "node assets/src/loader/build.mjs",
+		"build:blocks": "wp-scripts build --config webpack.config.cjs --webpack-src-dir=assets/src/blocks --output-path=assets/build",
+		"build": "npm run build:loader && npm run build:blocks",
 		"env": "npx --yes @wordpress/env@12.1.0",
 		"smoke": "npx --yes @wordpress/env@12.1.0 run cli wp eval-file wp-content/plugins/navexa-agecheck-for-woocommerce/tests/wp-env/smoke.php"
+	},
+	"devDependencies": {
+		"@types/node": "24.19.2",
+		"@wordpress/scripts": "37.1.0",
+		"esbuild": "0.28.2",
+		"playwright-core": "1.64.1",
+		"typescript": "5.9.3"
 	}
 }

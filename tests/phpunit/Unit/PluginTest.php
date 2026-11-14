@@ -11,7 +11,12 @@ use Automattic\WooCommerce\Utilities\FeaturesUtil;
 use Brain\Monkey\Functions;
 use Navexa\AgeCheck\Install;
 use Navexa\AgeCheck\Mode;
+use Navexa\AgeCheck\Checkout\Blocks;
+use Navexa\AgeCheck\Checkout\Classic;
 use Navexa\AgeCheck\Plugin;
+use Navexa\AgeCheck\RateLimit;
+use Navexa\AgeCheck\ReturnPage;
+use Navexa\AgeCheck\Start;
 use Navexa\AgeCheck\Settings;
 use Navexa\AgeCheck\Tests\TestCase;
 
@@ -21,6 +26,9 @@ final class PluginTest extends TestCase {
 		Functions\expect( 'register_activation_hook' )
 			->once()
 			->with( '/plugins/navexa-agecheck-for-woocommerce/navexa-agecheck-for-woocommerce.php', array( Install::class, 'activate' ) );
+		Functions\expect( 'register_activation_hook' )
+			->once()
+			->with( '/plugins/navexa-agecheck-for-woocommerce/navexa-agecheck-for-woocommerce.php', array( RateLimit::class, 'install' ) );
 
 		Plugin::boot( '/plugins/navexa-agecheck-for-woocommerce/navexa-agecheck-for-woocommerce.php' );
 
@@ -48,6 +56,14 @@ final class PluginTest extends TestCase {
 		$this->assertNotFalse( has_action( 'admin_post_' . Install::CONFIRM_ACTION, array( Install::class, 'handle_confirm' ) ) );
 		$this->assertNotFalse( has_action( 'admin_notices', array( Mode::class, 'test_mode_notice' ) ) );
 		$this->assertNotFalse( has_filter( 'woocommerce_get_settings_pages', array( Plugin::class, 'add_settings_page' ) ) );
+		$this->assertNotFalse( has_action( 'init', array( RateLimit::class, 'maybe_install' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_blocks_loaded', array( Start::class, 'register_store_api' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_api_navexa_agecheck_return', array( ReturnPage::class, 'render' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_after_checkout_validation', array( Classic::class, 'validate' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_review_order_before_submit', array( Classic::class, 'render_button' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_checkout_validate_order_before_payment', array( Blocks::class, 'validate' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_store_api_checkout_update_order_meta', array( Blocks::class, 'mark_cart_checkout' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_blocks_checkout_block_registration', array( Blocks::class, 'register_integration' ) ) );
 	}
 
 	public function test_settings_page_is_appended(): void {

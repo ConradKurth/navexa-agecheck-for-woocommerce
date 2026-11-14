@@ -49,6 +49,10 @@ final class SettingsTest extends TestCase {
 		$this->assertSame( array( Options::MODE_PRE_PAYMENT, Options::MODE_ACCEPT_AND_HOLD ), array_keys( $mode['options'] ) );
 		$this->assertFalse( $fields[ 'navexa_agecheck_status:' . Settings::FIELD_STATUS ]['is_option'] );
 		$this->assertStringContainsString( 'US addresses only', $fields['navexa_agecheck_section:title']['desc'] );
+
+		$proxy = $fields[ Options::TRUSTED_PROXY_HEADER . ':select' ];
+		$this->assertSame( '', $proxy['default'], 'REMOTE_ADDR unless the merchant says otherwise' );
+		$this->assertSame( array_merge( array( '' ), \Navexa\AgeCheck\RateLimit::PROXY_HEADERS ), array_keys( $proxy['options'] ) );
 	}
 
 	public function test_no_field_uses_a_type_the_wc_rest_settings_api_exposes(): void {
@@ -243,6 +247,69 @@ final class SettingsTest extends TestCase {
 
 		$text = implode( "\n", array_column( $this->page->status_lines(), 'text' ) );
 		$this->assertStringContainsString( 'Your store ships outside the US', $text );
+	}
+
+	public function test_status_accepts_us_territories_as_us(): void {
+		$countries     = new class() {
+			public function get_shipping_countries() {
+				return array(
+					'US' => 'United States (US)',
+					'PR' => 'Puerto Rico',
+					'GU' => 'Guam',
+				);
+			}
+		};
+		$wc            = new \stdClass();
+		$wc->countries = $countries;
+		Functions\when( 'WC' )->justReturn( $wc );
+		$this->respond( 200, $this->live_info() );
+		$this->respond( 200, $this->live_info() );
+
+		$text = implode( "\n", array_column( $this->page->status_lines(), 'text' ) );
+		$this->assertStringNotContainsString( 'ships outside the US', $text );
+	}
+
+	/** Status text with $recent as the recorded recent starts. */
+	private function status_with_recent_starts( array $recent ): string {
+		$this->options[ \Navexa\AgeCheck\RateLimit::OPTION_RECENT_START_IPS ] = $recent;
+		$this->respond( 200, $this->live_info() );
+		$this->respond( 200, $this->live_info() );
+		return implode( "\n", array_column( $this->page->status_lines(), 'text' ) );
+	}
+
+	public function test_status_warns_when_recent_starts_share_one_ip(): void {
+		$text = $this->status_with_recent_starts(
+			array_fill(
+				0,
+				12,
+				array(
+					'ip'  => 'abcdefabcdef',
+					'via' => '',
+				)
+			)
+		);
+		$this->assertStringContainsString( 'all came from one IP address or from a private network address', $text );
+	}
+
+	public function test_status_names_the_proxy_header_the_starts_carried(): void {
+		$recent = array();
+		for ( $i = 0; $i < 12; $i++ ) {
+			$recent[] = array(
+				'ip'  => sprintf( '%012x', $i ),
+				'via' => 'HTTP_X_FORWARDED_FOR',
+			);
+		}
+		$text = $this->status_with_recent_starts( $recent );
+		$this->assertStringContainsString( 'they carry the header X-Forwarded-For (last address)', $text );
+		$this->assertStringNotContainsString( 'one IP address', $text );
+	}
+
+	public function test_status_flags_a_missing_rate_limit_table(): void {
+		$this->wpdb->table_exists = false;
+		$this->respond( 200, $this->live_info() );
+		$this->respond( 200, $this->live_info() );
+		$errors = array_filter( $this->page->status_lines(), array( $this, 'is_error' ) );
+		$this->assertStringContainsString( 'rate-limit table is missing', implode( "\n", array_column( $errors, 'text' ) ) );
 	}
 
 	public function test_options_helpers(): void {

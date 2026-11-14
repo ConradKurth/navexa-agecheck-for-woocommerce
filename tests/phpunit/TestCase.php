@@ -52,6 +52,25 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 	/** @var FakeLogger */
 	protected $logger;
 
+	/**
+	 * What WC() returns: session, cart and customer doubles.
+	 *
+	 * @var \WooCommerce|null
+	 */
+	public static $wc = null;
+
+	/** @var FakeWpdb */
+	protected $wpdb;
+
+	/** @var array<int, \WC_Order> wc_get_order() answers by id. */
+	protected $orders = array();
+
+	/** @var string[] wc_get_chosen_shipping_method_ids(). */
+	protected $chosen_methods = array( 'flat_rate' );
+
+	/** @var bool is_user_logged_in(). */
+	protected $logged_in = false;
+
 	protected function setUp(): void {
 		parent::setUp();
 		Monkey\setUp();
@@ -88,6 +107,54 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 				},
 				'wp_nonce_field'      => static function ( $action ) {
 					echo '<input type="hidden" name="_wpnonce" value="nonce-' . $action . '" />'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+				},
+			)
+		);
+
+		self::$wc           = new \WooCommerce();
+		self::$wc->session  = new \WC_Session();
+		self::$wc->cart     = new \WC_Cart();
+		self::$wc->customer = new \WC_Customer();
+		$this->wpdb         = new FakeWpdb();
+		$GLOBALS['wpdb']    = $this->wpdb;
+		$_SERVER['REMOTE_ADDR'] = '203.0.113.7';
+		\Navexa\AgeCheck\Start::reset();
+		\Navexa\AgeCheck\Checkout\Blocks::reset();
+
+		Functions\when( 'WC' )->alias(
+			static function () {
+				return self::$wc;
+			}
+		);
+		Functions\stubs(
+			array(
+				'trailingslashit'                   => static function ( $value ) {
+					return rtrim( $value, '/\\' ) . '/';
+				},
+				'esc_url_raw'                       => null,
+				'absint'                            => static function ( $value ) {
+					return abs( (int) $value );
+				},
+				'wp_rand'                           => 1,
+				'is_email'                          => static function ( $email ) {
+					return false !== filter_var( $email, FILTER_VALIDATE_EMAIL ) ? $email : false;
+				},
+				'wc_get_order'                      => static function ( $id ) use ( $test ) {
+					return isset( $test->orders[ $id ] ) ? $test->orders[ $id ] : false;
+				},
+				'wc_get_chosen_shipping_method_ids' => static function () use ( $test ) {
+					return $test->chosen_methods;
+				},
+				'is_user_logged_in'                 => static function () use ( $test ) {
+					return $test->logged_in;
+				},
+				'wc_get_checkout_url'               => 'https://shop.example/checkout/',
+				'get_bloginfo'                      => 'en-US',
+				'rest_url'                          => static function ( $path = '' ) {
+					return 'https://shop.example/wp-json/' . ltrim( $path, '/' );
+				},
+				'wp_create_nonce'                   => static function ( $action ) {
+					return 'nonce-' . $action;
 				},
 			)
 		);
@@ -185,7 +252,66 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 
 	protected function tearDown(): void {
 		Monkey\tearDown();
+		unset( $GLOBALS['wpdb'] );
+		self::$wc = null;
 		parent::tearDown();
+	}
+
+	/** The fake WooCommerce session. */
+	protected function session(): \WC_Session {
+		return self::$wc->session;
+	}
+
+	/** A complete US shipping address in WooCommerce's shape. */
+	protected function us_address( array $overrides = array() ): array {
+		return array_merge(
+			array(
+				'first_name' => 'Pat',
+				'last_name'  => 'Doe',
+				'address_1'  => '123 Main St',
+				'address_2'  => 'Apt 4',
+				'city'       => 'Springfield',
+				'state'      => 'IL',
+				'postcode'   => '62701-1234',
+				'country'    => 'US',
+				'email'      => 'pat@example.com',
+			),
+			$overrides
+		);
+	}
+
+	/** Gives the session customer this billing and shipping address. */
+	protected function customer_at( array $address, ?array $billing = null ): void {
+		self::$wc->customer->shipping = $address;
+		self::$wc->customer->billing  = null === $billing ? $address : $billing;
+	}
+
+	/** A Verification message (proto3 JSON). */
+	protected function verification( string $id, string $status, array $extra = array() ): array {
+		return array_merge(
+			array(
+				'id'       => $id,
+				'status'   => 'VERIFICATION_STATUS_' . $status,
+				'livemode' => true,
+			),
+			'PASSED' === $status ? array( 'passClass' => 'PASS_CLASS_DOC_ONLY' ) : array(),
+			$extra
+		);
+	}
+
+	/** The JSON body of the $index-th recorded HTTP request. */
+	protected function request_body( int $index ): array {
+		return json_decode( $this->http_requests[ $index ]['args']['body'], true );
+	}
+
+	/** The RPC name of the $index-th recorded HTTP request. */
+	protected function request_rpc( int $index ): string {
+		return substr( strrchr( $this->http_requests[ $index ]['url'], '/' ), 1 );
+	}
+
+	/** The API key the $index-th recorded HTTP request used. */
+	protected function request_key( int $index ): string {
+		return substr( $this->http_requests[ $index ]['args']['headers']['Authorization'], 7 );
 	}
 
 	/** Initializes the install state and stores both live keys. */

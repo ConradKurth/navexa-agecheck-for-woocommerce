@@ -58,6 +58,7 @@ final class Plugin {
 		self::$file   = $file;
 
 		register_activation_hook( $file, array( Install::class, 'activate' ) );
+		register_activation_hook( $file, array( RateLimit::class, 'install' ) );
 		add_action( 'before_woocommerce_init', array( self::class, 'declare_compatibility' ) );
 		add_action( 'woocommerce_loaded', array( self::class, 'wire' ) );
 		add_action( 'admin_notices', array( self::class, 'woocommerce_notice' ) );
@@ -97,6 +98,11 @@ final class Plugin {
 	public static function wire(): void {
 		Install::register();
 		Mode::register();
+		RateLimit::register();
+		Start::register();
+		ReturnPage::register();
+		Checkout\Classic::register();
+		Checkout\Blocks::register();
 		add_filter( 'woocommerce_get_settings_pages', array( self::class, 'add_settings_page' ) );
 	}
 

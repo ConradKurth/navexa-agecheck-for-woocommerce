@@ -1,6 +1,7 @@
 <?php
 /**
- * Uninstall: deletes the plugin's options, secrets and cached connection info.
+ * Uninstall: deletes the plugin's options, secrets, cached connection info and
+ * rate-limit table.
  * Order meta is kept as an audit trail.
  *
  * @package Navexa\AgeCheck
@@ -25,6 +26,8 @@ function navexa_agecheck_uninstall_site(): void {
 	foreach ( $names as $name ) {
 		delete_option( $name );
 	}
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange -- uninstall: drop the plugin's own rate-limit table.
+	$wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}navexa_agecheck_rate_limits" );
 	if ( function_exists( 'as_unschedule_all_actions' ) ) {
 		as_unschedule_all_actions( '', array(), 'navexa-agecheck' );
 	}

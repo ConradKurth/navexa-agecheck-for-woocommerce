@@ -96,6 +96,14 @@ final class Settings extends \WC_Settings_Page {
 				),
 			),
 			array(
+				'id'      => Options::TRUSTED_PROXY_HEADER,
+				'type'    => 'select',
+				'title'   => __( 'Client IP address', 'navexa-agecheck-for-woocommerce' ),
+				'desc'    => __( 'Where to read the shopper\'s IP address for the age check rate limits. Choose a header only when your store is behind that proxy or CDN: anyone can send these headers to a store that is not.', 'navexa-agecheck-for-woocommerce' ),
+				'default' => '',
+				'options' => array( '' => __( 'The connection (REMOTE_ADDR)', 'navexa-agecheck-for-woocommerce' ) ) + self::proxy_header_labels(),
+			),
+			array(
 				'id'   => 'navexa_agecheck_section',
 				'type' => 'sectionend',
 			),
@@ -300,8 +308,27 @@ final class Settings extends \WC_Settings_Page {
 			}
 		}
 
+		if ( ! RateLimit::table_exists() ) {
+			$lines[] = self::line( 'error', __( 'The age check rate-limit table is missing, so shoppers cannot start age checks. Deactivate and reactivate the plugin; if this stays, ask your host to let the database user create tables.', 'navexa-agecheck-for-woocommerce' ) );
+		}
+
+		$proxy = RateLimit::suspected_proxy();
+		$heads = self::proxy_header_labels();
+		if ( null !== $proxy && isset( $heads[ $proxy ] ) ) {
+			$lines[] = self::line(
+				'warning',
+				sprintf(
+					/* translators: %s: a proxy header option, e.g. X-Forwarded-For (last address). */
+					__( 'The latest age checks reached your store through a proxy, load balancer or CDN (they carry the header %s), but the client IP is read from the connection, so shoppers share rate limits. If your store is behind that proxy, choose its header under Client IP address.', 'navexa-agecheck-for-woocommerce' ),
+					$heads[ $proxy ]
+				)
+			);
+		} elseif ( null !== $proxy ) {
+			$lines[] = self::line( 'warning', __( 'The latest age checks all came from one IP address or from a private network address, which usually means a proxy, load balancer or CDN in front of your store. If it is, choose its header under Client IP address, or shoppers share rate limits.', 'navexa-agecheck-for-woocommerce' ) );
+		}
+
 		if ( self::ships_outside_us() ) {
-			$lines[] = self::line( 'warning', __( 'Your store ships outside the US. AgeCheck verifies US addresses only, so age-restricted orders shipping elsewhere will be refused.', 'navexa-agecheck-for-woocommerce' ) );
+			$lines[] = self::line( 'warning', __( 'Your store ships outside the US. AgeCheck verifies US addresses only (including US territories and APO/FPO), so age-restricted orders shipping elsewhere will be refused.', 'navexa-agecheck-for-woocommerce' ) );
 		}
 		return $lines;
 	}
@@ -330,7 +357,23 @@ final class Settings extends \WC_Settings_Page {
 	}
 
 	/**
-	 * Whether WooCommerce is set to ship to any country other than the US.
+	 * Labels of the proxy headers a merchant may trust, by $_SERVER key
+	 * (RateLimit::PROXY_HEADERS).
+	 *
+	 * @return array<string, string>
+	 */
+	private static function proxy_header_labels(): array {
+		return array(
+			'HTTP_CF_CONNECTING_IP' => __( 'CF-Connecting-IP (Cloudflare)', 'navexa-agecheck-for-woocommerce' ),
+			'HTTP_TRUE_CLIENT_IP'   => __( 'True-Client-IP', 'navexa-agecheck-for-woocommerce' ),
+			'HTTP_X_REAL_IP'        => __( 'X-Real-IP', 'navexa-agecheck-for-woocommerce' ),
+			'HTTP_X_FORWARDED_FOR'  => __( 'X-Forwarded-For (last address)', 'navexa-agecheck-for-woocommerce' ),
+		);
+	}
+
+	/**
+	 * Whether WooCommerce is set to ship to any country other than the US and
+	 * its territories.
 	 */
 	private static function ships_outside_us(): bool {
 		$wc = function_exists( 'WC' ) ? WC() : null;
@@ -342,7 +385,7 @@ final class Settings extends \WC_Settings_Page {
 			return false;
 		}
 		foreach ( array_keys( $countries ) as $code ) {
-			if ( 'US' !== $code ) {
+			if ( ! ShipTo::is_accepted_country( (string) $code ) ) {
 				return true;
 			}
 		}

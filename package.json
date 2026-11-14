@@ -1,0 +1,17 @@
+{
+	"name": "navexa-agecheck-for-woocommerce",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Development tooling for Navexa AgeCheck for WooCommerce: the mock AgeCheck engine now, the loader and block builds from W1/W2.",
+	"license": "GPL-2.0-or-later",
+	"type": "module",
+	"engines": {
+		"node": ">=22.13"
+	},
+	"scripts": {
+		"mock": "node tests/mock-agecheck/server.mjs",
+		"test:mock": "node --test \"tests/mock-agecheck/*.test.mjs\"",
+		"env": "npx --yes @wordpress/env@12.1.0",
+		"smoke": "npx --yes @wordpress/env@12.1.0 run cli wp eval-file wp-content/plugins/navexa-agecheck-for-woocommerce/tests/wp-env/smoke.php"
+	}
+}

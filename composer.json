@@ -1,0 +1,41 @@
+{
+	"name": "navexa/navexa-agecheck-for-woocommerce",
+	"description": "Navexa AgeCheck for WooCommerce: age verification for age-restricted orders (development dependencies only; the plugin ships without Composer).",
+	"type": "wordpress-plugin",
+	"license": "GPL-2.0-or-later",
+	"require": {
+		"php": ">=7.4"
+	},
+	"require-dev": {
+		"brain/monkey": "^2.6",
+		"dealerdirect/phpcodesniffer-composer-installer": "^1.0",
+		"php-stubs/woocommerce-stubs": "^11.3",
+		"phpcompatibility/phpcompatibility-wp": "^2.1",
+		"phpstan/phpstan": "^2.1",
+		"phpunit/phpunit": "^9.6",
+		"szepeviktor/phpstan-wordpress": "^2.0",
+		"wp-coding-standards/wpcs": "^3.1"
+	},
+	"autoload-dev": {
+		"psr-4": {
+			"Navexa\\AgeCheck\\": "includes/",
+			"Navexa\\AgeCheck\\Tests\\": "tests/phpunit/"
+		}
+	},
+	"config": {
+		"platform": {
+			"php": "7.4.33"
+		},
+		"allow-plugins": {
+			"dealerdirect/phpcodesniffer-composer-installer": true,
+			"phpstan/extension-installer": false
+		},
+		"sort-packages": true
+	},
+	"scripts": {
+		"lint": "phpcs",
+		"lint:fix": "phpcbf",
+		"test": "phpunit",
+		"analyse": "phpstan analyse --memory-limit=1G"
+	}
+}

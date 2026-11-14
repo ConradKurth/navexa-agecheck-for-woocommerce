@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  phpcs:
+    name: phpcs (WordPress Coding Standards)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          tools: composer:v2
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      - run: composer lint
+
+  phpstan:
+    name: PHPStan (level 6)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          tools: composer:v2
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      - run: composer analyse
+
+  phpunit:
+    name: PHPUnit (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ["7.4", "8.3"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: composer:v2
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      - run: composer test
+
+  node:
+    name: Mock engine and loader build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run test:mock
+      # The loader (assets/src/loader) and block sources arrive in W1/W2 with
+      # their "build" script; until then this is a no-op.
+      - run: npm run build --if-present
+      - name: Built assets match their sources
+        run: git diff --exit-code -- assets/
+
+  wp-env:
+    name: wp-env smoke (WP ${{ matrix.wp }}, WC ${{ matrix.wc }}, PHP ${{ matrix.php }}, HPOS ${{ matrix.hpos }})
+    needs: [phpunit]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # Plan §5: PHP 7.4/8.3 x WP x WC, HPOS on and off. WordPress and
+      # WooCommerce move as a pair: WooCommerce 9.9.0 needs WordPress 6.7 (the
+      # plan's 6.5 cannot install it) and 11.3.0 needs 7.0. Not covered: 9.9.0
+      # on the latest WordPress, and WooCommerce Subscriptions (W1 spike).
+      matrix:
+        stack: [oldest, latest]
+        php: ["7.4", "8.3"]
+        hpos: ["yes", "no"]
+        include:
+          - { stack: oldest, wp: "6.7", core: "https://wordpress.org/wordpress-6.7.zip", wc: "9.9.0" }
+          - { stack: latest, wp: "latest", core: "", wc: "11.3.0" }
+    env:
+      WP_ENV: npx --yes @wordpress/env@12.1.0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Start the mock AgeCheck engine
+        run: |
+          node tests/mock-agecheck/server.mjs --host 0.0.0.0 --port 8787 > mock-agecheck.log 2>&1 &
+          for _ in $(seq 1 20); do curl -fsS http://127.0.0.1:8787/__mock/health && exit 0; sleep 0.5; done
+          cat mock-agecheck.log; exit 1
+      - name: Point wp-env at this matrix leg
+        run: node tests/wp-env/write-override.mjs "${{ matrix.core }}" "${{ matrix.wc }}" "${{ matrix.php }}"
+      - run: $WP_ENV start
+      - name: Set order storage
+        run: $WP_ENV run cli wp option update woocommerce_custom_orders_table_enabled ${{ matrix.hpos }}
+      - name: Smoke
+        run: $WP_ENV run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce env NAVEXA_AGECHECK_SMOKE_HPOS=${{ matrix.hpos }} wp eval-file tests/wp-env/smoke.php
+      - name: Logs on failure
+        if: failure()
+        run: |
+          cat mock-agecheck.log || true
+          $WP_ENV logs --watch=false || true

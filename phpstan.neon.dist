@@ -1,0 +1,20 @@
+includes:
+	- vendor/szepeviktor/phpstan-wordpress/extension.neon
+
+parameters:
+	level: 6
+	# Stub PHPDoc types are not guarantees: filters can hand back anything.
+	treatPhpDocTypesAsCertain: false
+	phpVersion: 70400
+	paths:
+		- navexa-agecheck-for-woocommerce.php
+		- uninstall.php
+		- includes
+	bootstrapFiles:
+		- tests/phpstan/bootstrap.php
+	scanFiles:
+		- vendor/php-stubs/woocommerce-stubs/woocommerce-stubs.php
+	dynamicConstantNames:
+		- NAVEXA_AGECHECK_API_URL
+		- NAVEXA_AGECHECK_ALLOW_TEST_RELEASE
+		- WC_VERSION

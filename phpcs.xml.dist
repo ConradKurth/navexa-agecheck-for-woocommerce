@@ -1,0 +1,49 @@
+<?xml version="1.0"?>
+<ruleset name="Navexa AgeCheck for WooCommerce">
+	<description>WordPress Coding Standards for the plugin code.</description>
+
+	<file>navexa-agecheck-for-woocommerce.php</file>
+	<file>uninstall.php</file>
+	<file>includes</file>
+
+	<arg name="extensions" value="php"/>
+	<arg name="basepath" value="."/>
+	<arg name="colors"/>
+	<arg value="sp"/>
+
+	<config name="minimum_wp_version" value="6.7"/>
+	<config name="testVersion" value="7.4-"/>
+
+	<rule ref="WordPress"/>
+	<rule ref="PHPCompatibilityWP"/>
+
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array">
+				<element value="navexa-agecheck-for-woocommerce"/>
+			</property>
+		</properties>
+	</rule>
+
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<properties>
+			<property name="prefixes" type="array">
+				<element value="navexa_agecheck"/>
+				<element value="Navexa\AgeCheck"/>
+			</property>
+		</properties>
+	</rule>
+
+	<rule ref="WordPress.WP.Capabilities">
+		<properties>
+			<property name="custom_capabilities" type="array">
+				<element value="manage_woocommerce"/>
+			</property>
+		</properties>
+	</rule>
+
+	<!-- includes/ follows PSR-4 (Navexa\AgeCheck\Foo -> includes/Foo.php), not class-foo.php. -->
+	<rule ref="WordPress.Files.FileName">
+		<exclude-pattern>includes/*</exclude-pattern>
+	</rule>
+</ruleset>

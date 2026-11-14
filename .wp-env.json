@@ -1,0 +1,15 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/wp-env.json",
+	"core": null,
+	"phpVersion": "8.3",
+	"testsEnvironment": false,
+	"plugins": [
+		"https://downloads.wordpress.org/plugin/woocommerce.11.3.0.zip",
+		"."
+	],
+	"config": {
+		"WP_DEBUG_LOG": true,
+		"NAVEXA_AGECHECK_API_URL": "http://host.docker.internal:8787",
+		"NAVEXA_AGECHECK_ALLOW_TEST_RELEASE": true
+	}
+}

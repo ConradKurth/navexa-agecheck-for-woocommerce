@@ -1,0 +1,37 @@
+{
+	"liveStart": {
+		"key": "txk_1111111111111111111111111111111111111111111111111111111111111111",
+		"livemode": true,
+		"scopes": [
+			"agecheck:verify"
+		]
+	},
+	"liveFulfilment": {
+		"key": "txk_2222222222222222222222222222222222222222222222222222222222222222",
+		"livemode": true,
+		"scopes": [
+			"agecheck:verify",
+			"agecheck:clearance"
+		]
+	},
+	"testStart": {
+		"key": "txk_3333333333333333333333333333333333333333333333333333333333333333",
+		"livemode": false,
+		"scopes": [
+			"agecheck:verify"
+		]
+	},
+	"testFulfilment": {
+		"key": "txk_4444444444444444444444444444444444444444444444444444444444444444",
+		"livemode": false,
+		"scopes": [
+			"agecheck:verify",
+			"agecheck:clearance"
+		]
+	},
+	"noScopes": {
+		"key": "txk_5555555555555555555555555555555555555555555555555555555555555555",
+		"livemode": true,
+		"scopes": []
+	}
+}

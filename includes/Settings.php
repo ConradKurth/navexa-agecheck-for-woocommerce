@@ -30,11 +30,18 @@ final class Settings extends \WC_Settings_Page {
 
 	const FIELD_SECRET = 'navexa_agecheck_secret';
 	const FIELD_STATUS = 'navexa_agecheck_status';
+	const FIELD_INFO   = 'navexa_agecheck_info';
 
 	/**
 	 * Where merchants manage keys, allowed origins, minimum age and branding.
 	 */
 	const DASHBOARD_URL = 'https://tax.navexa.co';
+
+	/**
+	 * Terms listed per taxonomy in the rule's multiselects (saved terms are
+	 * always listed too).
+	 */
+	const TERM_LIMIT = 500;
 
 	/**
 	 * Constructor.
@@ -46,7 +53,8 @@ final class Settings extends \WC_Settings_Page {
 
 		add_action( 'woocommerce_admin_field_' . self::FIELD_SECRET, array( $this, 'output_secret_field' ) );
 		add_action( 'woocommerce_admin_field_' . self::FIELD_STATUS, array( $this, 'output_status_field' ) );
-		foreach ( array( Options::START_KEY, Options::FULFILMENT_KEY ) as $option ) {
+		add_action( 'woocommerce_admin_field_' . self::FIELD_INFO, array( $this, 'output_info_field' ) );
+		foreach ( array( Options::START_KEY, Options::FULFILMENT_KEY, Options::WEBHOOK_SECRET ) as $option ) {
 			add_filter( 'woocommerce_admin_settings_sanitize_option_' . $option, array( $this, 'sanitize_secret' ), 10, 3 );
 		}
 	}
@@ -96,10 +104,208 @@ final class Settings extends \WC_Settings_Page {
 				),
 			),
 			array(
+				'id'      => Options::TRUSTED_PROXY_HEADER,
+				'type'    => 'select',
+				'title'   => __( 'Client IP address', 'navexa-agecheck-for-woocommerce' ),
+				'desc'    => __( 'Where to read the shopper\'s IP address for the age check rate limits. Choose a header only when your store is behind that proxy or CDN: anyone can send these headers to a store that is not.', 'navexa-agecheck-for-woocommerce' ),
+				'default' => '',
+				'options' => array( '' => __( 'The connection (REMOTE_ADDR)', 'navexa-agecheck-for-woocommerce' ) ) + self::proxy_header_labels(),
+			),
+			array(
 				'id'   => 'navexa_agecheck_section',
 				'type' => 'sectionend',
 			),
+			array(
+				'id'    => 'navexa_agecheck_rules_section',
+				'type'  => 'title',
+				'title' => __( 'Which orders need an age check', 'navexa-agecheck-for-woocommerce' ),
+				'desc'  => __( 'A product\'s own "Age check" setting (product editor, General tab) overrides these rules. Local pickup orders never need one: check the buyer\'s ID at the counter. Orders paid on the "pay for order" page are accepted, then held until the shopper verifies.', 'navexa-agecheck-for-woocommerce' ),
+			),
+			array(
+				'id'      => Options::RULE,
+				'type'    => 'select',
+				'title'   => __( 'Products', 'navexa-agecheck-for-woocommerce' ),
+				'default' => Options::RULE_ALL,
+				'options' => array(
+					Options::RULE_ALL     => __( 'Every product', 'navexa-agecheck-for-woocommerce' ),
+					Options::RULE_INCLUDE => __( 'Only products in the categories or tags below', 'navexa-agecheck-for-woocommerce' ),
+					Options::RULE_EXCLUDE => __( 'Every product except those in the categories or tags below', 'navexa-agecheck-for-woocommerce' ),
+				),
+			),
+			array(
+				'id'      => Options::RULE_CATEGORIES,
+				'type'    => 'multiselect',
+				'class'   => 'wc-enhanced-select',
+				'title'   => __( 'Categories', 'navexa-agecheck-for-woocommerce' ),
+				'desc'    => __( 'A category also covers its subcategories.', 'navexa-agecheck-for-woocommerce' ),
+				'default' => array(),
+				'options' => self::term_options( 'product_cat', Options::RULE_CATEGORIES ),
+			),
+			array(
+				'id'      => Options::RULE_TAGS,
+				'type'    => 'multiselect',
+				'class'   => 'wc-enhanced-select',
+				'title'   => __( 'Tags', 'navexa-agecheck-for-woocommerce' ),
+				'default' => array(),
+				'options' => self::term_options( 'product_tag', Options::RULE_TAGS ),
+			),
+			array(
+				'id'      => Options::EXEMPT_ROLES,
+				'type'    => 'multiselect',
+				'class'   => 'wc-enhanced-select',
+				'title'   => __( 'Exempt customer roles', 'navexa-agecheck-for-woocommerce' ),
+				'desc'    => __( 'Orders whose customer account has one of these roles skip the age check. It is the order\'s customer that counts, not the staff member who creates the order.', 'navexa-agecheck-for-woocommerce' ),
+				'default' => array(),
+				'options' => self::role_options(),
+			),
+			array(
+				'id'      => Options::DENIED_ORDERS,
+				'type'    => 'select',
+				'title'   => __( 'When a shopper fails', 'navexa-agecheck-for-woocommerce' ),
+				'desc'    => __( 'A failed order is never shipped. Automatic refunds need a payment gateway that refunds through its API, and never happen with test keys; other orders are listed under "AgeCheck: denied, refund required" on the Orders screen.', 'navexa-agecheck-for-woocommerce' ),
+				'default' => Options::DENIED_AUTO_REFUND,
+				'options' => array(
+					Options::DENIED_AUTO_REFUND => __( 'Refund through the payment gateway when it can, otherwise list for a manual refund', 'navexa-agecheck-for-woocommerce' ),
+					Options::DENIED_MANUAL      => __( 'Always list for a manual refund', 'navexa-agecheck-for-woocommerce' ),
+				),
+			),
+			array(
+				'id'   => 'navexa_agecheck_rules_section',
+				'type' => 'sectionend',
+			),
+			array(
+				'id'    => 'navexa_agecheck_webhook_section',
+				'type'  => 'title',
+				'title' => __( 'Webhook', 'navexa-agecheck-for-woocommerce' ),
+				'desc'  => __( 'Optional but recommended: AgeCheck tells the store the moment a shopper passes, instead of the store asking every 15 minutes. In the Navexa dashboard, add a webhook endpoint with the URL below for the verification.passed, verification.failed and verification.hold_stale events, and paste its signing secret here.', 'navexa-agecheck-for-woocommerce' ),
+			),
+			array(
+				'id'        => 'navexa_agecheck_webhook_url',
+				'type'      => self::FIELD_INFO,
+				'title'     => __( 'Webhook URL', 'navexa-agecheck-for-woocommerce' ),
+				'is_option' => false,
+			),
+			array(
+				'id'       => Options::WEBHOOK_SECRET,
+				'type'     => self::FIELD_SECRET,
+				'title'    => __( 'Signing secret', 'navexa-agecheck-for-woocommerce' ),
+				'desc'     => __( 'Shown once when you create the endpoint in the Navexa dashboard.', 'navexa-agecheck-for-woocommerce' ),
+				'autoload' => false,
+			),
+			array(
+				'id'   => 'navexa_agecheck_webhook_section',
+				'type' => 'sectionend',
+			),
 		);
+	}
+
+	/**
+	 * Term id => name for a product taxonomy: the first TERM_LIMIT terms by
+	 * name, plus every term saved under $option. WooCommerce saves a
+	 * multiselect as exactly the options posted back, so a saved term left out
+	 * of the list would be dropped by the next save of this tab, and under
+	 * "Only products in the categories or tags below" its products would stop
+	 * needing a check. A saved term that cannot be read is listed by its id.
+	 *
+	 * @param string $taxonomy product_cat or product_tag.
+	 * @param string $option   Options::RULE_CATEGORIES or Options::RULE_TAGS.
+	 * @return array<int, string>
+	 */
+	private static function term_options( string $taxonomy, string $option ): array {
+		$options = self::term_names(
+			array(
+				'taxonomy'   => $taxonomy,
+				'hide_empty' => false,
+				'fields'     => 'id=>name',
+				'number'     => self::TERM_LIMIT,
+			)
+		);
+		$missing = array_values( array_diff( Options::term_ids( $option ), array_keys( $options ) ) );
+		if ( empty( $missing ) ) {
+			return $options;
+		}
+		$options += self::term_names(
+			array(
+				'taxonomy'   => $taxonomy,
+				'hide_empty' => false,
+				'fields'     => 'id=>name',
+				'include'    => $missing,
+			)
+		);
+		foreach ( $missing as $term_id ) {
+			if ( ! isset( $options[ $term_id ] ) ) {
+				/* translators: %d: a term id. */
+				$options[ $term_id ] = sprintf( __( 'Term #%d', 'navexa-agecheck-for-woocommerce' ), $term_id );
+			}
+		}
+		return $options;
+	}
+
+	/**
+	 * Terms from get_terms() with 'fields' => 'id=>name', as int id => name.
+	 *
+	 * @param array<string, mixed> $args get_terms() arguments.
+	 * @return array<int, string>
+	 */
+	private static function term_names( array $args ): array {
+		$terms = get_terms( $args );
+		$out   = array();
+		if ( is_array( $terms ) ) {
+			foreach ( $terms as $id => $name ) {
+				$out[ (int) $id ] = (string) $name;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * Whether the include rule names at least one category or tag that exists.
+	 */
+	private static function include_terms_exist(): bool {
+		$rules = array(
+			'product_cat' => Options::RULE_CATEGORIES,
+			'product_tag' => Options::RULE_TAGS,
+		);
+		foreach ( $rules as $taxonomy => $option ) {
+			$ids = Options::term_ids( $option );
+			if ( empty( $ids ) ) {
+				continue; // get_terms() with an empty include would list every term.
+			}
+			$found = get_terms(
+				array(
+					'taxonomy'   => $taxonomy,
+					'hide_empty' => false,
+					'fields'     => 'ids',
+					'include'    => $ids,
+				)
+			);
+			if ( is_array( $found ) && ! empty( $found ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Role slug => name.
+	 *
+	 * @return array<string, string>
+	 */
+	private static function role_options(): array {
+		$roles = function_exists( 'wp_roles' ) ? wp_roles()->get_names() : array();
+		return is_array( $roles ) ? array_map( 'translate_user_role', $roles ) : array();
+	}
+
+	/**
+	 * Renders a read-only line: the webhook URL.
+	 *
+	 * @param array<string, mixed> $field Field definition.
+	 */
+	public function output_info_field( $field ): void {
+		$title = isset( $field['title'] ) ? (string) $field['title'] : '';
+		echo '<tr valign="top"><th scope="row" class="titledesc">' . esc_html( $title ) . '</th><td class="forminp">';
+		echo '<code>' . esc_html( Webhook::url() ) . '</code>';
+		echo '</td></tr>';
 	}
 
 	/**
@@ -116,6 +322,9 @@ final class Settings extends \WC_Settings_Page {
 	 */
 	public function sanitize_secret( $value, $option, $raw_value ) {
 		$id = is_array( $option ) && isset( $option['id'] ) ? (string) $option['id'] : '';
+		if ( Options::WEBHOOK_SECRET === $id ) {
+			return $this->sanitize_webhook_secret( $raw_value );
+		}
 		if ( Options::START_KEY !== $id && Options::FULFILMENT_KEY !== $id ) {
 			return $value;
 		}
@@ -130,6 +339,33 @@ final class Settings extends \WC_Settings_Page {
 			return null;
 		}
 		Mode::flush();
+		if ( '' === $raw ) {
+			delete_option( $id );
+		} else {
+			update_option( $id, $raw, false );
+		}
+		return null;
+	}
+
+	/**
+	 * Saves the webhook secret like a key (blank keeps it, the Remove box
+	 * deletes it), with its own shape check. Always returns null.
+	 *
+	 * @param mixed $raw_value Unslashed posted value.
+	 * @return null
+	 */
+	private function sanitize_webhook_secret( $raw_value ) {
+		$id = Options::WEBHOOK_SECRET;
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- WC_Admin_Settings::save() checked the woocommerce-settings nonce.
+		$clear = isset( $_POST[ $id . '_clear' ] ) && '1' === sanitize_text_field( wp_unslash( $_POST[ $id . '_clear' ] ) );
+		$raw   = is_string( $raw_value ) ? trim( $raw_value ) : '';
+		if ( '' === $raw && ! $clear ) {
+			return null;
+		}
+		if ( '' !== $raw && ! Options::looks_like_webhook_secret( $raw ) ) {
+			\WC_Admin_Settings::add_error( __( 'That does not look like a webhook signing secret. The saved secret was kept.', 'navexa-agecheck-for-woocommerce' ) );
+			return null;
+		}
 		if ( '' === $raw ) {
 			delete_option( $id );
 		} else {
@@ -156,11 +392,14 @@ final class Settings extends \WC_Settings_Page {
 		printf(
 			'<input name="%1$s" id="%1$s" type="password" value="" class="regular-text" autocomplete="off" spellcheck="false" placeholder="%2$s" />',
 			esc_attr( $id ),
-			esc_attr( '' === $saved ? 'txk_…' : __( 'Leave blank to keep the saved key', 'navexa-agecheck-for-woocommerce' ) )
+			esc_attr( '' === $saved ? ( Options::WEBHOOK_SECRET === $id ? '' : 'txk_…' ) : __( 'Leave blank to keep the saved key', 'navexa-agecheck-for-woocommerce' ) )
 		);
 		echo '<p class="description">';
 		if ( '' === $saved ) {
-			esc_html_e( 'No key saved.', 'navexa-agecheck-for-woocommerce' );
+			echo esc_html( Options::WEBHOOK_SECRET === $id ? __( 'No secret saved.', 'navexa-agecheck-for-woocommerce' ) : __( 'No key saved.', 'navexa-agecheck-for-woocommerce' ) );
+		} elseif ( Options::WEBHOOK_SECRET === $id ) {
+			// No part of the secret is shown.
+			esc_html_e( 'A secret is saved.', 'navexa-agecheck-for-woocommerce' );
 		} else {
 			printf(
 				/* translators: %s: the first characters of the saved API key. */
@@ -173,7 +412,7 @@ final class Settings extends \WC_Settings_Page {
 			printf(
 				'<p><label><input type="checkbox" name="%1$s" value="1" /> %2$s</label></p>',
 				esc_attr( $id . '_clear' ),
-				esc_html__( 'Remove the saved key', 'navexa-agecheck-for-woocommerce' )
+				esc_html( Options::WEBHOOK_SECRET === $id ? __( 'Remove the saved secret', 'navexa-agecheck-for-woocommerce' ) : __( 'Remove the saved key', 'navexa-agecheck-for-woocommerce' ) )
 			);
 		}
 		echo '</td></tr>';
@@ -268,18 +507,20 @@ final class Settings extends \WC_Settings_Page {
 			if ( $start->livemode !== $fulfilment->livemode ) {
 				$lines[] = self::line( 'error', __( 'One key is live and the other is a test key. Use two live keys or two test keys from the same Navexa account.', 'navexa-agecheck-for-woocommerce' ) );
 			}
-			// GetIntegrationInfo carries no account id; the account's display name
-			// is the only hint. Two different names mean two accounts, and orders
-			// started under one cannot be linked or released with the other.
-			if ( '' !== $start->display_name && '' !== $fulfilment->display_name && $start->display_name !== $fulfilment->display_name ) {
+			// Orders started under one organization cannot be linked or released
+			// with another organization's key. GetIntegrationInfo names each key's
+			// organization; a key whose answer has none cannot be compared.
+			if ( '' !== $start->organization_id && '' !== $fulfilment->organization_id && ! hash_equals( $start->organization_id, $fulfilment->organization_id ) ) {
 				$lines[] = self::line(
 					'error',
-					sprintf(
-						/* translators: 1: account display name of the start key, 2: account display name of the fulfilment key. */
-						__( 'The keys belong to different Navexa accounts (%1$s and %2$s). Use two keys from the same account.', 'navexa-agecheck-for-woocommerce' ),
-						$start->display_name,
-						$fulfilment->display_name
-					)
+					'' !== $start->display_name && '' !== $fulfilment->display_name && $start->display_name !== $fulfilment->display_name
+						? sprintf(
+							/* translators: 1: account display name of the start key, 2: account display name of the fulfilment key. */
+							__( 'The keys belong to different Navexa accounts (%1$s and %2$s). Use two keys from the same account.', 'navexa-agecheck-for-woocommerce' ),
+							$start->display_name,
+							$fulfilment->display_name
+						)
+						: __( 'The keys belong to different Navexa accounts. Use two keys from the same account.', 'navexa-agecheck-for-woocommerce' )
 				);
 			}
 		}
@@ -300,8 +541,43 @@ final class Settings extends \WC_Settings_Page {
 			}
 		}
 
+		if ( '' === Options::webhook_secret() ) {
+			$lines[] = self::line( 'warning', __( 'No webhook secret: held orders are checked every 15 minutes instead of the moment the shopper passes.', 'navexa-agecheck-for-woocommerce' ) );
+		} elseif ( (int) get_option( Options::WEBHOOK_LAST_RECEIVED, 0 ) > 0 ) {
+			/* translators: %s: date and time. */
+			$lines[] = self::line( 'ok', sprintf( __( 'Last webhook received %s.', 'navexa-agecheck-for-woocommerce' ), wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) get_option( Options::WEBHOOK_LAST_RECEIVED, 0 ) ) ) );
+		} else {
+			$lines[] = self::line( 'warning', __( 'No webhook received yet. Check the endpoint URL and secret in the Navexa dashboard.', 'navexa-agecheck-for-woocommerce' ) );
+		}
+		if ( ! Sweep::healthy() ) {
+			$lines[] = self::line( 'warning', __( 'The 15-minute check of held orders has not run in the last hour. WP-Cron may be off: set up a real system cron so held orders are released.', 'navexa-agecheck-for-woocommerce' ) );
+		}
+
+		if ( Options::RULE_INCLUDE === Options::rule() && ! self::include_terms_exist() ) {
+			$lines[] = self::line( 'error', __( 'Age checks are limited to the categories and tags below, but none is chosen (or they were deleted). Only products set to "Always needs an age check" in the product editor are checked.', 'navexa-agecheck-for-woocommerce' ) );
+		}
+
+		if ( ! RateLimit::table_exists() ) {
+			$lines[] = self::line( 'error', __( 'The age check rate-limit table is missing, so shoppers cannot start age checks. Deactivate and reactivate the plugin; if this stays, ask your host to let the database user create tables.', 'navexa-agecheck-for-woocommerce' ) );
+		}
+
+		$proxy = RateLimit::suspected_proxy();
+		$heads = self::proxy_header_labels();
+		if ( null !== $proxy && isset( $heads[ $proxy ] ) ) {
+			$lines[] = self::line(
+				'warning',
+				sprintf(
+					/* translators: %s: a proxy header option, e.g. X-Forwarded-For (last address). */
+					__( 'The latest age checks reached your store through a proxy, load balancer or CDN (they carry the header %s), but the client IP is read from the connection, so shoppers share rate limits. If your store is behind that proxy, choose its header under Client IP address.', 'navexa-agecheck-for-woocommerce' ),
+					$heads[ $proxy ]
+				)
+			);
+		} elseif ( null !== $proxy ) {
+			$lines[] = self::line( 'warning', __( 'The latest age checks all came from one IP address or from a private network address, which usually means a proxy, load balancer or CDN in front of your store. If it is, choose its header under Client IP address, or shoppers share rate limits.', 'navexa-agecheck-for-woocommerce' ) );
+		}
+
 		if ( self::ships_outside_us() ) {
-			$lines[] = self::line( 'warning', __( 'Your store ships outside the US. AgeCheck verifies US addresses only, so age-restricted orders shipping elsewhere will be refused.', 'navexa-agecheck-for-woocommerce' ) );
+			$lines[] = self::line( 'warning', __( 'Your store ships outside the US. AgeCheck verifies US addresses only (including US territories and APO/FPO), so age-restricted orders shipping elsewhere will be refused.', 'navexa-agecheck-for-woocommerce' ) );
 		}
 		return $lines;
 	}
@@ -330,7 +606,23 @@ final class Settings extends \WC_Settings_Page {
 	}
 
 	/**
-	 * Whether WooCommerce is set to ship to any country other than the US.
+	 * Labels of the proxy headers a merchant may trust, by $_SERVER key
+	 * (RateLimit::PROXY_HEADERS).
+	 *
+	 * @return array<string, string>
+	 */
+	private static function proxy_header_labels(): array {
+		return array(
+			'HTTP_CF_CONNECTING_IP' => __( 'CF-Connecting-IP (Cloudflare)', 'navexa-agecheck-for-woocommerce' ),
+			'HTTP_TRUE_CLIENT_IP'   => __( 'True-Client-IP', 'navexa-agecheck-for-woocommerce' ),
+			'HTTP_X_REAL_IP'        => __( 'X-Real-IP', 'navexa-agecheck-for-woocommerce' ),
+			'HTTP_X_FORWARDED_FOR'  => __( 'X-Forwarded-For (last address)', 'navexa-agecheck-for-woocommerce' ),
+		);
+	}
+
+	/**
+	 * Whether WooCommerce is set to ship to any country other than the US and
+	 * its territories.
 	 */
 	private static function ships_outside_us(): bool {
 		$wc = function_exists( 'WC' ) ? WC() : null;
@@ -342,7 +634,7 @@ final class Settings extends \WC_Settings_Page {
 			return false;
 		}
 		foreach ( array_keys( $countries ) as $code ) {
-			if ( 'US' !== $code ) {
+			if ( ! ShipTo::is_accepted_country( (string) $code ) ) {
 				return true;
 			}
 		}

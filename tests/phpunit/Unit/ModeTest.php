@@ -34,6 +34,7 @@ final class ModeTest extends TestCase {
 		$this->assertTrue( $info->origin_allowed );
 		$this->assertSame( 21, $info->minimum_age );
 		$this->assertSame( 'Shop Example', $info->display_name );
+		$this->assertSame( 'org_example', $info->organization_id, 'E10a names the key\'s organization' );
 		$this->assertSame( array(), $info->missing_scopes( Client::KEY_FULFILMENT ) );
 		$this->assertSame( '{"origin":"https://shop.example:8443"}', $this->http_requests[0]['args']['body'] );
 		$this->assertStringEndsWith( '/GetIntegrationInfo', $this->http_requests[0]['url'] );
@@ -226,6 +227,7 @@ final class ModeTest extends TestCase {
 		$this->assertFalse( $info->origin_allowed );
 		$this->assertNull( $info->minimum_age );
 		$this->assertSame( '', $info->display_name );
+		$this->assertSame( '', $info->organization_id );
 		$this->assertSame( array( 'agecheck:verify' ), $info->missing_scopes( Client::KEY_START ) );
 		$this->assertSame( array( 'agecheck:verify', 'agecheck:clearance' ), $info->missing_scopes( Client::KEY_FULFILMENT ) );
 	}
@@ -233,11 +235,12 @@ final class ModeTest extends TestCase {
 	public function test_integration_info_accepts_proto_names_and_rejects_odd_values(): void {
 		$info = IntegrationInfo::from_response(
 			array(
-				'livemode'       => 'true',
-				'scopes'         => array( 'agecheck:verify', 7, 'agecheck:verify' ),
-				'origin_allowed' => true,
-				'minimum_age'    => '19',
-				'display_name'   => 'Snake',
+				'livemode'        => 'true',
+				'scopes'          => array( 'agecheck:verify', 7, 'agecheck:verify' ),
+				'origin_allowed'  => true,
+				'minimum_age'     => '19',
+				'display_name'    => 'Snake',
+				'organization_id' => 'org_snake',
 			)
 		);
 		$this->assertFalse( $info->livemode, 'only a JSON true is live' );
@@ -245,6 +248,8 @@ final class ModeTest extends TestCase {
 		$this->assertTrue( $info->origin_allowed );
 		$this->assertSame( 19, $info->minimum_age );
 		$this->assertSame( 'Snake', $info->display_name );
+		$this->assertSame( 'org_snake', $info->organization_id );
+		$this->assertSame( '', IntegrationInfo::from_response( array( 'organizationId' => 7 ) )->organization_id );
 
 		$this->assertNull( IntegrationInfo::from_response( array( 'minimumAge' => 20 ) )->minimum_age );
 		$this->assertNull( IntegrationInfo::from_response( array( 'minimumAge' => 21.5 ) )->minimum_age );

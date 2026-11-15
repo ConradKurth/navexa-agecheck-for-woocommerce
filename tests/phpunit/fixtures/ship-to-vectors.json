@@ -1,0 +1,209 @@
+{
+	"_comment": "Exported from the AgeCheck engine's Address.ShipToCanonical (tax 0c0757d8, backend/internal/agecheck/domain/identity.go) by running that file unchanged. canonical_hex is the engine's canonical form of address as given; the plugin's ShipTo::engine_canonical() must reproduce it byte for byte.",
+	"vectors": [
+		{
+			"name": "plain",
+			"address": {
+				"city": "Springfield",
+				"country": "US",
+				"line1": "123 Main St",
+				"line2": "",
+				"postal_code": "62701",
+				"region": "IL"
+			},
+			"canonical_hex": "616765636865636b2d736869702d746f2d76310a31313a313233206d61696e2073740a303a0a353a36323730310a323a5553"
+		},
+		{
+			"name": "case and whitespace runs",
+			"address": {
+				"city": "x",
+				"country": " us ",
+				"line1": "  123   MAIN\tSt  ",
+				"line2": " Apt\n 4B ",
+				"postal_code": " 62701 ",
+				"region": "IL"
+			},
+			"canonical_hex": "616765636865636b2d736869702d746f2d76310a31313a313233206d61696e2073740a363a6170742034620a353a36323730310a323a5553"
+		},
+		{
+			"name": "empty line2",
+			"address": {
+				"city": "x",
+				"country": "US",
+				"line1": "1 A St",
+				"line2": "",
+				"postal_code": "10001",
+				"region": "y"
+			},
+			"canonical_hex": "616765636865636b2d736869702d746f2d76310a363a3120612073740a303a0a353a31303030310a323a5553"
+		},
+		{
+			"name": "whitespace-only line2",
+			"address": {
+				"city": "x",
+				"country": "US",
+				"line1": "1 A St",
+				"line2": " \t ",
+				"postal_code": "10001",
+				"region": "y"
+			},
+			"canonical_hex": "616765636865636b2d736869702d746f2d76310a363a3120612073740a303a0a353a31303030310a323a5553"
+		},
+		{
+			"name": "zip plus four kept by the engine",
+			"address": {
+				"city": "x",
+				"country": "US",
+				"line1": "1 A St",
+				"line2": "",
+				"postal_code": "10001-1234",
+				"region": "y"
+			},
+			"canonical_hex": "616765636865636b2d736869702d746f2d76310a363a3120612073740a303a0a31303a31303030312d313233340a323a5553"
+		},
+		{
+			"name": "postal internal whitespace and case",
+			"address": {
+				"city": "x",
+				"country": "gb",
+				"line1": "1 A St",
+				"line2": "",
+				"postal_code": " sw1a  1aa ",
+				"region": "y"
+			},
+			"canonical_hex": "616765636865636b2d736869702d746f2d76310a363a3120612073740a303a0a373a535731413141410a323a4742"
+		},
+		{
+			"name": "unicode spaces",
+			"address": {
+				"city": "x",
+				"country": "US",
+				"line1": "1 A St　Unit 5",
+				"line2": "x\u2028y\u2029",
+				"postal_code": "1 2",
+				"region": "y"
+			},
+			"canonical_hex": "616765636865636b2d736869702d746f2d76310a31333a31206120737420756e697420350a333a7820790a323a31320a323a5553"
+		},
+		{
+			"name": "zero width space is not a space",
+			"address": {
+				"city": "x",
+				"country": "US",
+				"line1": "1​A St",
+				"line2": "",
+				"postal_code": "10001",
+				"region": "y"
+			},
+			"canonical_hex": "616765636865636b2d736869702d746f2d76310a383a31e2808b612073740a303a0a353a31303030310a323a5553"
+		},
+		{
+			"name": "unicode case",
+			"address": {
+				"city": "x",
+				"country": "PR",
+				"line1": "ÉCOLE STRASSE ΣΟΦΙΑ İSTANBUL",
+				"line2": "",
+				"postal_code": "00901",
+				"region": "y"
+			},
+			"canonical_hex": "616765636865636b2d736869702d746f2d76310a33343ac3a9636f6c65207374726173736520cf83cebfcf86ceb9ceb120697374616e62756c0a303a0a353a30303930310a323a5052"
+		},
+		{
+			"name": "sharp s and title case",
+			"address": {
+				"city": "x",
+				"country": "GU",
+				"line1": "Straße ǅ ẞ",
+				"line2": "",
+				"postal_code": "96910",
+				"region": "y"
+			},
+			"canonical_hex": "616765636865636b2d736869702d746f2d76310a31333a73747261c39f6520c78620c39f0a303a0a353a39363931300a323a4755"
+		},
+		{
+			"name": "decomposed accent is not composed by the engine",
+			"address": {
+				"city": "x",
+				"country": "VI",
+				"line1": "Café Rd",
+				"line2": "",
+				"postal_code": "00802",
+				"region": "y"
+			},
+			"canonical_hex": "616765636865636b2d736869702d746f2d76310a393a63616665cc812072640a303a0a353a30303830320a323a5649"
+		},
+		{
+			"name": "composed accent",
+			"address": {
+				"city": "x",
+				"country": "VI",
+				"line1": "Café Rd",
+				"line2": "",
+				"postal_code": "00802",
+				"region": "y"
+			},
+			"canonical_hex": "616765636865636b2d736869702d746f2d76310a383a636166c3a92072640a303a0a353a30303830320a323a5649"
+		},
+		{
+			"name": "length prefix separates fields",
+			"address": {
+				"city": "x",
+				"country": "US",
+				"line1": "1 A",
+				"line2": "St",
+				"postal_code": "1",
+				"region": "y"
+			},
+			"canonical_hex": "616765636865636b2d736869702d746f2d76310a333a3120610a323a73740a313a310a323a5553"
+		},
+		{
+			"name": "length prefix separates fields 2",
+			"address": {
+				"city": "x",
+				"country": "US",
+				"line1": "1",
+				"line2": "A St",
+				"postal_code": "1",
+				"region": "y"
+			},
+			"canonical_hex": "616765636865636b2d736869702d746f2d76310a313a310a343a612073740a313a310a323a5553"
+		},
+		{
+			"name": "city and region ignored",
+			"address": {
+				"city": "Other City",
+				"country": "US",
+				"line1": "123 Main St",
+				"line2": "",
+				"postal_code": "62701",
+				"region": "ZZ"
+			},
+			"canonical_hex": "616765636865636b2d736869702d746f2d76310a31313a313233206d61696e2073740a303a0a353a36323730310a323a5553"
+		},
+		{
+			"name": "apo",
+			"address": {
+				"city": "APO",
+				"country": "US",
+				"line1": "PSC 802 Box 74",
+				"line2": "",
+				"postal_code": "09499-0074",
+				"region": "AE"
+			},
+			"canonical_hex": "616765636865636b2d736869702d746f2d76310a31343a7073632038303220626f782037340a303a0a31303a30393439392d303037340a323a5553"
+		},
+		{
+			"name": "vertical tab and form feed",
+			"address": {
+				"city": "x",
+				"country": "US",
+				"line1": "1\u000bA\fSt\r\n",
+				"line2": "",
+				"postal_code": "1",
+				"region": "y"
+			},
+			"canonical_hex": "616765636865636b2d736869702d746f2d76310a363a3120612073740a303a0a313a310a323a5553"
+		}
+	]
+}

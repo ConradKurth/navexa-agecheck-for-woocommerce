@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schemas.wp.org/trunk/block.json",
+  "apiVersion": 3,
+  "name": "navexa-agecheck/verify-age-no-payment",
+  "version": "0.1.0",
+  "title": "Age verification (orders without payment)",
+  "description": "Navexa AgeCheck: the Verify age button for age-restricted orders that need no payment, where WooCommerce hides the payment step. Shown only then.",
+  "category": "woocommerce",
+  "keywords": [
+    "age",
+    "verification",
+    "navexa"
+  ],
+  "textdomain": "navexa-agecheck-for-woocommerce",
+  "parent": [
+    "woocommerce/checkout-fields-block"
+  ],
+  "supports": {
+    "html": false,
+    "align": false,
+    "multiple": false,
+    "reusable": false,
+    "inserter": false,
+    "lock": false
+  },
+  "attributes": {
+    "lock": {
+      "type": "object",
+      "default": {
+        "remove": true,
+        "move": false
+      }
+    }
+  },
+  "editorScript": "file:./index.js"
+}

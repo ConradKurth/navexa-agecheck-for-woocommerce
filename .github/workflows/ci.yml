@@ -67,11 +67,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:mock
-      # The loader (assets/src/loader) and block sources arrive in W1/W2 with
-      # their "build" script; until then this is a no-op.
-      - run: npm run build --if-present
+      - run: npm run test:loader
+      - run: npm run typecheck
+      # The loader (esbuild) and the checkout block (wp-scripts); the built
+      # files are committed, so the build must reproduce them exactly.
+      - run: npm run build
       - name: Built assets match their sources
-        run: git diff --exit-code -- assets/
+        run: git diff --exit-code -- assets/ && test -z "$(git status --porcelain -- assets/)"
 
   wp-env:
     name: wp-env smoke (WP ${{ matrix.wp }}, WC ${{ matrix.wc }}, PHP ${{ matrix.php }}, HPOS ${{ matrix.hpos }})
@@ -109,6 +111,14 @@ jobs:
         run: $WP_ENV run cli wp option update woocommerce_custom_orders_table_enabled ${{ matrix.hpos }}
       - name: Smoke
         run: $WP_ENV run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce env NAVEXA_AGECHECK_SMOKE_HPOS=${{ matrix.hpos }} wp eval-file tests/wp-env/smoke.php
+      - name: Pre-payment flow over HTTP (W2)
+        run: |
+          setup=$($WP_ENV run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp eval-file tests/wp-env/prepayment-setup.php | grep '^{')
+          node tests/wp-env/prepayment.mjs --site http://localhost:8888 --mock http://localhost:8787 \
+            --product "$(echo "$setup" | jq -r .product)" --classic "$(echo "$setup" | jq -r .classic_checkout)" \
+            --exempt "$(echo "$setup" | jq -r .exempt_product)" --order-pay "$(echo "$setup" | jq -r .order_pay)"
+      - name: Pre-payment orders through the hold and release (W1 + W2)
+        run: $WP_ENV run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp eval-file tests/wp-env/prepayment-orders.php
       - name: Logs on failure
         if: failure()
         run: |

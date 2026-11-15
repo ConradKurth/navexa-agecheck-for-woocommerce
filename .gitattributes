@@ -13,3 +13,5 @@
 /phpstan.neon.dist export-ignore
 /CLAUDE.md export-ignore
 /README.md export-ignore
+/webpack.config.cjs export-ignore
+/tsconfig.json export-ignore

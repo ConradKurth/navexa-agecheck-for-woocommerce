@@ -1,7 +1,10 @@
 <?php
 /**
- * Uninstall: deletes the plugin's options, secrets and cached connection info.
- * Order meta is kept as an audit trail.
+ * Uninstall: deletes the plugin's options, secrets, locks, webhook markers,
+ * cached connection info, scheduled actions, the rate-limit table and per-user
+ * notice state.
+ * Order meta (and the "Awaiting age check" orders) is kept as an audit trail;
+ * product age-check settings are kept too.
  *
  * @package Navexa\AgeCheck
  */
@@ -25,9 +28,12 @@ function navexa_agecheck_uninstall_site(): void {
 	foreach ( $names as $name ) {
 		delete_option( $name );
 	}
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange -- uninstall: drop the plugin's own rate-limit table.
+	$wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}navexa_agecheck_rate_limits" );
 	if ( function_exists( 'as_unschedule_all_actions' ) ) {
 		as_unschedule_all_actions( '', array(), 'navexa-agecheck' );
 	}
+	wp_clear_scheduled_hook( 'navexa_agecheck_sweep_cron' );
 }
 
 if ( is_multisite() ) {
@@ -44,3 +50,6 @@ if ( is_multisite() ) {
 } else {
 	navexa_agecheck_uninstall_site();
 }
+
+// User meta is network-wide: the dismissed-notice state of every user.
+delete_metadata( 'user', 0, 'navexa_agecheck_dismissed_counts', '', true );

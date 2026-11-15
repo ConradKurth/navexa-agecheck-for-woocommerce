@@ -10,8 +10,9 @@ namespace Navexa\AgeCheck;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * What GetIntegrationInfo says about one API key and the store's origin:
- * {livemode, scopes, origin_allowed, minimum_age, display_name}.
+ * What GetIntegrationInfo (E10a, in production since tax v0.0.164) says
+ * about one API key and the store's origin: {livemode, scopes,
+ * origin_allowed, minimum_age, display_name, organization_id}.
  *
  * Proto3 JSON omits zero values, so a missing field reads as false, [], 0 or
  * ''. A missing livemode therefore reads as test mode, which the live gate
@@ -63,6 +64,14 @@ final class IntegrationInfo {
 	public $display_name = '';
 
 	/**
+	 * The key's Navexa organization (the organization_id every webhook payload
+	 * carries), or ''. Two keys of one organization answer the same id.
+	 *
+	 * @var string
+	 */
+	public $organization_id = '';
+
+	/**
 	 * Builds the value from a decoded response. Accepts proto3 JSON names
 	 * (originAllowed) and the original field names (origin_allowed).
 	 *
@@ -91,6 +100,11 @@ final class IntegrationInfo {
 		if ( is_string( $name ) ) {
 			$info->display_name = $name;
 		}
+
+		$org = self::field( $body, 'organizationId', 'organization_id' );
+		if ( is_string( $org ) ) {
+			$info->organization_id = $org;
+		}
 		return $info;
 	}
 
@@ -102,11 +116,12 @@ final class IntegrationInfo {
 	public static function from_array( array $data ): self {
 		return self::from_response(
 			array(
-				'livemode'       => isset( $data['livemode'] ) ? $data['livemode'] : false,
-				'scopes'         => isset( $data['scopes'] ) ? $data['scopes'] : array(),
-				'origin_allowed' => isset( $data['origin_allowed'] ) ? $data['origin_allowed'] : false,
-				'minimum_age'    => isset( $data['minimum_age'] ) ? $data['minimum_age'] : null,
-				'display_name'   => isset( $data['display_name'] ) ? $data['display_name'] : '',
+				'livemode'        => isset( $data['livemode'] ) ? $data['livemode'] : false,
+				'scopes'          => isset( $data['scopes'] ) ? $data['scopes'] : array(),
+				'origin_allowed'  => isset( $data['origin_allowed'] ) ? $data['origin_allowed'] : false,
+				'minimum_age'     => isset( $data['minimum_age'] ) ? $data['minimum_age'] : null,
+				'display_name'    => isset( $data['display_name'] ) ? $data['display_name'] : '',
+				'organization_id' => isset( $data['organization_id'] ) ? $data['organization_id'] : '',
 			)
 		);
 	}
@@ -114,15 +129,16 @@ final class IntegrationInfo {
 	/**
 	 * Plain array for caching.
 	 *
-	 * @return array{livemode: bool, scopes: string[], origin_allowed: bool, minimum_age: int|null, display_name: string}
+	 * @return array{livemode: bool, scopes: string[], origin_allowed: bool, minimum_age: int|null, display_name: string, organization_id: string}
 	 */
 	public function to_array(): array {
 		return array(
-			'livemode'       => $this->livemode,
-			'scopes'         => $this->scopes,
-			'origin_allowed' => $this->origin_allowed,
-			'minimum_age'    => $this->minimum_age,
-			'display_name'   => $this->display_name,
+			'livemode'        => $this->livemode,
+			'scopes'          => $this->scopes,
+			'origin_allowed'  => $this->origin_allowed,
+			'minimum_age'     => $this->minimum_age,
+			'display_name'    => $this->display_name,
+			'organization_id' => $this->organization_id,
 		);
 	}
 

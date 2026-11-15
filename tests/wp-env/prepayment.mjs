@@ -296,6 +296,8 @@ await group("Store API order-pay takes the hold path: a passed session check is 
     key,
     billing_email: email,
     billing_address: { ...US, email },
+    // WC 9.9 order-pay passes this straight to set_shipping_address() (null = fatal); the block checkout always sends it.
+    shipping_address: { ...US },
     payment_method: "cod",
   })
   assert.equal(paid.status, 200, JSON.stringify(paid.json).slice(0, 400))

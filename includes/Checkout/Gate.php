@@ -68,6 +68,7 @@ final class Gate {
 		5 => 'DOC_PENDING',
 		6 => 'HELD',
 		7 => 'FAILED',
+		8 => 'AWAITING_IDENTITY',
 	);
 
 	/**

@@ -169,6 +169,9 @@ await group("block flow: start, hosted page, return page, refresh, place order",
   assert.equal(create.body.intendedShipTo.postalCode, "62701")
   assert.equal(create.body.returnUrl, `${SITE}/?wc-api=navexa_agecheck_return&popup=1`)
   assert.equal(create.body.identity?.dob, undefined)
+  assert.deepEqual(create.body.identity, { name: "Pat Doe", residentialAddress: create.body.intendedShipTo }, "the data match pair, in the ship-to's form; no email")
+  const recorded = (await (await fetch(`${MOCK}/__mock/verifications`)).json()).verifications.at(-1)
+  assert.equal(recorded.dataMatch, "awaiting", "data-eligible: billing is the ship-to (E4b collects the DOB)")
 
   // The loader's poll: Bearer token, CORS for the store origin.
   const token = new URL(started.hosted_url).pathname.slice(3)
@@ -195,6 +198,70 @@ await group("block flow: start, hosted page, return page, refresh, place order",
   assert.equal(placed.status, 200, JSON.stringify(placed.json).slice(0, 400))
   assert.ok(placed.json.order_id > 0)
   verified = s
+})
+
+/** The last verification the mock created, as it records it (never the identity). */
+async function lastVerification() {
+  return (await (await fetch(`${MOCK}/__mock/verifications`)).json()).verifications.at(-1)
+}
+
+/** The last CreateVerification request body. */
+async function lastCreate() {
+  return (await (await fetch(`${MOCK}/__mock/requests`)).json()).filter((r) => r.rpc === "CreateVerification").pop().body
+}
+
+await group("billing elsewhere than the ship-to: still verifies (ID check), no identity sent", async () => {
+  const s = new Shopper()
+  const elsewhere = { ...US, address_1: "9 Elm St", address_2: "" }
+  await s.addProduct(elsewhere, US)
+  const started = await s.ageCheck("start")
+  assert.equal(started.status, "pending")
+  const create = await lastCreate()
+  assert.equal(create.identity, undefined, "never data-eligible: no billing name or address leaves the store")
+  assert.equal(create.intendedShipTo.line1, "123 Main St")
+  assert.equal(create.documentNameCheck, "DOCUMENT_NAME_CHECK_NONE")
+  assert.equal((await lastVerification()).dataMatch, "ineligible")
+  await decideOnHostedPage(started.hosted_url, "pass")
+  assert.equal((await s.ageCheck("refresh")).status, "passed")
+  const placed = await s.checkout(elsewhere, US)
+  assert.equal(placed.status, 200, JSON.stringify(placed.json).slice(0, 400))
+})
+
+await group("non-US billing or no name: no identity at all (ID check)", async () => {
+  const s = new Shopper()
+  const abroad = { ...US, city: "Toronto", state: "ON", postcode: "M5V 2T6", country: "CA" }
+  await s.addProduct(abroad, US)
+  assert.equal((await s.ageCheck("start")).status, "pending")
+  assert.equal((await lastCreate()).identity, undefined)
+  const t = new Shopper()
+  await t.addProduct({ ...US, first_name: "", last_name: "" }, US)
+  assert.equal((await t.ageCheck("start")).status, "pending")
+  assert.equal((await lastCreate()).identity, undefined)
+})
+
+await group("data match (E4b served): consent + DOB on the hosted page, DATA_VERIFIED admits the checkout", async () => {
+  await mock("config", { awaitingIdentity: "served" })
+  try {
+    const s = new Shopper()
+    const match = { ...US, last_name: "Match" }
+    await s.addProduct(match)
+    const started = await s.ageCheck("start")
+    assert.equal(started.status, "pending", "AWAITING_IDENTITY gets a hosted link")
+    assert.equal((await lastVerification()).status, "awaiting_identity")
+    const res = await fetch(started.hosted_url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "decision=identity&dob=1990-01-01&consent=yes",
+      redirect: "manual",
+    })
+    assert.equal(res.status, 303)
+    assert.equal((await lastVerification()).passClass, "data_verified")
+    assert.deepEqual(await s.ageCheck("refresh"), { v: 1, required: true, status: "passed" })
+    const placed = await s.checkout(match)
+    assert.equal(placed.status, 200, JSON.stringify(placed.json).slice(0, 400))
+  } finally {
+    await mock("config", { awaitingIdentity: "absent" })
+  }
 })
 
 await group("block checkout without a check is refused", async () => {
@@ -426,6 +493,38 @@ await group("classic page: Store API nonce bootstrap, start, and ?wc-ajax=checko
 
   const placed = await submit(US)
   assert.equal(placed.result, "success", JSON.stringify(placed).slice(0, 400))
+
+  // WooCommerce's classic checkout update saves the billing address but not
+  // the name; the plugin copies the typed name so the start sends it.
+  const guest = new Shopper()
+  await guest.addProduct({ ...US, first_name: "", last_name: "" }, US)
+  const classicHtml = await (await guest.fetch(`${SITE}/?page_id=${CLASSIC}`, { redirect: "follow" })).text()
+  const reviewNonce = /"update_order_review_nonce":"([^"]+)"/.exec(classicHtml)?.[1]
+  assert.ok(reviewNonce, "update_order_review nonce")
+  const typed = form({ ...US, first_name: "Robin", last_name: "Typed" })
+  const review = new URLSearchParams({
+    security: reviewNonce,
+    payment_method: "cod",
+    country: "US",
+    state: "IL",
+    postcode: US.postcode,
+    city: US.city,
+    address: US.address_1,
+    address_2: US.address_2,
+    s_country: "US",
+    s_state: "IL",
+    s_postcode: US.postcode,
+    s_city: US.city,
+    s_address: US.address_1,
+    s_address_2: US.address_2,
+    has_full_address: "true",
+    post_data: typed.toString(),
+  })
+  const reviewed = await guest.fetch(`${SITE}/?wc-ajax=update_order_review`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: review.toString() })
+  assert.equal(reviewed.status, 200)
+  guest.nonce = null
+  assert.equal((await guest.ageCheck("start")).status, "pending")
+  assert.equal((await lastCreate()).identity?.name, "Robin Typed", "the name typed on the classic form")
 
   const moved = new Shopper()
   await moved.addProduct()

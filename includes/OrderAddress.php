@@ -253,6 +253,42 @@ final class OrderAddress {
 	}
 
 	/**
+	 * Whether $a and $b are one residence by the engine's data-match
+	 * comparison (domain.sameResidence, which DataMatchEligible uses): the
+	 * fields hash() covers (lines folded, postal code upper-cased without
+	 * whitespace, country upper-cased; city and region left out), with a
+	 * postal code that starts with five digits cut to them (a ZIP+4 read as
+	 * its ZIP). Never stricter than the engine, or an eligible shopper would
+	 * lose the data match.
+	 *
+	 * @param array<string, string> $a Address message.
+	 * @param array<string, string> $b Address message.
+	 */
+	public static function same_residence( array $a, array $b ): bool {
+		return self::residence( $a ) === self::residence( $b );
+	}
+
+	/**
+	 * $address's same_residence() form.
+	 *
+	 * @param array<string, string> $address Address message.
+	 */
+	private static function residence( array $address ): string {
+		$postal = (string) preg_replace( '/' . self::SPACE_CLASS . '+/u', '', isset( $address['postalCode'] ) ? (string) $address['postalCode'] : '' );
+		if ( 1 === preg_match( '/^[0-9]{5}/', $postal ) ) {
+			$postal = substr( $postal, 0, 5 );
+		}
+		return ShipTo::engine_canonical(
+			array(
+				'line1'       => isset( $address['line1'] ) ? (string) $address['line1'] : '',
+				'line2'       => isset( $address['line2'] ) ? (string) $address['line2'] : '',
+				'postal_code' => $postal,
+				'country'     => isset( $address['country'] ) ? (string) $address['country'] : '',
+			)
+		);
+	}
+
+	/**
 	 * $value with every whitespace run (SPACE_CLASS) collapsed to one space
 	 * and the ends trimmed (Go's strings.Join(strings.Fields(s), " ")).
 	 *

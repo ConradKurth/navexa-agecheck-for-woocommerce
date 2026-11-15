@@ -58,6 +58,8 @@ final class Settings extends \WC_Settings_Page {
 			add_filter( 'woocommerce_admin_settings_sanitize_option_' . $option, array( $this, 'sanitize_secret' ), 10, 3 );
 		}
 		add_filter( 'woocommerce_admin_settings_sanitize_option_' . Options::TURNSTILE_SITE_KEY, array( $this, 'sanitize_turnstile_site_key' ), 10, 3 );
+		add_filter( 'woocommerce_admin_settings_sanitize_option_' . Options::ENTRY_GATE_DAYS, array( $this, 'sanitize_gate_days' ), 10, 3 );
+		add_filter( 'woocommerce_admin_settings_sanitize_option_' . Options::ENTRY_GATE_EXIT_URL, array( $this, 'sanitize_gate_exit_url' ), 10, 3 );
 	}
 
 	/**
@@ -235,6 +237,56 @@ final class Settings extends \WC_Settings_Page {
 			),
 			array(
 				'id'   => 'navexa_agecheck_protection_section',
+				'type' => 'sectionend',
+			),
+			array(
+				'id'    => 'navexa_agecheck_gate_section',
+				'type'  => 'title',
+				'title' => __( 'Entry age gate (self-attestation)', 'navexa-agecheck-for-woocommerce' ),
+				'desc'  => self::gate_section_text(),
+			),
+			array(
+				'id'       => Options::ENTRY_GATE,
+				'type'     => 'checkbox',
+				'title'    => __( 'Entry age gate', 'navexa-agecheck-for-woocommerce' ),
+				'desc'     => __( 'Ask visitors to confirm their age when they enter the store (self-attestation, not age verification)', 'navexa-agecheck-for-woocommerce' ),
+				'desc_tip' => __( 'Visitors only click a button; anyone can say they are old enough. The age check at checkout still verifies every age-restricted order. Off by default.', 'navexa-agecheck-for-woocommerce' ),
+				'default'  => 'no',
+			),
+			array(
+				'id'      => Options::ENTRY_GATE_SCOPE,
+				'type'    => 'select',
+				'title'   => __( 'Where the gate shows', 'navexa-agecheck-for-woocommerce' ),
+				'default' => Options::GATE_SCOPE_SITE,
+				'options' => array(
+					Options::GATE_SCOPE_SITE       => __( 'Every page of the store', 'navexa-agecheck-for-woocommerce' ),
+					Options::GATE_SCOPE_RESTRICTED => __( 'Only age-restricted product pages and their category and tag pages', 'navexa-agecheck-for-woocommerce' ),
+				),
+			),
+			array(
+				'id'                => Options::ENTRY_GATE_DAYS,
+				'type'              => 'number',
+				'title'             => __( 'Remember the answer for (days)', 'navexa-agecheck-for-woocommerce' ),
+				'desc'              => __( 'Kept in the visitor\'s own browser. 0 remembers it only in the browser tab where they answered; a new tab or window asks again.', 'navexa-agecheck-for-woocommerce' ),
+				'default'           => (string) Options::DEFAULT_GATE_DAYS,
+				'custom_attributes' => array(
+					'min'  => '0',
+					'max'  => (string) Options::MAX_GATE_DAYS,
+					'step' => '1',
+				),
+				'css'               => 'width:6em',
+			),
+			array(
+				'id'          => Options::ENTRY_GATE_EXIT_URL,
+				'type'        => 'url',
+				'title'       => __( 'Send under-age visitors to', 'navexa-agecheck-for-woocommerce' ),
+				'desc'        => __( 'An absolute http or https address, such as a page outside the age-restricted part of your store (the gate never shows there). Blank keeps them on the gate with a short message.', 'navexa-agecheck-for-woocommerce' ),
+				'default'     => '',
+				'placeholder' => 'https://',
+				'class'       => 'regular-text',
+			),
+			array(
+				'id'   => 'navexa_agecheck_gate_section',
 				'type' => 'sectionend',
 			),
 			array(
@@ -460,6 +512,54 @@ final class Settings extends \WC_Settings_Page {
 			update_option( $id, $raw, false );
 		}
 		return null;
+	}
+
+	/**
+	 * The entry gate section's explanation: self-attestation, what it asks
+	 * and where its age and store name come from. Reads stored values only.
+	 */
+	private static function gate_section_text(): string {
+		return sprintf(
+			/* translators: 1: minimum age, e.g. 21; 2: the store's name. */
+			__( 'An optional prompt when visitors enter the store: "I am %1$d or older" or "I am under %1$d", under the store name "%2$s". It is self-attestation, not age verification: it only asks, and anyone can answer yes. The age check at checkout still applies to every age-restricted order. The age is the minimum age set in the Navexa dashboard (21 until AgeCheck has answered), and the name is the display name set there, or this site\'s title. It needs no API key, sends nothing to your server or to Navexa, loads nothing from another site and works with page caching. Never shown in wp-admin, on the login page or to the REST API.', 'navexa-agecheck-for-woocommerce' ),
+			Options::store_minimum_age(),
+			Options::store_display_name()
+		);
+	}
+
+	/**
+	 * Saves the remember-days as a whole number from 0 to Options::MAX_GATE_DAYS
+	 * (anything else: the default).
+	 *
+	 * @param mixed $value     Value after wc_clean().
+	 * @param mixed $option    Field definition.
+	 * @param mixed $raw_value Unslashed posted value.
+	 * @return string
+	 */
+	public function sanitize_gate_days( $value, $option, $raw_value ) {
+		return (string) Options::gate_days( is_string( $raw_value ) ? trim( $raw_value ) : $raw_value );
+	}
+
+	/**
+	 * Saves the exit URL when it is blank or an absolute http(s) URL; keeps
+	 * the saved one with an error otherwise.
+	 *
+	 * @param mixed $value     Value after wc_clean().
+	 * @param mixed $option    Field definition.
+	 * @param mixed $raw_value Unslashed posted value.
+	 * @return string
+	 */
+	public function sanitize_gate_exit_url( $value, $option, $raw_value ) {
+		$raw = is_string( $raw_value ) ? trim( $raw_value ) : '';
+		if ( '' === $raw ) {
+			return '';
+		}
+		$url = Options::exit_url( $raw );
+		if ( '' !== $url ) {
+			return $url;
+		}
+		\WC_Admin_Settings::add_error( __( 'The under-age address must be an absolute http or https URL. The saved address was kept.', 'navexa-agecheck-for-woocommerce' ) );
+		return Options::entry_gate_exit_url();
 	}
 
 	/**

@@ -39,7 +39,11 @@ defined( 'ABSPATH' ) || exit;
  *   and ship-to, the billing name, email and address as a partial identity
  *   (never a date of birth) and document_name_check REQUIRED, because an
  *   emailed link must match the ID to the billing name (owner decision Q7).
- *   Then SendVerificationLink through a LinkSender.
+ *   The billing address (OrderAddress::billing(), the same normalizer as the
+ *   ship-to) is the residential address the engine's data match (E5,
+ *   data_then_doc) compares with the ship-to: an order shipping to its
+ *   billing address may pass on the data match, any other takes the ID
+ *   check. Then SendVerificationLink through a LinkSender.
  *
  * AttachOrder answers FAILED_PRECONDITION for a verification bound to any
  * order, this one included, so a re-attach after its idempotency key expired
@@ -64,8 +68,8 @@ final class Binding {
 
 	/**
 	 * Verification statuses that wait on the shopper, so a link helps.
-	 * awaiting_identity is E4b's (not in the proto yet); listed so the first
-	 * engine release that sends it needs no plugin release.
+	 * awaiting_identity is E4b's (the data match's consent and DOB step);
+	 * listed so the engine release that sends it needs no plugin release.
 	 */
 	const AWAITING_SHOPPER = array( 'created', 'needs_doc', 'doc_pending', 'awaiting_identity' );
 

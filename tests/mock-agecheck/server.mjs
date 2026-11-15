@@ -8,32 +8,57 @@
 // serve is connect-go's plain-text 404. Zero dependencies (Node 20+).
 //
 // Follows the tax repo's proto/agecheck/v1/verification.proto at origin/main
-// (E3, E9 in tax v0.0.163; E4a, E10a in tax v0.0.164). Served RPCs:
+// (E3, E9 in tax v0.0.163; E4a, E10a in tax v0.0.164; E5 data_then_doc and
+// PASS_CLASS_DATA_VERIFIED in tax v0.0.167; AWAITING_IDENTITY is E4b's, served
+// only with config awaitingIdentity: "served"). Served RPCs:
 //   GetIntegrationInfo {livemode, scopes, originAllowed, minimumAge, displayName, organizationId}
 //   CreateVerification: identity optional; returnUrl (5), documentNameCheck (6),
 //     intendedShipTo (7) with the proto's rules (order-bound is always REQUIRED
 //     and needs identity.name; NONE needs intendedShipTo; unset is REQUIRED
-//     with a name and NONE without); US-only ship-to (E3)
+//     with a name and NONE without); a sent name that trims to nothing is
+//     invalid_argument, as the engine's Identity.ValidateFor; US-only
+//     ship-to (E3)
 //   GetVerification, AttachOrder (ship_to_changed against intendedShipTo),
 //   GetClearance, ReportShipment, ListVerifications, CreateHostedSession
 //   SendVerificationLink (engine PR E8c, not in the proto yet; only with config links: "served")
 // Mutating RPCs replay their answer per idempotency key (a different request
 // under the same key is invalid_argument), like the engine.
-// A new verification is decided by config createOutcome (default needs_doc);
-// identity.name ending in Docpass passes (doc_only), Docdecline or
-// Docunderage fails, Dataunattested passes as db_unattested.
+// A new verification is decided by the org's pass policy (config org.passPolicy):
+//   data_then_doc (default; E5): the data match runs only for an identity with
+//     a name and a residential address, a ship-to (or intended ship-to) that
+//     is a US address equal to it (lines folded, ZIP+4 read as its ZIP; city
+//     and region not compared), a DOB, and data consent (config dataConsent
+//     "off", or the hosted page's consent step). Eligible without DOB or
+//     consent: AWAITING_IDENTITY with a hosted link when config
+//     awaitingIdentity is "served" (E4b), else NEEDS_DOC as on main. Anything
+//     else NEEDS_DOC. The test-mode data match answers by the name's last word:
+//     Match passes as data_verified; anything else needs a document. Never held.
+//   no_gov_db (ID only): NEEDS_DOC, never a data match.
+//   default (legacy): the identity must carry name, dob and residential
+//     address (invalid_argument naming the first missing); Match passes as
+//     db_verified, Error or Slow holds, anything else NEEDS_DOC.
+// A sent DOB under the org's minimum age fails at once under every policy.
+// Config createOutcome other than needs_doc overrides the policy (fault
+// injection). Then, for a NEEDS_DOC answer: identity.name ending in Docpass
+// passes (doc_only), Docdecline or Docunderage fails, Dataunattested passes as
+// db_unattested. GET /__mock/verifications reports each verification's
+// dataMatch route (run, awaiting, ineligible, or none) and never the identity.
 //
 // Hosted surface (E9):
 //   OPTIONS /hosted/v1/status   preflight: 204 for any http(s) Origin
 //   GET     /hosted/v1/status   Authorization: Bearer <session token> -> {status}; CORS only for allowed origins
-//   GET     /v/<token>          a stand-in hosted page with Pass and Fail buttons (sends COOP same-origin)
-//   POST    /v/<token>          decision=pass|fail: decides, then 303 to the signed return URL
+//   GET     /v/<token>          a stand-in hosted page with Pass and Fail buttons (sends COOP same-origin); for
+//                               AWAITING_IDENTITY, E4b's consent + DOB step (dob, consent=yes) and "Use my ID instead"
+//   POST    /v/<token>          decision=pass|fail: decides, then 303 to the signed return URL;
+//                               decision=identity|use_id on AWAITING_IDENTITY: the data match or the ID check
 //   GET     /v/<token>/status   the page's own poll (no CORS)
 //
 // Control endpoints for tests (never part of the engine):
 //   GET  /__mock/health    {ok: true}
 //   POST /__mock/reset     restore the default state (any body)
-//   POST /__mock/config    merge {org?, integrationInfo?: "served"|"absent", links?: "served"|"absent", keys?, createOutcome?, hostedBase?}
+//   POST /__mock/config    merge {org? (passPolicy: data_then_doc|no_gov_db|default), integrationInfo?: "served"|"absent",
+//                          links?: "served"|"absent", awaitingIdentity?: "served"|"absent", dataConsent?: "required"|"off",
+//                          keys?, createOutcome?, hostedBase?}
 //   POST /__mock/faults    queue {rpc?: "*"|Rpc, status?, code?, message?, retryAfter?, delayMs?, times?}
 //   POST /__mock/verifications  update {id, status?, passClass?, consumed?}: decide a verification as the shopper would
 //   POST /__mock/decide    {id, status, passClass?}: the same, status required
@@ -100,6 +125,7 @@ const STATUS = {
   doc_pending: "VERIFICATION_STATUS_DOC_PENDING",
   held: "VERIFICATION_STATUS_HELD",
   failed: "VERIFICATION_STATUS_FAILED",
+  awaiting_identity: "VERIFICATION_STATUS_AWAITING_IDENTITY",
 }
 
 /** PassClass (proto) by the mock's short name. */
@@ -108,7 +134,14 @@ const PASS_CLASS = {
   db_unattested: "PASS_CLASS_DB_UNATTESTED",
   doc_only: "PASS_CLASS_DOC_ONLY",
   merchant_override: "PASS_CLASS_MERCHANT_OVERRIDE",
+  data_verified: "PASS_CLASS_DATA_VERIFIED",
 }
+
+/** Pass policies the mock models (org.passPolicy). */
+const PASS_POLICIES = ["data_then_doc", "no_gov_db", "default"]
+
+/** States the hosted page (and CreateHostedSession) serves. */
+const HOSTED_STATES = ["needs_doc", "doc_pending", "awaiting_identity"]
 
 const NAME_CHECKS = ["DOCUMENT_NAME_CHECK_UNSPECIFIED", "DOCUMENT_NAME_CHECK_REQUIRED", "DOCUMENT_NAME_CHECK_NONE"]
 
@@ -118,11 +151,18 @@ function defaultState() {
       id: "org_mock000001",
       minimumAge: 21,
       displayName: "Mock Store",
+      // The pass policy new verifications run under (PASS_POLICIES).
+      passPolicy: "data_then_doc",
       // wp-env's development and tests sites.
       allowedOrigins: ["http://localhost:8888", "http://localhost:8889"],
     },
     integrationInfo: "served",
     links: "absent",
+    // E4b's AWAITING_IDENTITY: "served" sends a data-eligible verification
+    // without DOB or consent there; "absent" (main today) sends it to NEEDS_DOC.
+    awaitingIdentity: "absent",
+    // AGECHECK_DATA_CONSENT: "required" (default) or "off".
+    dataConsent: "required",
     keys: structuredClone(FIXTURE_KEYS),
     // What CreateVerification decides at creation: "needs_doc" (no DOB was
     // sent, so the shopper must show an ID), "passed" or "failed".
@@ -173,6 +213,45 @@ function shipToKey(a) {
   if (!a || typeof a !== "object") return null
   const fold = (v) => String(v ?? "").toLowerCase().split(/\s+/).filter(Boolean).join(" ")
   return [fold(a.line1), fold(a.line2), String(a.postalCode ?? "").replace(/\s+/g, "").toUpperCase(), String(a.country ?? "").trim().toUpperCase()].join("\n")
+}
+
+/** The data match's address comparison (domain.sameResidence): shipToKey with a leading ZIP read as its five digits. */
+function residenceKey(a) {
+  const key = shipToKey(a)
+  if (key === null) return null
+  const parts = key.split("\n")
+  if (/^[0-9]{5}/.test(parts[2])) parts[2] = parts[2].slice(0, 5)
+  return parts.join("\n")
+}
+
+/**
+ * domain.DataMatchEligible: "ineligible" unless the identity has a name and a
+ * residential address, a ship-to is known, both are US addresses and they are
+ * one residence; then "awaiting" without a DOB or consent, else "run".
+ */
+export function dataMatchRoute(identity, shipTo, consentOK) {
+  const name = typeof identity?.name === "string" ? identity.name.trim() : ""
+  const home = identity?.residentialAddress
+  if (name === "" || !home || !shipTo) return "ineligible"
+  if (addressProblem(home, "a") || usOnlyProblem(home, "a") || addressProblem(shipTo, "s") || usOnlyProblem(shipTo, "s")) return "ineligible"
+  if (residenceKey(home) !== residenceKey(shipTo)) return "ineligible"
+  return typeof identity.dob === "string" && identity.dob !== "" && consentOK ? "run" : "awaiting"
+}
+
+/** The test-mode data match's answer, by the name's last word: "match" or "nomatch". */
+function dataAnswer(name) {
+  const last = String(name ?? "").trim().split(/\s+/).pop() ?? ""
+  return last.toLowerCase() === "match" ? "match" : last.toLowerCase() === "error" || last.toLowerCase() === "slow" ? "error" : "nomatch"
+}
+
+/** Whether a YYYY-MM-DD date of birth is under minimumAge today (UTC). */
+function underAge(dob, minimumAge) {
+  const m = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(String(dob ?? ""))
+  if (!m) return false
+  const now = new Date()
+  let age = now.getUTCFullYear() - Number(m[1])
+  if (now.getUTCMonth() + 1 < Number(m[2]) || (now.getUTCMonth() + 1 === Number(m[2]) && now.getUTCDate() < Number(m[3]))) age--
+  return age < minimumAge
 }
 
 /** An Address message's first problem (Address rules), or null. */
@@ -345,6 +424,8 @@ function createProblem(state, key, request) {
   const name = typeof identity?.name === "string" ? identity.name : ""
   if (identity != null) {
     if (identity.name != null && (typeof identity.name !== "string" || [...identity.name].length > 256)) return "identity.name: must be at most 256 characters"
+    // domain.Identity.ValidateFor: a name that is sent counts as sent before it is trimmed, then must not trim to nothing.
+    if (typeof identity.name === "string" && identity.name !== "" && identity.name.trim() === "") return "identity.name: is required"
     if (identity.dob != null && !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(identity.dob)) return "identity.dob: must be YYYY-MM-DD"
     if (identity.residentialAddress != null) {
       const problem = addressProblem(identity.residentialAddress, "identity.residential_address")
@@ -363,13 +444,42 @@ function createProblem(state, key, request) {
     if (effective === "DOCUMENT_NAME_CHECK_NONE" && request.intendedShipTo == null) return "intended_ship_to: is required with document_name_check NONE"
   }
   if (request.returnUrl != null && !returnUrlAllowed(state, request.returnUrl)) return "return_url: must be an absolute URL on one of the organization's allowed origins"
+  if (state.org.passPolicy === "default") {
+    // The legacy policy runs the database check on every create: it needs the whole identity.
+    if (name.trim() === "") return "identity.name: is required"
+    if (typeof identity?.dob !== "string" || identity.dob === "") return "identity.dob: is required"
+    if (identity?.residentialAddress == null) return "identity.residential_address: is required"
+  }
   return null
+}
+
+/**
+ * What a new verification's pass policy decides at creation (before the
+ * test-mode document magic names): [status, passClass, dataMatch route].
+ */
+function decideByPolicy(state, identity, shipTo) {
+  if (typeof identity.dob === "string" && identity.dob !== "" && underAge(identity.dob, state.org.minimumAge)) return ["failed", undefined, "none"]
+  switch (state.org.passPolicy) {
+    case "no_gov_db":
+      return ["needs_doc", undefined, "none"]
+    case "default": {
+      const answer = dataAnswer(identity.name)
+      if (answer === "match") return ["passed", "db_verified", "none"]
+      return [answer === "error" ? "held" : "needs_doc", undefined, "none"]
+    }
+    default: {
+      const route = dataMatchRoute(identity, shipTo, state.dataConsent === "off")
+      if (route === "run") return dataAnswer(identity.name) === "match" ? ["passed", "data_verified", route] : ["needs_doc", undefined, route]
+      if (route === "awaiting" && state.awaitingIdentity === "served") return ["awaiting_identity", undefined, route]
+      return ["needs_doc", undefined, route]
+    }
+  }
 }
 
 /** RPC handlers: (state, keyEntry, request, ctx) => [code?, responseOrMessage], or null when not served. */
 const RPCS = {
   CreateVerification(state, key, request, ctx) {
-    const answer = (v) => [null, { verification: verificationMessage(v, v.status === "needs_doc" ? hostedUrlFor(state, v, v.returnUrl, ctx.host) : undefined) }]
+    const answer = (v) => [null, { verification: verificationMessage(v, v.status === "needs_doc" || v.status === "awaiting_identity" ? hostedUrlFor(state, v, v.returnUrl, ctx.host) : undefined) }]
     return (
       requireScope(key, "agecheck:verify") ??
       idempotent(
@@ -384,11 +494,16 @@ const RPCS = {
           if (hasOrder && boundTo(state, key, request.orderExternalId)) return ["already_exists", "agecheck: order is already bound to a verification"]
           const identity = request.identity ?? {}
           const name = String(identity.name ?? "")
+          const shipTo = request.shipTo ?? request.intendedShipTo ?? null
           let status = state.createOutcome
           let passClass = status === "passed" ? "doc_only" : undefined
-          if (/docpass$/i.test(name)) [status, passClass] = ["passed", "doc_only"]
-          else if (/doc(decline|underage)$/i.test(name)) [status, passClass] = ["failed", undefined]
-          else if (/dataunattested$/i.test(name)) [status, passClass] = ["passed", "db_unattested"]
+          let dataMatch = "none"
+          if (status === "needs_doc") [status, passClass, dataMatch] = decideByPolicy(state, identity, shipTo)
+          if (status === "needs_doc") {
+            if (/docpass$/i.test(name)) [status, passClass] = ["passed", "doc_only"]
+            else if (/doc(decline|underage)$/i.test(name)) [status, passClass] = ["failed", undefined]
+            else if (/dataunattested$/i.test(name)) [status, passClass] = ["passed", "db_unattested"]
+          }
           const now = new Date().toISOString()
           const v = {
             id: `acv_mock${String(state.nextId++).padStart(6, "0")}`,
@@ -399,6 +514,9 @@ const RPCS = {
             shipToKey: hasOrder ? shipToKey(request.shipTo) : null,
             intendedShipToKey: request.intendedShipTo ? shipToKey(request.intendedShipTo) : null,
             hasEmail: typeof identity.email === "string" && identity.email !== "",
+            dataMatch,
+            // The test-mode data match's answer for a later hosted DOB step; never the name itself.
+            dataAnswer: dataMatch === "awaiting" ? dataAnswer(name) : undefined,
             documentNameCheck: request.documentNameCheck ?? "DOCUMENT_NAME_CHECK_UNSPECIFIED",
             returnUrl: request.returnUrl ?? "",
             consumed: false,
@@ -497,7 +615,7 @@ const RPCS = {
     if (denied) return denied
     const v = findVerification(state, key, request.verificationId)
     if (!v) return ["not_found", "agecheck: verification not found"]
-    if (v.status !== "needs_doc" && v.status !== "doc_pending") return ["failed_precondition", "the verification is not waiting on the shopper"]
+    if (!HOSTED_STATES.includes(v.status)) return ["failed_precondition", "the verification is not waiting on the shopper"]
     const returnUrl = request.returnUrl ?? ""
     if (returnUrl !== "" && !returnUrlAllowed(state, returnUrl)) return ["invalid_argument", "return_url: must be an absolute URL on one of the organization's allowed origins"]
     return [
@@ -516,7 +634,7 @@ const RPCS = {
       idempotent(state, key, request, "SendVerificationLink", () => {
         const v = findVerification(state, key, request.verificationId)
         if (!v) return ["not_found", "agecheck: verification not found"]
-        if (!["created", "needs_doc", "doc_pending"].includes(v.status)) return ["failed_precondition", "the verification takes no link in its state"]
+        if (!["created", ...HOSTED_STATES].includes(v.status)) return ["failed_precondition", "the verification takes no link in its state"]
         if (!v.hasEmail) return ["failed_precondition", "the verification has no email"]
         if (!state.org.displayName) return ["failed_precondition", "set a display name first"]
         const linkId = `acl_mock${String(state.linksSent.length + 1).padStart(6, "0")}`
@@ -585,18 +703,39 @@ async function handleHosted(state, req, res, url) {
   const v = claims ? state.verifications.get(claims.vid) : null
   if (!page || !v) return sendNotFound(res)
   if (page[2]) return req.method === "GET" ? sendJSON(res, 200, { status: v.status }) : sendNotFound(res)
+  let problem = ""
   if (req.method === "POST") {
     const form = new URLSearchParams(await readBody(req))
-    if (form.get("decision") === "pass") decide(v, "passed", "doc_only")
-    else if (form.get("decision") === "fail") decide(v, "failed")
-    if (claims.ru) {
+    const decision = form.get("decision")
+    const awaiting = v.status === "awaiting_identity"
+    if (awaiting) {
+      // E4b's consent + DOB step: the data match runs once; "Use my ID instead" goes to the ID check.
+      if (decision === "use_id") decide(v, "needs_doc")
+      else if (decision === "identity") {
+        const dob = form.get("dob") ?? ""
+        if (form.get("consent") !== "yes") problem = "Agree to the data check, or use your ID instead."
+        else if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(dob)) problem = "Enter your date of birth."
+        else if (underAge(dob, state.org.minimumAge)) decide(v, "failed")
+        else if (v.dataAnswer === "match") decide(v, "passed", "data_verified")
+        else decide(v, "needs_doc")
+      }
+    } else if (decision === "pass") decide(v, "passed", "doc_only")
+    else if (decision === "fail") decide(v, "failed")
+    if (claims.ru && (!awaiting || v.status === "passed" || v.status === "failed")) {
       res.writeHead(303, { Location: claims.ru })
       return res.end()
     }
   }
+  const step =
+    v.status === "awaiting_identity"
+      ? `<form method="post"><p id="problem">${escapeHTML(problem)}</p>
+<label>Date of birth <input type="date" name="dob" id="dob"></label>
+<label><input type="checkbox" name="consent" value="yes" id="consent"> I agree to the data check</label>
+<button name="decision" value="identity">Continue</button> <button name="decision" value="use_id">Use my ID instead</button></form>`
+      : `<form method="post"><button name="decision" value="pass">Pass</button> <button name="decision" value="fail">Fail</button></form>`
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Mock AgeCheck</title></head><body>
 <h1>Mock AgeCheck (TEST)</h1><p>Status: <strong id="status">${escapeHTML(v.status)}</strong></p>
-<form method="post"><button name="decision" value="pass">Pass</button> <button name="decision" value="fail">Fail</button></form>
+${step}
 </body></html>`
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "Cross-Origin-Opener-Policy": "same-origin" })
   return res.end(html)
@@ -634,9 +773,12 @@ export function createMockAgeCheck() {
     if (body === undefined) return sendJSON(res, 400, { error: "body must be a JSON object" })
     switch (url.pathname) {
       case "/__mock/config":
+        if (body.org?.passPolicy !== undefined && !PASS_POLICIES.includes(body.org.passPolicy)) return sendJSON(res, 400, { error: "unknown pass policy" })
         if (body.org) state.org = { ...state.org, ...body.org }
         if (body.integrationInfo) state.integrationInfo = body.integrationInfo
         if (body.links) state.links = body.links
+        if (body.awaitingIdentity) state.awaitingIdentity = body.awaitingIdentity
+        if (body.dataConsent) state.dataConsent = body.dataConsent
         if (body.keys) state.keys = { ...state.keys, ...body.keys }
         if (body.createOutcome) {
           const outcome = shortName(body.createOutcome, "VERIFICATION_STATUS_")

@@ -18,6 +18,7 @@ use Navexa\AgeCheck\Client;
 use Navexa\AgeCheck\Install;
 use Navexa\AgeCheck\Mode;
 use Navexa\AgeCheck\Options;
+use Navexa\AgeCheck\OrderAddress;
 use Navexa\AgeCheck\RateLimit;
 use Navexa\AgeCheck\ShipTo;
 use Navexa\AgeCheck\Start;
@@ -94,10 +95,14 @@ final class StartTest extends TestCase {
 		);
 		$this->assertSame( 'DOCUMENT_NAME_CHECK_NONE', $create['documentNameCheck'] );
 		$this->assertSame( 'https://shop.example/?wc-api=navexa_agecheck_return&popup=1', $create['returnUrl'] );
-		$this->assertSame( 'Pat Doe', $create['identity']['name'] );
-		$this->assertSame( 'pat@example.com', $create['identity']['email'] );
-		$this->assertSame( '62701', $create['identity']['residentialAddress']['postalCode'] );
-		$this->assertArrayNotHasKey( 'dob', $create['identity'], 'never a DOB' );
+		$this->assertSame(
+			array(
+				'name'               => 'Pat Doe',
+				'residentialAddress' => $create['intendedShipTo'],
+			),
+			$create['identity'],
+			'the data match pair: billing name and the billing address in the intended ship-to\'s form; never a DOB, no email'
+		);
 		$this->assertArrayNotHasKey( 'orderExternalId', $create );
 
 		$this->assertSame( 'CreateHostedSession', $this->request_rpc( 1 ) );
@@ -425,27 +430,130 @@ final class StartTest extends TestCase {
 		$this->assertCount( 2, $this->options[ RateLimit::OPTION_RECENT_START_IPS ], 'refreshes are not starts' );
 	}
 
-	public function test_identity_carries_only_complete_well_formed_fields(): void {
-		$this->customer_at(
-			$this->us_address(),
-			array(
-				'first_name' => '',
-				'last_name'  => '',
-				'address_1'  => '',
-				'email'      => 'not-an-email',
+	/**
+	 * Starts a check for a session whose billing address is $billing (the
+	 * ship-to is $ship_to, us_address() by default) and answers the
+	 * CreateVerification body.
+	 *
+	 * @param array<string, string>      $billing Billing address and name.
+	 * @param array<string, string>|null $ship_to Shipping address.
+	 * @return array<string, mixed>
+	 */
+	private function create_body_for_billing( array $billing, ?array $ship_to = null ): array {
+		static $n = 0;
+		Session::forget_verification();
+		$this->session()->customer_id = 't_billing_' . $n; // A fresh rate-limit subject per start.
+		$this->customer_at( null === $ship_to ? $this->us_address() : $ship_to, $billing );
+		$this->http_requests = array();
+		$this->respond_created( 'acv_' . ( ++$n ) );
+		$this->respond( 200, array( 'hostedUrl' => self::HOSTED ) );
+		$this->assertSame( 'pending', $this->start()['status'] );
+		$this->assertSame( 'CreateVerification', $this->request_rpc( 0 ) );
+		return $this->request_body( 0 );
+	}
+
+	public function test_identity_is_the_billing_name_and_us_address_or_nothing(): void {
+		$none = array(
+			'no first name'          => array( 'first_name' => '' ),
+			'no last name'           => array( 'last_name' => '  ' ),
+			'Unicode-space names'    => array(
+				'first_name' => "\u{00A0}",
+				'last_name'  => "\u{3000}\u{2003}",
+			),
+			'incomplete address'     => array( 'address_1' => '' ),
+			'no billing country'     => array( 'country' => '' ),
+			'non-US billing address' => array(
+				'country'  => 'CA',
+				'state'    => 'ON',
+				'postcode' => 'M5V 2T6',
+			),
+			'freely associated'      => array( 'state' => 'PW' ),
+			'overlong name'          => array( 'last_name' => str_repeat( 'x', 256 ) ),
+			'invalid UTF-8'          => array( 'first_name' => "\xC3\x28" ),
+		);
+		foreach ( $none as $case => $overrides ) {
+			$body = $this->create_body_for_billing( $this->us_address( $overrides ) );
+			$this->assertArrayNotHasKey( 'identity', $body, $case . ': no identity, the ID + selfie path' );
+			$this->assertSame( 'DOCUMENT_NAME_CHECK_NONE', $body['documentNameCheck'], $case );
+			$this->assertSame( '123 Main St', $body['intendedShipTo']['line1'], $case . ': the ship-to as before' );
+		}
+
+		$body = $this->create_body_for_billing( $this->us_address( array( 'email' => 'not-an-email' ) ) );
+		$this->assertSame( array( 'name', 'residentialAddress' ), array_keys( $body['identity'] ), 'the email is never sent' );
+
+		$body = $this->create_body_for_billing(
+			$this->us_address(
+				array(
+					'first_name' => " Ana\u{00A0}\u{00A0}María\u{3000}",
+					'last_name'  => 'de la Cruz',
+					'address_1'  => " 123   MAIN st\t",
+					'address_2'  => ' APT   4 ',
+					'postcode'   => '62701 1234',
+				)
 			)
 		);
-		$this->respond_created();
-		$this->respond( 200, array( 'hostedUrl' => self::HOSTED ) );
-		$this->start();
-		$this->assertArrayNotHasKey( 'identity', $this->request_body( 0 ) );
+		$this->assertSame( 'Ana María de la Cruz', $body['identity']['name'], 'first and last name, whitespace (Unicode too) collapsed as the engine trims it' );
+		$this->assertSame(
+			array(
+				'line1'      => '123 MAIN st',
+				'line2'      => 'APT 4',
+				'city'       => 'Springfield',
+				'region'     => 'IL',
+				'postalCode' => '62701',
+				'country'    => 'US',
+			),
+			$body['identity']['residentialAddress'],
+			'normalized like the intended ship-to: whitespace collapsed, ZIP+4 cut to the ZIP'
+		);
+		$this->assertTrue( OrderAddress::same_residence( $body['identity']['residentialAddress'], $body['intendedShipTo'] ) );
 
-		Session::forget_verification();
-		$this->customer_at( $this->us_address(), array( 'last_name' => 'Solo' ) );
-		$this->respond_created( 'acv_2' );
-		$this->respond( 200, array( 'hostedUrl' => self::HOSTED ) );
-		$this->start();
-		$this->assertSame( array( 'name' => 'Solo' ), $this->request_body( 2 )['identity'] );
+		$territory = $this->us_address(
+			array(
+				'country'  => 'PR',
+				'state'    => '',
+				'postcode' => '00901',
+			)
+		);
+		$body      = $this->create_body_for_billing( $territory, $territory );
+		$this->assertSame( 'PR', $body['identity']['residentialAddress']['region'], 'a territory is a US address' );
+	}
+
+	public function test_identity_only_when_the_order_ships_to_the_billing_address(): void {
+		foreach (
+			array(
+				'another street' => array( 'address_1' => '9 Elm St' ),
+				'another line 2' => array( 'address_2' => 'Apt 5' ),
+				'no line 2'      => array( 'address_2' => '' ),
+				'another ZIP'    => array( 'postcode' => '62702' ),
+			) as $case => $overrides
+		) {
+			$body = $this->create_body_for_billing( $this->us_address( $overrides ) );
+			$this->assertArrayNotHasKey( 'identity', $body, $case . ': never data-eligible, so no name or billing address is sent' );
+			$this->assertSame( '123 Main St', $body['intendedShipTo']['line1'], $case . ': the ship-to is the shipping address' );
+			$this->assertSame( 'DOCUMENT_NAME_CHECK_NONE', $body['documentNameCheck'], $case );
+			$this->assertSame( $this->mac(), Session::record()['shipto_mac'], $case . ': the check is bound to the ship-to, not the billing address' );
+		}
+
+		// The engine's comparison, never stricter: city and region are not
+		// compared, case and whitespace are folded, and a postal code that
+		// starts with five digits is read as that ZIP.
+		foreach (
+			array(
+				'another city and state' => array(
+					'city'  => 'Chicago',
+					'state' => 'CA',
+				),
+				'case and spacing'       => array(
+					'address_1' => '123  MAIN ST',
+					'address_2' => 'apt 4',
+				),
+				'other ZIP+4'            => array( 'postcode' => '62701-9999' ),
+				'malformed ZIP+4'        => array( 'postcode' => '62701-12' ),
+			) as $case => $overrides
+		) {
+			$body = $this->create_body_for_billing( $this->us_address( $overrides ) );
+			$this->assertArrayHasKey( 'identity', $body, $case . ': one residence by the engine\'s rule' );
+		}
 	}
 
 	public function test_endpoint_data_carries_the_answer_only_in_the_same_request(): void {

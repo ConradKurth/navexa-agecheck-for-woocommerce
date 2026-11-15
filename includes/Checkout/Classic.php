@@ -31,6 +31,10 @@ defined( 'ABSPATH' ) || exit;
  * - The button renders at woocommerce_review_order_before_submit, inside the
  *   fragment WooCommerce replaces on every checkout update, so it always
  *   shows the session's current state.
+ * - Each checkout update copies the form's billing first and last name into
+ *   the session customer (remember_billing_name()), as the block checkout's
+ *   Store API does, so a start sends the name the shopper typed for the
+ *   engine's data match (Start::identity()).
  */
 final class Classic {
 
@@ -41,6 +45,37 @@ final class Classic {
 		add_action( 'woocommerce_after_checkout_validation', array( self::class, 'validate' ), 10, 2 );
 		add_action( 'woocommerce_review_order_before_submit', array( self::class, 'render_button' ) );
 		add_action( 'wp_enqueue_scripts', array( self::class, 'enqueue' ) );
+		add_action( 'woocommerce_checkout_update_order_review', array( self::class, 'remember_billing_name' ) );
+	}
+
+	/**
+	 * Copies the billing first and last name of the classic checkout form
+	 * into the session customer. WooCommerce's checkout update
+	 * (update_order_review) saves the posted billing address but not the
+	 * name, while the block checkout saves both through the Store API; the
+	 * start reads both from the session (Start::identity(), the engine's data
+	 * match). WooCommerce saves the customer right after this action. Only in
+	 * pre-payment mode and for a cart that needs a check; the ship-to, the
+	 * guard and the gate never read the name.
+	 *
+	 * @param mixed $post_data The checkout form, URL-encoded (already unslashed).
+	 */
+	public static function remember_billing_name( $post_data ): void {
+		if ( ! is_string( $post_data ) || '' === $post_data || ! Gate::enforces() || ! Gate::cart_required() ) {
+			return;
+		}
+		$customer = Session::customer();
+		if ( null === $customer ) {
+			return;
+		}
+		$fields = array();
+		parse_str( $post_data, $fields );
+		if ( isset( $fields['billing_first_name'] ) && is_string( $fields['billing_first_name'] ) ) {
+			$customer->set_billing_first_name( wc_clean( $fields['billing_first_name'] ) );
+		}
+		if ( isset( $fields['billing_last_name'] ) && is_string( $fields['billing_last_name'] ) ) {
+			$customer->set_billing_last_name( wc_clean( $fields['billing_last_name'] ) );
+		}
 	}
 
 	/**

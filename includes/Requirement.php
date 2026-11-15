@@ -147,6 +147,39 @@ final class Requirement {
 	}
 
 	/**
+	 * Whether the products of term $term_id ($taxonomy product_cat or
+	 * product_tag) need an age check by the store rule, for the entry gate's
+	 * category and tag pages, which list many products: always under
+	 * RULE_ALL; under RULE_INCLUDE when the rule names the term, one of its
+	 * parent categories (which covers its subcategories) or one of its
+	 * subcategories (whose products the page lists too); under RULE_EXCLUDE
+	 * unless the rule names the term or a parent category. A product's own
+	 * setting is not read here (product_requires() reads it for a product page).
+	 *
+	 * @param string $taxonomy product_cat or product_tag.
+	 * @param int    $term_id  Term id.
+	 */
+	public static function term_requires( string $taxonomy, int $term_id ): bool {
+		$rule = Options::rule();
+		if ( Options::RULE_ALL === $rule ) {
+			return true;
+		}
+		$chosen = Options::term_ids( 'product_cat' === $taxonomy ? Options::RULE_CATEGORIES : Options::RULE_TAGS );
+		$up     = array( $term_id );
+		$down   = array();
+		if ( is_taxonomy_hierarchical( $taxonomy ) ) {
+			$up       = array_merge( $up, array_map( 'intval', (array) get_ancestors( $term_id, $taxonomy, 'taxonomy' ) ) );
+			$children = get_term_children( $term_id, $taxonomy );
+			$down     = is_array( $children ) ? array_map( 'intval', $children ) : array();
+		}
+		$named = array() !== array_intersect( $chosen, $up );
+		if ( Options::RULE_EXCLUDE === $rule ) {
+			return ! $named;
+		}
+		return $named || array() !== array_intersect( $chosen, $down );
+	}
+
+	/**
 	 * Whether the session cart needs an age check: it holds a line item whose
 	 * product needs one (product_requires()), and the signed-in shopper holds
 	 * no exempt role. Pickup is decided apart (cart_is_pickup()), so the

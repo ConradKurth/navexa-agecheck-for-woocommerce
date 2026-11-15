@@ -220,6 +220,8 @@ test("CreateVerification validates return_url, intended_ship_to with an order, a
   assert.equal(undefinedEnum.status, 400)
   const httpElsewhere = await call("CreateVerification", createBody({ idempotencyKey: "k8", returnUrl: "http://shop.example/back" }))
   assert.equal(httpElsewhere.status, 400, "http only for localhost")
+  const blankName = await call("CreateVerification", createBody({ idempotencyKey: "k9", identity: { name: "\u00a0 \u3000" } }))
+  assert.equal((await blankName.json()).message, "identity.name: is required", "a name of (Unicode) spaces is sent but blank, as the engine trims it")
 })
 
 test("GetVerification reads one mode only; decide moves the state", async () => {
@@ -233,8 +235,12 @@ test("GetVerification reads one mode only; decide moves the state", async () => 
   assert.equal(read.verification.hostedUrl, undefined)
   await control("decide", { id: verification.id, status: "VERIFICATION_STATUS_PASSED", passClass: "PASS_CLASS_DB_UNATTESTED" })
   assert.equal((await (await call("GetVerification", { id: verification.id })).json()).verification.passClass, "PASS_CLASS_DB_UNATTESTED", "either name form")
-  const unknown = await fetch(`${base}/__mock/decide`, { method: "POST", body: JSON.stringify({ id: verification.id, status: "awaiting_identity" }) })
+  const unknown = await fetch(`${base}/__mock/decide`, { method: "POST", body: JSON.stringify({ id: verification.id, status: "pondering" }) })
   assert.equal(unknown.status, 400, "only the proto's statuses")
+  await control("decide", { id: verification.id, status: "VERIFICATION_STATUS_PASSED", passClass: "PASS_CLASS_DATA_VERIFIED" })
+  assert.equal((await (await call("GetVerification", { id: verification.id })).json()).verification.passClass, "PASS_CLASS_DATA_VERIFIED", "E5's pass class")
+  await control("decide", { id: verification.id, status: "awaiting_identity" })
+  assert.equal((await (await call("GetVerification", { id: verification.id })).json()).verification.status, "VERIFICATION_STATUS_AWAITING_IDENTITY", "E4b's status")
 })
 
 test("CreateHostedSession mints a link only while the shopper has a step to take", async () => {
@@ -296,6 +302,110 @@ test("createOutcome and hostedBase config", async () => {
   await control("decide", { id: verification.id, status: "needs_doc" })
   const minted = await (await call("CreateHostedSession", { verificationId: verification.id })).json()
   assert.ok(minted.hostedUrl.startsWith("https://verify.example/v/"))
+})
+
+// Data match (E5 data_then_doc; E4b AWAITING_IDENTITY when served).
+
+const home = { ...shipTo, postalCode: "62701-1234" }
+
+async function created(overrides, options) {
+  const res = await call("CreateVerification", createBody({ idempotencyKey: `dm:${Math.random()}`, ...overrides }), options)
+  assert.equal(res.status, 200, JSON.stringify(await res.clone().json()))
+  return (await res.json()).verification
+}
+
+async function route(id) {
+  const { verifications } = await (await fetch(`${base}/__mock/verifications`)).json()
+  return verifications.find((v) => v.id === id).dataMatch
+}
+
+test("data_then_doc: eligibility needs a name, a residential address equal to the US ship-to", async () => {
+  const cases = [
+    ["no identity", {}, "ineligible"],
+    ["name only", { identity: { name: "Pat Match" } }, "ineligible"],
+    ["address only", { identity: { residentialAddress: home } }, "ineligible"],
+    ["another residence", { identity: { name: "Pat Match", residentialAddress: { ...home, line1: "9 Elm St" } } }, "ineligible"],
+    ["non-US residence", { identity: { name: "Pat Match", residentialAddress: { ...home, country: "CA" } } }, "ineligible"],
+    ["eligible: ZIP+4 is its ZIP, case and spaces folded, city and region ignored", { identity: { name: "Pat Match", residentialAddress: { ...home, line1: " 1  MAIN st ", city: "Other", region: "il" } } }, "awaiting"],
+  ]
+  for (const [name, overrides, want] of cases) {
+    const v = await created(overrides)
+    assert.equal(await route(v.id), want, name)
+    assert.equal(v.status, "VERIFICATION_STATUS_NEEDS_DOC", `${name}: without E4b, NEEDS_DOC as on main`)
+    assert.match(v.hostedUrl, /\/v\//, name)
+  }
+  const { verifications } = await (await fetch(`${base}/__mock/verifications`)).json()
+  assert.ok(!JSON.stringify(verifications).includes("Pat"), "the mock never reports the identity")
+})
+
+test("data_then_doc with E4b: AWAITING_IDENTITY, then the hosted DOB step decides", async () => {
+  await control("config", { awaitingIdentity: "served" })
+  const eligible = { identity: { name: "Pat Match", residentialAddress: home } }
+  const v = await created(eligible)
+  assert.equal(v.status, "VERIFICATION_STATUS_AWAITING_IDENTITY")
+  assert.match(v.hostedUrl, /\/v\//, "a hosted link to the consent + DOB step")
+  const minted = await call("CreateHostedSession", { verificationId: v.id, returnUrl: "http://localhost:8888/back" })
+  assert.equal(minted.status, 200, "CreateHostedSession serves AWAITING_IDENTITY")
+  const page = v.hostedUrl.replace(/^http:\/\/[^/]+/, base)
+  assert.match(await (await fetch(page)).text(), /name="dob"/)
+  const post = (body) => fetch(page, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body, redirect: "manual" })
+
+  const noConsent = await post("decision=identity&dob=1990-01-01")
+  assert.equal(noConsent.status, 200, "no consent: the step again")
+  assert.match(await noConsent.text(), /Agree to the data check/)
+  const pass = await post("decision=identity&dob=1990-01-01&consent=yes")
+  assert.equal(pass.status, 303)
+  const read = (await (await call("GetVerification", { id: v.id })).json()).verification
+  assert.equal(read.status, "VERIFICATION_STATUS_PASSED")
+  assert.equal(read.passClass, "PASS_CLASS_DATA_VERIFIED")
+
+  const minor = await created(eligible)
+  await fetch(minor.hostedUrl.replace(/^http:\/\/[^/]+/, base), { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: `decision=identity&dob=${new Date().getUTCFullYear() - 18}-01-01&consent=yes`, redirect: "manual" })
+  assert.equal((await (await call("GetVerification", { id: minor.id })).json()).verification.status, "VERIFICATION_STATUS_FAILED", "under the minimum age")
+
+  const nomatch = await created({ identity: { name: "Pat Doe", residentialAddress: home } })
+  const toDoc = await fetch(nomatch.hostedUrl.replace(/^http:\/\/[^/]+/, base), { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "decision=identity&dob=1990-01-01&consent=yes", redirect: "manual" })
+  assert.equal(toDoc.status, 200, "no match: the ID check, on the same page")
+  assert.match(await toDoc.text(), /value="pass"/)
+  assert.equal((await (await call("GetVerification", { id: nomatch.id })).json()).verification.status, "VERIFICATION_STATUS_NEEDS_DOC")
+
+  const useId = await created(eligible)
+  await fetch(useId.hostedUrl.replace(/^http:\/\/[^/]+/, base), { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "decision=use_id", redirect: "manual" })
+  assert.equal((await (await call("GetVerification", { id: useId.id })).json()).verification.status, "VERIFICATION_STATUS_NEEDS_DOC", "Use my ID instead")
+
+  const ineligible = await created({ identity: { name: "Pat Match", residentialAddress: { ...home, line1: "9 Elm St" } } })
+  assert.equal(ineligible.status, "VERIFICATION_STATUS_NEEDS_DOC", "billing elsewhere: straight to the ID check")
+})
+
+test("data_then_doc with a DOB and no consent requirement runs the data match at creation", async () => {
+  await control("config", { dataConsent: "off" })
+  const match = await created({ identity: { name: "Pat Match", dob: "1990-01-01", residentialAddress: home } })
+  assert.equal(match.status, "VERIFICATION_STATUS_PASSED")
+  assert.equal(match.passClass, "PASS_CLASS_DATA_VERIFIED")
+  assert.equal(await route(match.id), "run")
+  const error = await created({ identity: { name: "Pat Error", dob: "1990-01-01", residentialAddress: home } })
+  assert.equal(error.status, "VERIFICATION_STATUS_NEEDS_DOC", "never held under data_then_doc")
+  const minor = await created({ identity: { name: "Pat Match", dob: `${new Date().getUTCFullYear() - 10}-01-01`, residentialAddress: home } })
+  assert.equal(minor.status, "VERIFICATION_STATUS_FAILED", "a declared minor fails before any check")
+})
+
+test("pass policies: no_gov_db never matches; the legacy default needs the whole identity", async () => {
+  await control("config", { org: { passPolicy: "no_gov_db" }, dataConsent: "off" })
+  const idOnly = await created({ identity: { name: "Pat Match", dob: "1990-01-01", residentialAddress: home } })
+  assert.equal(idOnly.status, "VERIFICATION_STATUS_NEEDS_DOC")
+  await control("config", { org: { passPolicy: "default" } })
+  const partial = await call("CreateVerification", createBody({ idempotencyKey: "legacy", identity: { name: "Pat Match", residentialAddress: home } }))
+  assert.deepEqual(await partial.json(), { code: "invalid_argument", message: "identity.dob: is required" })
+  const whole = await created({ identity: { name: "Pat Match", dob: "1990-01-01", residentialAddress: home } })
+  assert.equal(whole.passClass, "PASS_CLASS_DB_VERIFIED")
+  const res = await fetch(`${base}/__mock/config`, { method: "POST", body: JSON.stringify({ org: { passPolicy: "nope" } }) })
+  assert.equal(res.status, 400)
+})
+
+test("NONE with a name is accepted pre-order; REQUIRED stays order-bound only", async () => {
+  const v = await created({ identity: { name: "Pat Doe", residentialAddress: home }, documentNameCheck: "DOCUMENT_NAME_CHECK_NONE" })
+  const { verifications } = await (await fetch(`${base}/__mock/verifications`)).json()
+  assert.equal(verifications.find((x) => x.id === v.id).documentNameCheck, "DOCUMENT_NAME_CHECK_NONE")
 })
 
 // Order-bound verifications and the order RPCs (W1).

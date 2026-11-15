@@ -8,7 +8,9 @@
  * Run right after prepayment.mjs, against the same mock engine (it reads the
  * mock's recorded requests and verifications). For every order the flow
  * placed for the shopper pat@example.com (the drafts of refused checkouts
- * stay checkout-draft and are left out):
+ * stay checkout-draft and are left out; among them an order billed to
+ * another address than its ship-to, which took the ID check, and one that
+ * passed on the data match, PASS_CLASS_DATA_VERIFIED):
  *
  * - a shipped order was bound by AttachOrder to the verification the shopper
  *   passed at checkout (BOUND_BY attach; no ship_to_changed, also for the
@@ -139,7 +141,7 @@ foreach ( $navexa_orders as $navexa_order ) {
 	$navexa_check( isset( $navexa_by_order[ $ext ] ) && true === $navexa_by_order[ $ext ]['consumed'], 'order ' . $navexa_order->get_id() . ': the clearance was spent' );
 }
 
-$navexa_check( 3 === $navexa_shipped, "the flow placed 3 shipped orders: block, block at the ZIP+4, classic ({$navexa_shipped})" );
+$navexa_check( 5 === $navexa_shipped, "the flow placed 5 shipped orders: block, billed elsewhere than the ship-to, data match, block at the ZIP+4, classic ({$navexa_shipped})" );
 $navexa_check( $navexa_zip4 >= 1, "one of them ships to the ZIP+4 of the verified ZIP ({$navexa_zip4})" );
 $navexa_check( 1 === $navexa_pickup, "and one local pickup order ({$navexa_pickup})" );
 

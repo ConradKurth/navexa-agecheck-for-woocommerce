@@ -215,6 +215,9 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 					return rtrim( $value, '/\\' ) . '/';
 				},
 				'esc_url_raw'                  => null,
+				'wp_specialchars_decode'       => static function ( $text ) {
+					return htmlspecialchars_decode( (string) $text, ENT_QUOTES );
+				},
 				'wp_rand'                      => 1,
 				'wc_get_checkout_url'          => 'https://shop.example/checkout/',
 				'get_bloginfo'                 => 'en-US',

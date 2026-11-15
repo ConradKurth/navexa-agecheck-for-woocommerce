@@ -112,6 +112,8 @@ final class Plugin {
 		// Express payment buttons hidden on restricted products and carts
 		// (each gateway's own filters); the gates and the hold still apply.
 		Express::register();
+		// The optional entry age gate: self-attestation, not verification.
+		EntryGate::register();
 
 		// Holds: nothing below makes a network call in a shopper's request
 		// except Binding's AttachOrder after an order is placed.

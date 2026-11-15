@@ -132,6 +132,135 @@ final class Options {
 	const DELETE_DATA = 'navexa_agecheck_delete_data_on_uninstall';
 
 	/**
+	 * 'yes' or 'no' (default): show the entry age gate, a self-attestation
+	 * prompt ("Are you 21 or older?"), not an age verification.
+	 */
+	const ENTRY_GATE = 'navexa_agecheck_entry_gate';
+
+	/**
+	 * Where the entry gate shows: GATE_SCOPE_SITE (default) or GATE_SCOPE_RESTRICTED.
+	 */
+	const ENTRY_GATE_SCOPE = 'navexa_agecheck_entry_gate_scope';
+
+	/**
+	 * Days the visitor's answer is remembered in their browser (0: until the
+	 * browser is closed).
+	 */
+	const ENTRY_GATE_DAYS = 'navexa_agecheck_entry_gate_days';
+
+	/**
+	 * Where a visitor who says they are under age is sent, or '' to keep them
+	 * on the gate.
+	 */
+	const ENTRY_GATE_EXIT_URL = 'navexa_agecheck_entry_gate_exit_url';
+
+	/**
+	 * The store's AgeCheck minimum age and display name from the last
+	 * GetIntegrationInfo answer ({minimum_age, display_name}), kept for
+	 * storefront copy (the entry gate) so a page never waits on the network.
+	 */
+	const STORE_PROFILE = 'navexa_agecheck_store_profile';
+
+	/**
+	 * The entry gate shows on every front-end page.
+	 */
+	const GATE_SCOPE_SITE = 'site';
+
+	/**
+	 * The entry gate shows only on age-restricted product pages and their
+	 * category and tag pages.
+	 */
+	const GATE_SCOPE_RESTRICTED = 'restricted';
+
+	const DEFAULT_GATE_DAYS = 30;
+	const MAX_GATE_DAYS     = 365;
+
+	/**
+	 * Minimum age the entry gate asks about when AgeCheck has not said.
+	 */
+	const DEFAULT_MINIMUM_AGE = 21;
+
+	/**
+	 * Whether the merchant turned the entry gate on. Only a stored 'yes' does.
+	 */
+	public static function entry_gate_enabled(): bool {
+		return 'yes' === get_option( self::ENTRY_GATE, 'no' );
+	}
+
+	/**
+	 * GATE_SCOPE_SITE (default, also for an unknown value) or GATE_SCOPE_RESTRICTED.
+	 */
+	public static function entry_gate_scope(): string {
+		return self::GATE_SCOPE_RESTRICTED === get_option( self::ENTRY_GATE_SCOPE, self::GATE_SCOPE_SITE ) ? self::GATE_SCOPE_RESTRICTED : self::GATE_SCOPE_SITE;
+	}
+
+	/**
+	 * Days the entry gate's answer is remembered: 0 to MAX_GATE_DAYS,
+	 * DEFAULT_GATE_DAYS when unset or not a whole number.
+	 */
+	public static function entry_gate_days(): int {
+		return self::gate_days( get_option( self::ENTRY_GATE_DAYS, self::DEFAULT_GATE_DAYS ) );
+	}
+
+	/**
+	 * $value as remember-days: a whole number clamped to 0..MAX_GATE_DAYS,
+	 * DEFAULT_GATE_DAYS for anything else.
+	 *
+	 * @param mixed $value Stored or posted value.
+	 */
+	public static function gate_days( $value ): int {
+		if ( is_int( $value ) || ( is_string( $value ) && 1 === preg_match( '/^\s*[0-9]{1,6}\s*$/', $value ) ) ) {
+			return max( 0, min( self::MAX_GATE_DAYS, (int) $value ) );
+		}
+		return self::DEFAULT_GATE_DAYS;
+	}
+
+	/**
+	 * The entry gate's exit URL, or '' (none, or not an absolute http(s) URL).
+	 */
+	public static function entry_gate_exit_url(): string {
+		$url = get_option( self::ENTRY_GATE_EXIT_URL, '' );
+		return is_string( $url ) ? self::exit_url( $url ) : '';
+	}
+
+	/**
+	 * $url when it is an absolute http or https URL with a host, else ''.
+	 *
+	 * @param string $url Candidate.
+	 */
+	public static function exit_url( string $url ): string {
+		$url   = trim( $url );
+		$parts = '' === $url ? false : wp_parse_url( $url );
+		if ( ! is_array( $parts ) || empty( $parts['host'] ) || ! isset( $parts['scheme'] ) || ! in_array( strtolower( (string) $parts['scheme'] ), array( 'http', 'https' ), true ) ) {
+			return '';
+		}
+		return esc_url_raw( $url, array( 'http', 'https' ) );
+	}
+
+	/**
+	 * The minimum age AgeCheck last reported for the store (18, 19 or 21),
+	 * DEFAULT_MINIMUM_AGE when it has not. Never asks AgeCheck.
+	 */
+	public static function store_minimum_age(): int {
+		$profile = get_option( self::STORE_PROFILE, array() );
+		$age     = is_array( $profile ) && isset( $profile['minimum_age'] ) ? $profile['minimum_age'] : null;
+		return is_int( $age ) && in_array( $age, IntegrationInfo::MINIMUM_AGES, true ) ? $age : self::DEFAULT_MINIMUM_AGE;
+	}
+
+	/**
+	 * The store's name for shoppers: the display name AgeCheck last reported,
+	 * else the WordPress site title. Never asks AgeCheck.
+	 */
+	public static function store_display_name(): string {
+		$profile = get_option( self::STORE_PROFILE, array() );
+		$name    = is_array( $profile ) && isset( $profile['display_name'] ) && is_string( $profile['display_name'] ) ? trim( $profile['display_name'] ) : '';
+		if ( '' !== $name ) {
+			return $name;
+		}
+		return trim( wp_specialchars_decode( (string) get_bloginfo( 'name' ), ENT_QUOTES ) );
+	}
+
+	/**
 	 * Whether express payment buttons are hidden on age-restricted products
 	 * and carts. Anything but a stored 'no' reads as on.
 	 */

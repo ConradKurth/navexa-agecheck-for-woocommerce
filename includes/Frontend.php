@@ -19,8 +19,10 @@ defined( 'ABSPATH' ) || exit;
  *   (assets/src/blocks/verify-age/, built with wp-scripts).
  *
  * Minified files load unless SCRIPT_DEBUG is on. Nothing is loaded outside
- * checkout, and nothing from a third-party host except Cloudflare's Turnstile
- * script when the merchant turns Turnstile on (disclosed in readme.txt).
+ * checkout except the entry age gate (EntryGate, assets/js/entry-gate.js,
+ * only when the merchant turns it on), and nothing from a third-party host
+ * except Cloudflare's Turnstile script when the merchant turns Turnstile on
+ * (disclosed in readme.txt).
  */
 final class Frontend {
 

@@ -18,6 +18,9 @@ defined( 'ABSPATH' ) || exit;
  * a failure is cached for a minute so an outage does not cost every request
  * an 8-second timeout. The last livemode seen for each key is also kept in a
  * non-expiring option, for the TEST MODE banner only: the gate never reads it.
+ * The minimum age and display name are kept the same way
+ * (Options::STORE_PROFILE) for storefront copy: the entry gate's front-end
+ * pages never call AgeCheck.
  *
  * Fail closed: when the answer is unavailable, info() is null, the gate
  * accepts no verification and nothing is auto-released.
@@ -130,6 +133,16 @@ final class Mode {
 		// Autoloaded: the banner reads it on every admin screen. update_option()
 		// skips the write when the value did not change.
 		update_option( self::OPTION_LAST_MODE_PREFIX . $client->key_kind(), $last, true );
+		// The storefront's copy (the entry gate) reads these on front-end pages,
+		// which never ask AgeCheck themselves.
+		update_option(
+			Options::STORE_PROFILE,
+			array(
+				'minimum_age'  => $info->minimum_age,
+				'display_name' => $info->display_name,
+			),
+			true
+		);
 		return array(
 			'info'  => $info,
 			'error' => '',
@@ -206,13 +219,16 @@ final class Mode {
 	}
 
 	/**
-	 * Drops the cached answers and the last known modes for the stored keys.
+	 * Drops the cached answers, the last known modes for the stored keys and
+	 * the stored minimum age and display name (the next answer stores them
+	 * again; until then the storefront uses its defaults).
 	 */
 	public static function flush(): void {
 		foreach ( array( Client::KEY_START, Client::KEY_FULFILMENT ) as $kind ) {
 			delete_transient( self::transient_name( Client::for_key( $kind ) ) );
 			delete_option( self::OPTION_LAST_MODE_PREFIX . $kind );
 		}
+		delete_option( Options::STORE_PROFILE );
 	}
 
 	/**

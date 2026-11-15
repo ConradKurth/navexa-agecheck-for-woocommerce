@@ -15,7 +15,7 @@ Age verification for age-restricted WooCommerce orders shipping to US addresses,
 
 Navexa AgeCheck checks a shopper's age before an age-restricted order ships. It verifies orders shipping to US addresses only.
 
-Shoppers verify on AgeCheck's own page (verify.navexa.co) with an ID document and a selfie. Your store never sees their date of birth or ID images. You choose when they verify: at checkout, before they pay (the default), or after payment, while the order is held.
+Shoppers verify on AgeCheck's own page (verify.navexa.co) with an ID document and a selfie. When your Navexa account runs the data check first and the order ships to the shopper's US billing address, AgeCheck can instead confirm the shopper's age from their billing name and address and the date of birth they type on its page, against US data sources; any other shopper takes the ID check. Your store never sees their date of birth or ID images. You choose when they verify: at checkout, before they pay (the default), or after payment, while the order is held.
 
 How orders are handled:
 
@@ -40,6 +40,10 @@ The Verify age button is a standard button that works with the keyboard and stay
 Optional bot protection:
 
 Turn on Cloudflare Turnstile under Checkout protection to require a Turnstile check before a shopper's age check starts. It is off by default; when it is on and Turnstile cannot confirm the shopper, the age check does not start.
+
+Optional entry age gate (self-attestation, not age verification):
+
+Turn on "Entry age gate" in WooCommerce > Settings > AgeCheck to ask visitors to confirm their age ("I am 21 or older" or "I am under 21") when they enter the store, on every page or only on age-restricted product, category and tag pages. It is off by default. It is self-attestation only: it asks, and anyone can answer yes, so it does not verify anyone's age and does not replace the age check at checkout, which still applies to every age-restricted order. The age shown is the minimum age set in the Navexa dashboard (21 until the plugin has connected), and the store name is the display name set there, or your site title. The answer is remembered in the visitor's own browser for the number of days you choose (30 by default; 0 remembers it only in the browser tab where they answered, so a new tab asks again); nothing is sent to your server, to Navexa or to anyone else, no API key is needed, and the decision is made in the browser, so it works with page caching. Visitors who say they are under age go to an address you choose, or stay on the gate with a short message. The gate is an accessible dialog: keyboard focus stays in it, Escape does not dismiss it, and the rest of the page is hidden from screen readers while it is open. It never shows in wp-admin, on the login page, to the REST API or on AgeCheck's return page.
 
 Privacy tools:
 
@@ -71,6 +75,14 @@ Navexa AgeCheck lowers the risk of selling to someone under age; it does not rem
 = Which addresses can AgeCheck verify? =
 
 US addresses only, including US territories and APO/FPO addresses. An age-restricted order shipping anywhere else is refused at checkout, or held if it was placed another way.
+
+= Is the entry age gate an age verification? =
+
+No. It is self-attestation: visitors click "I am 21 or older" and anyone can do that. It is there for stores that want a front-door age prompt. Age-restricted orders are still verified by AgeCheck at checkout (or held until they are), whatever the visitor answered at the gate.
+
+= The entry age gate shows late, or only after a click, with a speed plugin =
+
+The gate's script has to run as the page loads, in the page head. Its tags ask Cloudflare Rocket Loader, LiteSpeed Cache and WP Rocket to leave them alone, but if your optimization plugin or service defers or delays JavaScript anyway, exclude `entry-gate.min.js` and `navexaAgeCheckGate` from its "delay JavaScript" and "defer JavaScript" settings.
 
 = Does my store see the shopper's date of birth or ID? =
 
@@ -121,7 +133,7 @@ This plugin connects to the Navexa AgeCheck API (https://verify.navexa.co), oper
 What is sent, and when:
 
 * When you open the AgeCheck settings tab, and about once an hour while the plugin is in use: your API keys (as request credentials) and your store's address (scheme, host and port), so AgeCheck can report whether each key is live or test, the key's permissions, whether your store's address is allowed, your minimum age and your store's display name.
-* When a shopper selects Verify age at checkout: the shipping address of the order they are about to place, the billing name, billing address and email address your store holds for them (whichever are filled in), and the address of your store's return page. Never a date of birth: the shopper types that only on AgeCheck's own page, verify.navexa.co, which the plugin opens in a popup window (or the same tab when popups are blocked).
+* When a shopper selects Verify age at checkout: the shipping address of the order they are about to place, the address of your store's return page, and, when the shopper has filled in a billing first and last name and a US billing address and the order ships to that billing address, that billing name and billing address. AgeCheck uses them for the age check: it can check them, with the date of birth the shopper types on its page, against US data sources instead of asking for an ID. Otherwise (for example when the order ships somewhere else) no name or billing address is sent, and the shopper takes the ID check. No email address. Never a date of birth: the shopper types that only on AgeCheck's own page, verify.navexa.co, which the plugin opens in a popup window (or the same tab when popups are blocked).
 * While the AgeCheck window is open: the shopper's checkout page asks AgeCheck (verify.navexa.co) every few seconds whether the check is finished. It sends only that check's session token, in a request header; no personal data.
 * When the shopper comes back, and when they place the order: the verification's id, to read whether it passed.
 * When an age-restricted order is placed after a check at checkout, or is held: an order identifier (a random id for this store, the site id and the order id) and its shipping address (its billing address when the order has no shipping address), and, when no check was done at checkout, the billing name, billing email and billing address so AgeCheck can check the shopper's ID against that name, and the address of the order's order-received page (it includes the order number and the order key), which AgeCheck's page links back to. A date of birth is never sent; shoppers type it only on verify.navexa.co.
@@ -141,9 +153,11 @@ Cloudflare Turnstile (optional, off by default): when you turn it on under Check
 
 Apart from Cloudflare's Turnstile script when you turn Turnstile on, the plugin's scripts are bundled with the plugin; nothing is loaded from another host.
 
+The optional entry age gate contacts no service at all: it needs no API key, sends nothing anywhere, and keeps the visitor's answer only in their own browser (local storage, or for 0 days session storage, which lasts only as long as that browser tab).
+
 == Source code and build ==
 
-The minified scripts in assets/js/ and assets/build/ are built from the sources in assets/src/ (the loader, the classic checkout and Turnstile glue in assets/src/loader/, the checkout block in assets/src/blocks/). The full source, including the build configuration, is at https://github.com/ConradKurth/navexa-agecheck-for-woocommerce. To rebuild: `npm ci && npm run build` (Node 24).
+The minified scripts in assets/js/ and assets/build/ are built from the sources in assets/src/ (the loader, the classic checkout and Turnstile glue and the entry age gate in assets/src/loader/, the checkout block in assets/src/blocks/). The full source, including the build configuration, is at https://github.com/ConradKurth/navexa-agecheck-for-woocommerce. To rebuild: `npm ci && npm run build` (Node 24).
 
 Translations: the template is languages/navexa-agecheck-for-woocommerce.pot.
 
@@ -157,6 +171,8 @@ The plugin sends no telemetry.
 * Pre-payment age check: Verify age button on classic and block checkout, checkout enforcement, US-only ship-to (US territories and APO/FPO included), rate limits, return page.
 * Express payment buttons (WooPayments, WooCommerce Stripe Gateway, WooCommerce PayPal Payments) hidden on age-restricted products and carts, on by default.
 * Optional Cloudflare Turnstile check before an age check starts, off by default.
+* Data check first (where the Navexa account runs it): when the order ships to the shopper's US billing address, the Verify age start sends the billing name and that address, normalized like the ship-to, so the shopper can pass without an ID; a shopper shipping elsewhere sends neither and takes the ID check. On the classic checkout, the billing name the shopper types is kept in their session for this, as the block checkout does.
+* Optional entry age gate, off by default: a self-attestation prompt (not age verification) on every page or only age-restricted pages, remembered in the visitor's browser, accessible, no network requests, page-cache safe.
 * Privacy policy suggestion, personal data exporter and eraser.
 * Translation template; accessible Verify age button (keyboard, focus return, screen reader announcements).
 * Uninstall removes all plugin settings and data, keeps order audit data unless "Delete data on uninstall" is on, and moves orders awaiting an age check to On hold.

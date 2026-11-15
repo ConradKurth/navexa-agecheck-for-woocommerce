@@ -32,10 +32,13 @@ defined( 'ABSPATH' ) || exit;
  *
  * The browser sends no PII and no verification id, and never receives the
  * verification id or an API key. Start calls CreateVerification once per
- * (session, ship-to): no DOB, the billing name, address and email the store
- * already holds, intended_ship_to (the normalized ship-to),
- * document_name_check NONE and return_url = the return page with popup=1;
- * then CreateHostedSession for a fresh link. Only the start key is used.
+ * (session, ship-to): intended_ship_to (the normalized ship-to),
+ * document_name_check NONE (owner: no name match before the order exists),
+ * return_url = the return page with popup=1, and the identity for the
+ * engine's data match (identity()): the billing name and the billing address
+ * as the residential address, only when both are filled in, the address is
+ * a US one and the order ships there, never a DOB; then CreateHostedSession
+ * for a fresh link. Only the start key is used.
  * Refresh calls GetVerification and mints the checkout guard on PASSED with a
  * clearing pass class. Any error answers unavailable.
  *
@@ -47,12 +50,24 @@ defined( 'ABSPATH' ) || exit;
  *
  * Engine contract (E4a, in production since tax v0.0.164; proto
  * agecheck/v1/verification.proto): CreateVerification's identity is optional
- * under an ID-only pass policy (a policy that runs the database check needs
- * name, dob and residential address and answers INVALID_ARGUMENT, which
- * reads as unavailable here); return_url (5), document_name_check (6) and
+ * under an ID-only pass policy and under data_then_doc (the legacy policy
+ * that runs the database check on every create needs name, dob and
+ * residential address and answers INVALID_ARGUMENT, which reads as
+ * unavailable here); return_url (5), document_name_check (6) and
  * intended_ship_to (7). document_name_check NONE requires intended_ship_to,
- * and AttachOrder then binds only an order with the same ship-to
- * (FAILED_PRECONDITION "ship_to_changed" otherwise).
+ * is allowed with a name (unset would mean REQUIRED once a name is sent, so
+ * it is always sent), and AttachOrder then binds only an order with the same
+ * ship-to (FAILED_PRECONDITION "ship_to_changed" otherwise).
+ *
+ * Data match (E5, tax v0.0.167, policy data_then_doc): the engine runs one
+ * paid data check only when the merchant sent identity.name and
+ * identity.residential_address, the intended ship-to is a US address equal
+ * to the residential address (ZIP+4 compared as its ZIP) and the hosted page
+ * has the shopper's DOB and data consent (E4b, AWAITING_IDENTITY until then).
+ * Anything else goes to the ID + selfie check (NEEDS_DOC). A pass is
+ * PASS_CLASS_DATA_VERIFIED, which clears like DOC_ONLY. A shopper whose
+ * billing address is not the ship-to is not eligible, so no identity is sent
+ * for them (nothing would use it).
  */
 final class Start {
 
@@ -429,9 +444,9 @@ final class Start {
 		if ( ! $with_link ) {
 			return self::reply( self::STATUS_PENDING );
 		}
-		// CreateHostedSession serves NEEDS_DOC and DOC_PENDING. AWAITING_IDENTITY
-		// is E4b's (not in the proto yet), listed so its first engine release
-		// needs no plugin release.
+		// CreateHostedSession serves NEEDS_DOC and DOC_PENDING, and E4b's
+		// AWAITING_IDENTITY (the data match's consent and DOB step), listed so
+		// E4b's engine release needs no plugin release.
 		if ( ! in_array( $status, array( 'VERIFICATION_STATUS_NEEDS_DOC', 'VERIFICATION_STATUS_DOC_PENDING', 'VERIFICATION_STATUS_AWAITING_IDENTITY' ), true ) ) {
 			// Nothing for the shopper to do on AgeCheck's page (being checked, or held).
 			return self::reply( self::STATUS_PENDING, __( 'Your age check is being processed. Select Verify age again in a minute to see if it is done.', 'navexa-agecheck-for-woocommerce' ) );
@@ -483,7 +498,7 @@ final class Start {
 			'documentNameCheck' => self::DOCUMENT_NAME_CHECK_NONE,
 			'returnUrl'         => ReturnPage::url( true ),
 		);
-		$identity = self::identity();
+		$identity = self::identity( $ship_to );
 		if ( array() !== $identity ) {
 			$request['identity'] = $identity;
 		}
@@ -512,31 +527,53 @@ final class Start {
 	}
 
 	/**
-	 * The identity the store already holds for the shopper: billing name,
-	 * billing address and email, each only when complete and well formed.
-	 * Never a date of birth: the shopper types that only on AgeCheck's page.
+	 * The identity sent for the engine's data match (E5, data_then_doc): the
+	 * billing name (first and last name, whitespace collapsed as the engine
+	 * trims it, so a name of Unicode spaces counts as none) and the billing
+	 * address as identity.residential_address, normalized by
+	 * OrderAddress::normalize() exactly as the intended ship-to is. Sent only
+	 * together, and only when the first name, the last name and a complete
+	 * billing address are filled in, the address is a US one
+	 * (OrderAddress::is_us(): the US, its territories and APO/FPO) and it is
+	 * where the order ships (OrderAddress::same_residence(), the engine's own
+	 * eligibility comparison); otherwise no identity at all, and the shopper
+	 * takes the ID + selfie check. A billing address other than the ship-to
+	 * is never eligible, and under document_name_check NONE the name is not
+	 * compared with the ID either, so sending it would only hand AgeCheck
+	 * personal data it cannot use.
 	 *
-	 * @return array<string, mixed>
+	 * Never a date of birth (the shopper types it only on AgeCheck's page),
+	 * and no email: a check started at checkout is never emailed (links are
+	 * for order-bound checks, Binding).
+	 *
+	 * @param ShipTo $ship_to The intended ship-to (accepted: a US address).
+	 * @return array<string, mixed> {name, residentialAddress} or empty.
 	 */
-	private static function identity(): array {
+	private static function identity( ShipTo $ship_to ): array {
 		$customer = Session::customer();
 		if ( null === $customer ) {
 			return array();
 		}
-		$identity = array();
-		$name     = trim( (string) $customer->get_billing_first_name() . ' ' . (string) $customer->get_billing_last_name() );
-		if ( '' !== $name && 1 === preg_match( '//u', $name ) && mb_strlen( $name, 'UTF-8' ) <= OrderAddress::MAX_FIELD_RUNES ) {
-			$identity['name'] = $name;
+		$first = (string) $customer->get_billing_first_name();
+		$last  = (string) $customer->get_billing_last_name();
+		if ( 1 !== preg_match( '//u', $first ) || 1 !== preg_match( '//u', $last ) ) {
+			return array(); // Not valid UTF-8.
 		}
-		$address = ShipTo::from_wc_address( $customer->get_billing() );
-		if ( null !== $address ) {
-			$identity['residentialAddress'] = $address->engine_address();
+		$first = OrderAddress::collapse( $first );
+		$last  = OrderAddress::collapse( $last );
+		$name  = $first . ' ' . $last;
+		if ( '' === $first || '' === $last || mb_strlen( $name, 'UTF-8' ) > OrderAddress::MAX_FIELD_RUNES ) {
+			return array();
 		}
-		$email = trim( (string) $customer->get_billing_email() );
-		if ( '' !== $email && strlen( $email ) <= OrderAddress::MAX_FIELD_RUNES && is_email( $email ) ) {
-			$identity['email'] = $email;
+		$billing = $customer->get_billing();
+		$address = OrderAddress::normalize( is_array( $billing ) ? $billing : array() );
+		if ( null === $address || ! OrderAddress::is_us( $address ) || ! OrderAddress::same_residence( $address, $ship_to->engine_address() ) ) {
+			return array();
 		}
-		return $identity;
+		return array(
+			'name'               => $name,
+			'residentialAddress' => $address,
+		);
 	}
 
 	/**

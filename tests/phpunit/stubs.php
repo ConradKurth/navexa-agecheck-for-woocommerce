@@ -132,6 +132,10 @@ namespace {
 				$set = 'billing' === $m[1] ? $this->billing : $this->shipping;
 				return isset( $set[ $m[2] ] ) ? $set[ $m[2] ] : '';
 			}
+			if ( preg_match( '/^set_(billing|shipping)_(.+)$/', $name, $m ) ) {
+				$this->{$m[1]}[ $m[2] ] = $args[0];
+				return null;
+			}
 			throw new \BadMethodCallException( $name );
 		}
 

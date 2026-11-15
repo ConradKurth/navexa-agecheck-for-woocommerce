@@ -115,6 +115,51 @@ final class CheckoutTest extends TestCase {
 		}
 	}
 
+	public function test_classic_updates_copy_the_billing_name_into_the_session(): void {
+		Functions\when( 'wc_clean' )->alias(
+			static function ( $value ) {
+				return trim( strip_tags( (string) $value ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags
+			}
+		);
+		$customer = self::$wc->customer;
+		$form     = 'billing_first_name=%20Pat%20&billing_last_name=Doe%3Cb%3E&billing_email=pat%40example.com&shipping_first_name=Other';
+		Classic::remember_billing_name( $form );
+		$this->assertSame(
+			array(
+				'first_name' => 'Pat',
+				'last_name'  => 'Doe',
+			),
+			$customer->billing,
+			'only the billing name, cleaned; WooCommerce saves the customer after the action'
+		);
+
+		Classic::remember_billing_name( 'billing_first_name=&billing_last_name[]=x' );
+		$this->assertSame( '', $customer->billing['first_name'], 'the form is the truth: a cleared name is cleared' );
+		$this->assertSame( 'Doe', $customer->billing['last_name'], 'a non-string field is ignored' );
+
+		$skips = array(
+			'not a string'    => function () {
+				return array( 'billing_first_name' => 'Kim' );
+			},
+			'accept and hold' => function () {
+				$this->options[ Options::MODE ] = Options::MODE_ACCEPT_AND_HOLD;
+				return 'billing_first_name=Kim';
+			},
+			'not required'    => function () {
+				unset( $this->options[ Options::MODE ] );
+				self::$wc->cart->items = array( 'item-1' => array( 'data' => new \WC_Product( 8, 0, array( Requirement::PRODUCT_META => Requirement::PRODUCT_EXEMPT ) ) ) );
+				return 'billing_first_name=Kim';
+			},
+		);
+		foreach ( $skips as $name => $setup ) {
+			Classic::remember_billing_name( $setup() );
+			$this->assertSame( '', $customer->billing['first_name'], $name );
+		}
+
+		Classic::register();
+		$this->assertNotFalse( has_action( 'woocommerce_checkout_update_order_review', array( Classic::class, 'remember_billing_name' ) ) );
+	}
+
 	public function test_classic_skips_local_pickup(): void {
 		$this->chosen_methods = array( 'local_pickup' );
 		$errors               = new \WP_Error();

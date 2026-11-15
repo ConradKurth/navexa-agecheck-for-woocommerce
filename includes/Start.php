@@ -39,6 +39,12 @@ defined( 'ABSPATH' ) || exit;
  * Refresh calls GetVerification and mints the checkout guard on PASSED with a
  * clearing pass class. Any error answers unavailable.
  *
+ * With Turnstile on (Turnstile, off by default) a start also carries
+ * data.turnstile, a Cloudflare Turnstile token: no token, or one Cloudflare
+ * refuses, answers refused; Turnstile without its keys, or Cloudflare not
+ * answering, answers unavailable. Checked after the rate limits, before any
+ * AgeCheck call.
+ *
  * Engine contract (E4a, in production since tax v0.0.164; proto
  * agecheck/v1/verification.proto): CreateVerification's identity is optional
  * under an ID-only pass policy (a policy that runs the database check needs
@@ -181,6 +187,15 @@ final class Start {
 		}
 		if ( RateLimit::OK !== $rate ) {
 			return self::reply( self::STATUS_UNAVAILABLE, __( 'Too many age check attempts. Please wait a while and try again.', 'navexa-agecheck-for-woocommerce' ) );
+		}
+		if ( self::ACTION_START === $action ) {
+			$turnstile = Turnstile::verify( isset( $data['turnstile'] ) ? $data['turnstile'] : null, RateLimit::client_ip() );
+			if ( Turnstile::FAILED === $turnstile ) {
+				return self::reply( self::STATUS_REFUSED, self::turnstile_message() );
+			}
+			if ( Turnstile::OK !== $turnstile ) {
+				return self::unavailable();
+			}
 		}
 
 		$client = Client::for_key( Client::KEY_START );
@@ -650,6 +665,13 @@ final class Start {
 			$reply['message'] = $message;
 		}
 		return $reply;
+	}
+
+	/**
+	 * Shopper-facing copy when the Turnstile check did not pass.
+	 */
+	public static function turnstile_message(): string {
+		return __( 'The security check did not pass. Complete it, then select Verify age again.', 'navexa-agecheck-for-woocommerce' );
 	}
 
 	/**

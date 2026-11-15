@@ -23,6 +23,14 @@ defined( 'ABSPATH' ) || exit;
  * reverted, with an order note and an admin notice. Name, company and phone
  * stay editable. Exception: an order AgeCheck held for ship_to_mismatch may be
  * edited, since restoring the verified address is the fix.
+ *
+ * WooCommerce's own anonymization of an order (WC_Privacy_Erasers::
+ * remove_order_personal_data(): the personal data eraser, the "Remove
+ * personal data" bulk action and the retention cleanup) is not undone:
+ * otherwise the shopper's street address would stay in the order while
+ * WooCommerce reports it removed. An anonymized address cannot be shipped to,
+ * and an order that can still ship keeps its verification (Privacy), so it
+ * stays locked against a new, unverified address afterwards.
  */
 final class AddressGuard {
 
@@ -43,10 +51,41 @@ final class AddressGuard {
 	private static $reverted = array();
 
 	/**
+	 * Orders WooCommerce is anonymizing in this request, by id.
+	 *
+	 * @var array<int, bool>
+	 */
+	private static $erasing = array();
+
+	/**
 	 * Registers the guard after Hold's backstop.
 	 */
 	public static function register(): void {
 		add_action( 'woocommerce_before_order_object_save', array( self::class, 'guard' ), 20, 1 );
+		add_action( 'woocommerce_privacy_before_remove_order_personal_data', array( self::class, 'erasure_starts' ), 10, 1 );
+		add_action( 'woocommerce_privacy_remove_order_personal_data', array( self::class, 'erasure_ends' ), 10, 1 );
+	}
+
+	/**
+	 * WooCommerce starts anonymizing $order: its save is not guarded.
+	 *
+	 * @param mixed $order Order.
+	 */
+	public static function erasure_starts( $order ): void {
+		if ( $order instanceof \WC_Order && $order->get_id() > 0 ) {
+			self::$erasing[ (int) $order->get_id() ] = true;
+		}
+	}
+
+	/**
+	 * WooCommerce finished anonymizing $order.
+	 *
+	 * @param mixed $order Order.
+	 */
+	public static function erasure_ends( $order ): void {
+		if ( $order instanceof \WC_Order ) {
+			unset( self::$erasing[ (int) $order->get_id() ] );
+		}
 	}
 
 	/**
@@ -56,6 +95,9 @@ final class AddressGuard {
 	 */
 	public static function guard( $order ): void {
 		if ( ! $order instanceof \WC_Order || 'shop_order' !== $order->get_type() || $order->get_id() <= 0 ) {
+			return;
+		}
+		if ( isset( self::$erasing[ (int) $order->get_id() ] ) ) {
 			return;
 		}
 		if ( ! self::locked( $order ) || ! self::ship_to_changed( $order ) ) {

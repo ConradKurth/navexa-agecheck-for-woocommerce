@@ -23,6 +23,8 @@ final class AddressGuardTest extends TestCase {
 	public function test_register(): void {
 		AddressGuard::register();
 		$this->assertSame( 20, has_action( 'woocommerce_before_order_object_save', array( AddressGuard::class, 'guard' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_privacy_before_remove_order_personal_data', array( AddressGuard::class, 'erasure_starts' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_privacy_remove_order_personal_data', array( AddressGuard::class, 'erasure_ends' ) ) );
 		OrderPay::register();
 		$this->assertNotFalse( has_action( 'woocommerce_before_pay_action', array( OrderPay::class, 'before_pay' ) ) );
 		$this->assertNotFalse( has_action( 'woocommerce_checkout_validate_order_before_payment', array( OrderPay::class, 'validate_existing_order' ) ) );
@@ -42,6 +44,29 @@ final class AddressGuardTest extends TestCase {
 		$this->assertStringContainsString( 'tied to its age check', end( $order->notes ) );
 		$this->assertArrayHasKey( 'navexa_agecheck_flash_2', $this->transients );
 		$this->assertStringContainsString( 'ship-to change reverted order=' . $order->get_id(), $this->all_logs() );
+	}
+
+	public function test_woocommerce_anonymizing_the_order_is_not_undone(): void {
+		$order = $this->bound_order();
+		AddressGuard::erasure_starts( $order );
+		$order->set_shipping_address_1( '[deleted]' );
+		$order->set_shipping_postcode( '[deleted]' );
+		$order->set_shipping_country( '' );
+		$order->save();
+		AddressGuard::erasure_ends( $order );
+		$this->assertSame( '[deleted]', $order->get_shipping_address_1(), 'the shopper\'s street address is gone, as WooCommerce reports' );
+		$this->assertSame( '', $order->get_shipping_country() );
+
+		$order->set_shipping_address_1( '99 Elsewhere Rd' );
+		$order->save();
+		$this->assertSame( '[deleted]', $order->get_shipping_address_1(), 'guarded again once WooCommerce is done' );
+
+		$other = $this->bound_order();
+		AddressGuard::erasure_starts( $order );
+		$other->set_shipping_address_1( '99 Elsewhere Rd' );
+		$other->save();
+		AddressGuard::erasure_ends( $order );
+		$this->assertSame( '1 Main St', $other->get_shipping_address_1(), 'only the order WooCommerce is anonymizing' );
 	}
 
 	public function test_case_and_spacing_edits_are_not_changes(): void {

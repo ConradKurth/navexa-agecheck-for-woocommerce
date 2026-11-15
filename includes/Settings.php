@@ -54,9 +54,10 @@ final class Settings extends \WC_Settings_Page {
 		add_action( 'woocommerce_admin_field_' . self::FIELD_SECRET, array( $this, 'output_secret_field' ) );
 		add_action( 'woocommerce_admin_field_' . self::FIELD_STATUS, array( $this, 'output_status_field' ) );
 		add_action( 'woocommerce_admin_field_' . self::FIELD_INFO, array( $this, 'output_info_field' ) );
-		foreach ( array( Options::START_KEY, Options::FULFILMENT_KEY, Options::WEBHOOK_SECRET ) as $option ) {
+		foreach ( array( Options::START_KEY, Options::FULFILMENT_KEY, Options::WEBHOOK_SECRET, Options::TURNSTILE_SECRET ) as $option ) {
 			add_filter( 'woocommerce_admin_settings_sanitize_option_' . $option, array( $this, 'sanitize_secret' ), 10, 3 );
 		}
+		add_filter( 'woocommerce_admin_settings_sanitize_option_' . Options::TURNSTILE_SITE_KEY, array( $this, 'sanitize_turnstile_site_key' ), 10, 3 );
 	}
 
 	/**
@@ -196,6 +197,63 @@ final class Settings extends \WC_Settings_Page {
 				'id'   => 'navexa_agecheck_webhook_section',
 				'type' => 'sectionend',
 			),
+			array(
+				'id'    => 'navexa_agecheck_protection_section',
+				'type'  => 'title',
+				'title' => __( 'Checkout protection', 'navexa-agecheck-for-woocommerce' ),
+			),
+			array(
+				'id'       => Options::HIDE_EXPRESS,
+				'type'     => 'checkbox',
+				'title'    => __( 'Express payment buttons', 'navexa-agecheck-for-woocommerce' ),
+				'desc'     => __( 'Hide express checkout buttons on age-restricted carts and products', 'navexa-agecheck-for-woocommerce' ),
+				'desc_tip' => __( 'Apple Pay, Google Pay, Link, Amazon Pay, WooPay and PayPal buttons from WooPayments, WooCommerce Stripe Gateway and WooCommerce PayPal Payments skip the checkout form, so the shopper never sees Verify age. Hidden, the shopper pays through the checkout form instead. An express order that still gets through is refused before payment (Before payment mode) or held after payment until the age check clears.', 'navexa-agecheck-for-woocommerce' ),
+				'default'  => 'yes',
+			),
+			array(
+				'id'       => Options::TURNSTILE,
+				'type'     => 'checkbox',
+				'title'    => __( 'Cloudflare Turnstile', 'navexa-agecheck-for-woocommerce' ),
+				'desc'     => __( 'Ask for a Turnstile security check before a shopper\'s age check starts', 'navexa-agecheck-for-woocommerce' ),
+				'desc_tip' => __( 'Keeps bots from starting age checks. The checkout page then loads Cloudflare\'s Turnstile script, and the shopper\'s Turnstile token and IP address are sent to Cloudflare to confirm it. When Turnstile is on and cannot confirm the shopper (or its keys are missing), the age check does not start.', 'navexa-agecheck-for-woocommerce' ),
+				'default'  => 'no',
+			),
+			array(
+				'id'      => Options::TURNSTILE_SITE_KEY,
+				'type'    => 'text',
+				'title'   => __( 'Turnstile site key', 'navexa-agecheck-for-woocommerce' ),
+				'desc'    => __( 'From the Turnstile widget you create for this store\'s domain in the Cloudflare dashboard.', 'navexa-agecheck-for-woocommerce' ),
+				'default' => '',
+				'class'   => 'regular-text',
+			),
+			array(
+				'id'       => Options::TURNSTILE_SECRET,
+				'type'     => self::FIELD_SECRET,
+				'title'    => __( 'Turnstile secret key', 'navexa-agecheck-for-woocommerce' ),
+				'desc'     => __( 'The same widget\'s secret key.', 'navexa-agecheck-for-woocommerce' ),
+				'autoload' => false,
+			),
+			array(
+				'id'   => 'navexa_agecheck_protection_section',
+				'type' => 'sectionend',
+			),
+			array(
+				'id'    => 'navexa_agecheck_data_section',
+				'type'  => 'title',
+				'title' => __( 'Data', 'navexa-agecheck-for-woocommerce' ),
+			),
+			array(
+				'id'       => Options::DELETE_DATA,
+				'type'     => 'checkbox',
+				'title'    => __( 'Delete data on uninstall', 'navexa-agecheck-for-woocommerce' ),
+				'desc'     => __( 'Also delete each order\'s age check details and each product\'s age check setting when the plugin is deleted', 'navexa-agecheck-for-woocommerce' ),
+				'desc_tip' => __( 'Off, they stay as an audit trail. The plugin\'s settings, keys and scheduled jobs are always deleted, and orders still awaiting an age check are moved to On hold, never released.', 'navexa-agecheck-for-woocommerce' ),
+				'default'  => 'no',
+			),
+			array(
+				'id'   => 'navexa_agecheck_data_section',
+				'type' => 'sectionend',
+			),
 		);
 	}
 
@@ -325,6 +383,9 @@ final class Settings extends \WC_Settings_Page {
 		if ( Options::WEBHOOK_SECRET === $id ) {
 			return $this->sanitize_webhook_secret( $raw_value );
 		}
+		if ( Options::TURNSTILE_SECRET === $id ) {
+			return $this->sanitize_turnstile_secret( $raw_value );
+		}
 		if ( Options::START_KEY !== $id && Options::FULFILMENT_KEY !== $id ) {
 			return $value;
 		}
@@ -375,6 +436,51 @@ final class Settings extends \WC_Settings_Page {
 	}
 
 	/**
+	 * Saves the Turnstile secret like the webhook secret (blank keeps it, the
+	 * Remove box deletes it), with its own shape check. Always returns null.
+	 *
+	 * @param mixed $raw_value Unslashed posted value.
+	 * @return null
+	 */
+	private function sanitize_turnstile_secret( $raw_value ) {
+		$id = Options::TURNSTILE_SECRET;
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- WC_Admin_Settings::save() checked the woocommerce-settings nonce.
+		$clear = isset( $_POST[ $id . '_clear' ] ) && '1' === sanitize_text_field( wp_unslash( $_POST[ $id . '_clear' ] ) );
+		$raw   = is_string( $raw_value ) ? trim( $raw_value ) : '';
+		if ( '' === $raw && ! $clear ) {
+			return null;
+		}
+		if ( '' !== $raw && ! Options::looks_like_turnstile_key( $raw ) ) {
+			\WC_Admin_Settings::add_error( __( 'That does not look like a Turnstile secret key. The saved key was kept.', 'navexa-agecheck-for-woocommerce' ) );
+			return null;
+		}
+		if ( '' === $raw ) {
+			delete_option( $id );
+		} else {
+			update_option( $id, $raw, false );
+		}
+		return null;
+	}
+
+	/**
+	 * Checks the Turnstile site key's shape. Blank clears it; a malformed one
+	 * keeps the saved key with an error.
+	 *
+	 * @param mixed $value     Value after wc_clean().
+	 * @param mixed $option    Field definition.
+	 * @param mixed $raw_value Unslashed posted value.
+	 * @return mixed
+	 */
+	public function sanitize_turnstile_site_key( $value, $option, $raw_value ) {
+		$raw = is_string( $raw_value ) ? trim( $raw_value ) : '';
+		if ( '' === $raw || Options::looks_like_turnstile_key( $raw ) ) {
+			return $raw;
+		}
+		\WC_Admin_Settings::add_error( __( 'That does not look like a Turnstile site key. The saved key was kept.', 'navexa-agecheck-for-woocommerce' ) );
+		return Options::turnstile_site_key();
+	}
+
+	/**
 	 * Renders a key field: an empty password input plus the masked saved key.
 	 *
 	 * @param array<string, mixed> $field Field definition.
@@ -385,6 +491,8 @@ final class Settings extends \WC_Settings_Page {
 		$saved = is_string( $saved ) ? trim( $saved ) : '';
 		$title = isset( $field['title'] ) ? (string) $field['title'] : '';
 		$desc  = isset( $field['desc'] ) ? (string) $field['desc'] : '';
+		// Only AgeCheck API keys show their first characters; secrets show nothing.
+		$api_key = in_array( $id, array( Options::START_KEY, Options::FULFILMENT_KEY ), true );
 
 		echo '<tr valign="top"><th scope="row" class="titledesc">';
 		echo '<label for="' . esc_attr( $id ) . '">' . esc_html( $title ) . '</label>';
@@ -392,12 +500,12 @@ final class Settings extends \WC_Settings_Page {
 		printf(
 			'<input name="%1$s" id="%1$s" type="password" value="" class="regular-text" autocomplete="off" spellcheck="false" placeholder="%2$s" />',
 			esc_attr( $id ),
-			esc_attr( '' === $saved ? ( Options::WEBHOOK_SECRET === $id ? '' : 'txk_…' ) : __( 'Leave blank to keep the saved key', 'navexa-agecheck-for-woocommerce' ) )
+			esc_attr( '' === $saved ? ( $api_key ? 'txk_…' : '' ) : __( 'Leave blank to keep the saved key', 'navexa-agecheck-for-woocommerce' ) )
 		);
 		echo '<p class="description">';
 		if ( '' === $saved ) {
 			echo esc_html( Options::WEBHOOK_SECRET === $id ? __( 'No secret saved.', 'navexa-agecheck-for-woocommerce' ) : __( 'No key saved.', 'navexa-agecheck-for-woocommerce' ) );
-		} elseif ( Options::WEBHOOK_SECRET === $id ) {
+		} elseif ( ! $api_key ) {
 			// No part of the secret is shown.
 			esc_html_e( 'A secret is saved.', 'navexa-agecheck-for-woocommerce' );
 		} else {
@@ -412,7 +520,7 @@ final class Settings extends \WC_Settings_Page {
 			printf(
 				'<p><label><input type="checkbox" name="%1$s" value="1" /> %2$s</label></p>',
 				esc_attr( $id . '_clear' ),
-				esc_html( Options::WEBHOOK_SECRET === $id ? __( 'Remove the saved secret', 'navexa-agecheck-for-woocommerce' ) : __( 'Remove the saved key', 'navexa-agecheck-for-woocommerce' ) )
+				esc_html( $api_key ? __( 'Remove the saved key', 'navexa-agecheck-for-woocommerce' ) : __( 'Remove the saved secret', 'navexa-agecheck-for-woocommerce' ) )
 			);
 		}
 		echo '</td></tr>';
@@ -555,6 +663,18 @@ final class Settings extends \WC_Settings_Page {
 
 		if ( Options::RULE_INCLUDE === Options::rule() && ! self::include_terms_exist() ) {
 			$lines[] = self::line( 'error', __( 'Age checks are limited to the categories and tags below, but none is chosen (or they were deleted). Only products set to "Always needs an age check" in the product editor are checked.', 'navexa-agecheck-for-woocommerce' ) );
+		}
+
+		if ( Turnstile::enabled() && ! Turnstile::configured() ) {
+			$lines[] = self::line( 'error', __( 'Cloudflare Turnstile is on, but its site key or secret key is missing, so shoppers cannot start age checks. Add both keys or turn Turnstile off.', 'navexa-agecheck-for-woocommerce' ) );
+		} elseif ( Turnstile::enabled() && ( Options::is_turnstile_test_key( Options::turnstile_site_key() ) || Options::is_turnstile_test_key( Options::turnstile_secret() ) ) ) {
+			$live = false;
+			foreach ( $infos as $key_info ) {
+				$live = $live || $key_info->livemode;
+			}
+			$lines[] = self::line( $live ? 'error' : 'warning', __( 'Cloudflare Turnstile uses Cloudflare\'s test keys, which accept a public dummy token, so it does not stop bots. Enter the site key and secret key of a Turnstile widget for this store\'s domain before you take live orders.', 'navexa-agecheck-for-woocommerce' ) );
+		} elseif ( Turnstile::enabled() ) {
+			$lines[] = self::line( 'ok', __( 'Cloudflare Turnstile checks shoppers before an age check starts.', 'navexa-agecheck-for-woocommerce' ) );
 		}
 
 		if ( ! RateLimit::table_exists() ) {

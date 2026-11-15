@@ -242,7 +242,7 @@ final class Requirement {
 	 *
 	 * @param int $id User id.
 	 */
-	private static function user_exempt( int $id ): bool {
+	public static function user_exempt( int $id ): bool {
 		$roles = Options::exempt_roles();
 		if ( empty( $roles ) || $id <= 0 ) {
 			return false;

@@ -109,6 +109,9 @@ final class Plugin {
 		ReturnPage::register();
 		Checkout\Classic::register();
 		Checkout\Blocks::register();
+		// Express payment buttons hidden on restricted products and carts
+		// (each gateway's own filters); the gates and the hold still apply.
+		Express::register();
 
 		// Holds: nothing below makes a network call in a shopper's request
 		// except Binding's AttachOrder after an order is placed.
@@ -123,6 +126,7 @@ final class Plugin {
 		Shipment::register();
 		Subscriptions::register();
 		Checkout\OrderPay::register();
+		Privacy::register();
 		if ( is_admin() ) {
 			Admin\OrderPanel::register();
 			Admin\OrdersFilter::register();

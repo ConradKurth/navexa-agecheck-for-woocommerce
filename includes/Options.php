@@ -98,6 +98,20 @@ final class Options {
 	const DEFAULT_MODE = self::MODE_PRE_PAYMENT;
 
 	/**
+	 * The $_SERVER key of the proxy header that carries the client IP
+	 * (RateLimit::PROXY_HEADERS), or '' for REMOTE_ADDR.
+	 */
+	const TRUSTED_PROXY_HEADER = 'navexa_agecheck_trusted_proxy_header';
+
+	/**
+	 * The trusted proxy header's $_SERVER key, or '' for none.
+	 */
+	public static function trusted_proxy_header(): string {
+		$header = get_option( self::TRUSTED_PROXY_HEADER, '' );
+		return is_string( $header ) && in_array( $header, RateLimit::PROXY_HEADERS, true ) ? $header : '';
+	}
+
+	/**
 	 * Option name of the $key_kind API key.
 	 *
 	 * @param string $key_kind Client::KEY_START or Client::KEY_FULFILMENT.

@@ -4,7 +4,8 @@
  * WooCommerce order flows against the mock engine: the hold on payment and
  * on a direct status change, the order-bound verification, webhook-driven
  * release, a lost CLEARED answer, the refused manual move and the logged
- * override, denial to the refund list, local pickup, the ship-to guard and
+ * override, denial to the refund list, local pickup, an order with no
+ * shipping line checked at its shipping address, the ship-to guard and
  * order-pay refusal, ReportShipment, the sweep, per-order queueing on the
  * bundled Action Scheduler, and a copied order, on whichever order storage
  * is active.
@@ -39,12 +40,18 @@ function navexa_smoke_reload( $order ) {
 	return wc_get_order( is_object( $order ) ? $order->get_id() : $order );
 }
 
+/**
+ * A pending order for $product. Args: payment, shipping (method id; '' for an
+ * order with no shipping line, as staff often create one), country, and
+ * ship_to (fields that make the shipping address differ from billing).
+ */
 function navexa_smoke_order( $product, $args = array() ) {
 	$args    = array_merge(
 		array(
 			'payment'  => 'bacs',
 			'shipping' => 'flat_rate',
 			'country'  => 'US',
+			'ship_to'  => array(),
 		),
 		$args
 	);
@@ -61,13 +68,15 @@ function navexa_smoke_order( $product, $args = array() ) {
 		'email'      => 'ada@example.com',
 	);
 	$order->set_address( $address, 'billing' );
-	$order->set_address( $address, 'shipping' );
+	$order->set_address( array_merge( $address, $args['ship_to'] ), 'shipping' );
 	$order->set_payment_method( $args['payment'] );
-	$shipping = new WC_Order_Item_Shipping();
-	$shipping->set_method_id( $args['shipping'] );
-	$shipping->set_method_title( $args['shipping'] );
-	$shipping->set_total( '5' );
-	$order->add_item( $shipping );
+	if ( '' !== $args['shipping'] ) {
+		$shipping = new WC_Order_Item_Shipping();
+		$shipping->set_method_id( $args['shipping'] );
+		$shipping->set_method_title( $args['shipping'] );
+		$shipping->set_total( '5' );
+		$order->add_item( $shipping );
+	}
 	$order->calculate_totals();
 	$order->save();
 	return navexa_smoke_reload( $order );
@@ -311,6 +320,39 @@ $f->payment_complete();
 $outcome = Release::run( $f->get_id(), Release::TRIGGER_HOLD );
 $f       = navexa_smoke_reload( $f );
 navexa_smoke_check( Hold::STATUS === $f->get_status() && 'not_us' === $f->get_meta( Meta::REASON ), 'non-US order held and denied (' . $outcome . ')' );
+
+// 10b. An order with no shipping line (staff-created, REST, POS, imported:
+// free shipping by omission) is checked where it ships, its shipping address,
+// not at billing.
+$navexa_last_rpc = static function ( $rpc, $external ) {
+	$found = null;
+	foreach ( navexa_smoke_get( '/__mock/requests' ) as $navexa_request ) {
+		if ( $rpc === $navexa_request['rpc'] && isset( $navexa_request['body']['orderExternalId'] ) && $external === $navexa_request['body']['orderExternalId'] ) {
+			$found = $navexa_request;
+		}
+	}
+	return $found;
+};
+$j = navexa_smoke_order( $product, array( 'shipping' => '', 'ship_to' => array( 'address_1' => '9 Elm St', 'city' => 'Chicago', 'postcode' => '60601' ) ) );
+navexa_smoke_check( ! $j->needs_shipping_address(), 'an order with no shipping line needs no shipping address, for WooCommerce' );
+$j->payment_complete();
+$outcome  = Release::run( $j->get_id(), Release::TRIGGER_HOLD );
+$j        = navexa_smoke_reload( $j );
+$navexa_c = $navexa_last_rpc( 'CreateVerification', $j->get_meta( Meta::EXTERNAL_ID ) );
+navexa_smoke_check( Release::PENDING === $outcome && null !== $navexa_c && '9 Elm St' === $navexa_c['body']['shipTo']['line1'] && '60601' === $navexa_c['body']['shipTo']['postalCode'], 'no shipping line: verified at the shipping address (' . $outcome . ')' );
+navexa_smoke_check( null !== $navexa_c && '1 Main St' === $navexa_c['body']['identity']['residentialAddress']['line1'], 'billing stays the residential address' );
+navexa_smoke_mock( '/__mock/verifications', array( 'id' => $j->get_meta( Meta::VERIFICATION_ID ), 'status' => 'passed' ) );
+$outcome  = Release::run( $j->get_id(), Release::TRIGGER_WEBHOOK );
+$j        = navexa_smoke_reload( $j );
+$navexa_c = $navexa_last_rpc( 'GetClearance', $j->get_meta( Meta::EXTERNAL_ID ) );
+navexa_smoke_check( Release::RELEASED === $outcome && 'processing' === $j->get_status() && null !== $navexa_c && '9 Elm St' === $navexa_c['body']['shipTo']['line1'], 'and cleared at the shipping address (' . $outcome . ')' );
+
+$k = navexa_smoke_order( $product, array( 'shipping' => '', 'ship_to' => array( 'city' => 'Toronto', 'state' => 'ON', 'postcode' => 'M5V 2T6', 'country' => 'CA' ) ) );
+$k->payment_complete();
+$outcome = Release::run( $k->get_id(), Release::TRIGGER_HOLD );
+$k       = navexa_smoke_reload( $k );
+navexa_smoke_check( Hold::STATUS === $k->get_status() && 'not_us' === $k->get_meta( Meta::REASON ), 'no shipping line, billed in the US, shipping to Canada: denied not_us (' . $outcome . ')' );
+navexa_smoke_check( null === $navexa_last_rpc( 'CreateVerification', $k->get_meta( Meta::EXTERNAL_ID ) ), 'and never verified at the billing address' );
 
 // 11. An exempt product is not held.
 $navexa_exempt = new WC_Product_Simple();

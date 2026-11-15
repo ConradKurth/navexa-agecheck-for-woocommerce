@@ -78,6 +78,27 @@ final class RequirementTest extends TestCase {
 		$this->assertFalse( Requirement::is_pickup( \WC_Order::make() ), 'no shipping lines is not pickup' );
 	}
 
+	public function test_the_cart_follows_the_same_rules_before_an_order_exists(): void {
+		$cart = new \WC_Cart();
+		$this->assertTrue( Requirement::cart_required( $cart ), 'rule: every product' );
+
+		$cart->items = array( 'a' => array( 'data' => new \WC_Product( 8, 0, array( Requirement::PRODUCT_META => Requirement::PRODUCT_EXEMPT ) ) ) );
+		$this->assertFalse( Requirement::cart_required( $cart ), 'an exempt product' );
+		$cart->items['b'] = array( 'data' => null );
+		$this->assertTrue( Requirement::cart_required( $cart ), 'an item without a product counts as restricted' );
+
+		$cart = new \WC_Cart();
+		$this->options[ Options::EXEMPT_ROLES ] = array( 'wholesale' );
+		$this->users[5]                         = new \WP_User( 5, array( 'wholesale' ) );
+		$this->current_user                     = 5;
+		$this->assertFalse( Requirement::cart_required( $cart ), 'the signed-in shopper is the order\'s customer' );
+		$this->current_user = 0;
+		$this->assertTrue( Requirement::cart_required( $cart ), 'guests are never exempt' );
+
+		$cart->empty = true;
+		$this->assertFalse( Requirement::cart_required( $cart ) );
+	}
+
 	public function test_exempt_role_of_the_orders_customer(): void {
 		$this->options[ Options::EXEMPT_ROLES ] = array( 'wholesale' );
 		$this->users[5]                         = new \WP_User( 5, array( 'wholesale' ) );

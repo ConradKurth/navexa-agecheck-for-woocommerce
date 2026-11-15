@@ -49,7 +49,7 @@ final class ReleaseTest extends TestCase {
 		$this->assertSame( Meta::STATUS_CLEARED, $order->meta[ Meta::STATUS ] );
 		$this->assertArrayNotHasKey( Meta::CLEARANCE_KEY, $order->meta );
 		$this->assertStringContainsString( 'AgeCheck: age check passed. Order released.', implode( "\n", $order->notes ) );
-		$this->assertSame( array( $order->get_id() ), $this->wc->mailer->emails['WC_Email_Customer_Processing_Order']->triggered );
+		$this->assertSame( array( $order->get_id() ), self::$wc->mailer->emails['WC_Email_Customer_Processing_Order']->triggered );
 		$this->assertArrayNotHasKey( 'navexa_agecheck_lock_' . $order->get_id(), $this->options, 'the lock is released' );
 		$this->assertStringContainsString( 'trigger=webhook outcome=released', $this->all_logs() );
 	}

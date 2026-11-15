@@ -1,0 +1,118 @@
+<?php
+/**
+ * Frontend script registration tests.
+ *
+ * @package Navexa\AgeCheck\Tests
+ */
+
+namespace Navexa\AgeCheck\Tests\Unit;
+
+use Brain\Monkey\Functions;
+use Navexa\AgeCheck\Frontend;
+use Navexa\AgeCheck\Tests\TestCase;
+
+final class FrontendTest extends TestCase {
+
+	/** @var array<string, array{src: string, deps: string[]}> */
+	private $registered = array();
+
+	protected function setUp(): void {
+		parent::setUp();
+		$test = $this;
+		Functions\when( 'wp_script_is' )->alias(
+			static function ( $handle ) use ( $test ) {
+				return isset( $test->registered[ $handle ] );
+			}
+		);
+		Functions\when( 'wp_register_script' )->alias(
+			static function ( $handle, $src, $deps ) use ( $test ) {
+				$test->registered[ $handle ] = array(
+					'src'  => $src,
+					'deps' => $deps,
+				);
+				return true;
+			}
+		);
+		Functions\when( 'plugins_url' )->alias(
+			static function ( $path ) {
+				return 'https://shop.example/wp-content/plugins/navexa-agecheck-for-woocommerce/' . $path;
+			}
+		);
+		Functions\when( 'wp_set_script_translations' )->justReturn( true );
+	}
+
+	public function test_registers_the_bundled_loader_and_its_users(): void {
+		Frontend::register_scripts();
+		Frontend::register_scripts();
+		$this->assertSame( array( Frontend::HANDLE_LOADER, Frontend::HANDLE_CLASSIC, Frontend::HANDLE_BLOCK ), array_keys( $this->registered ) );
+		$this->assertStringEndsWith( '/assets/js/agecheck-' . Frontend::LOADER_VERSION . '.min.js', $this->registered[ Frontend::HANDLE_LOADER ]['src'] );
+		$this->assertSame( array(), $this->registered[ Frontend::HANDLE_LOADER ]['deps'], 'zero dependencies' );
+		$this->assertSame( array( Frontend::HANDLE_LOADER ), $this->registered[ Frontend::HANDLE_CLASSIC ]['deps'] );
+		foreach ( array( Frontend::HANDLE_LOADER, 'wc-blocks-checkout', 'wc-blocks-data-store', 'wc-settings', 'wp-data', 'wp-element' ) as $dep ) {
+			$this->assertContains( $dep, $this->registered[ Frontend::HANDLE_BLOCK ]['deps'], $dep );
+		}
+		foreach ( $this->registered as $script ) {
+			$this->assertStringStartsWith( 'https://shop.example/', $script['src'], 'nothing from a third-party host' );
+		}
+	}
+
+	public function test_the_built_files_exist(): void {
+		$root = dirname( __DIR__, 3 );
+		foreach ( array( 'agecheck-' . Frontend::LOADER_VERSION . '.js', 'agecheck-' . Frontend::LOADER_VERSION . '.min.js', 'checkout-classic.js', 'checkout-classic.min.js' ) as $file ) {
+			$this->assertFileExists( $root . '/assets/js/' . $file );
+		}
+		foreach ( array( 'block.json', 'index.js', 'index.asset.php', 'frontend.js', 'frontend.asset.php' ) as $file ) {
+			$this->assertFileExists( $root . '/assets/build/verify-age/' . $file );
+		}
+		foreach ( array( 'block.json', 'index.js', 'index.asset.php' ) as $file ) {
+			$this->assertFileExists( $root . '/assets/build/verify-age-no-payment/' . $file );
+		}
+		$this->assertStringContainsString( 'LOADER_VERSION = "' . Frontend::LOADER_VERSION . '"', (string) file_get_contents( $root . '/assets/src/loader/agecheck.ts' ) );
+	}
+
+	public function test_classic_data_has_a_rest_nonce_only_when_signed_in(): void {
+		$data = Frontend::classic_data();
+		$this->assertSame( 'https://shop.example/wp-json/wc/store/v1/', $data['storeApi'] );
+		$this->assertArrayNotHasKey( 'restNonce', $data );
+		$this->assertSame( 'Verify age', $data['i18n']['verify'] );
+
+		$this->logged_in = true;
+		$this->assertSame( 'nonce-wp_rest', Frontend::classic_data()['restNonce'] );
+	}
+
+	public function test_enqueue_classic_inlines_its_data(): void {
+		$inline = array();
+		Functions\when( 'wp_enqueue_script' )->justReturn( true );
+		Functions\when( 'wp_add_inline_script' )->alias(
+			static function ( $handle, $code, $position ) use ( &$inline ) {
+				$inline[] = array( $handle, $code, $position );
+				return true;
+			}
+		);
+		Frontend::enqueue_classic();
+		$this->assertSame( Frontend::HANDLE_CLASSIC, $inline[0][0] );
+		$this->assertSame( 'before', $inline[0][2] );
+		$this->assertStringStartsWith( 'window.navexaAgeCheckClassic = {', $inline[0][1] );
+		$this->assertStringNotContainsString( '</', $inline[0][1] );
+	}
+
+	public function test_block_type_registration(): void {
+		$dirs = array();
+		Functions\when( 'register_block_type' )->alias(
+			static function ( $dir ) use ( &$dirs ) {
+				$dirs[] = $dir;
+				return true;
+			}
+		);
+		Frontend::register_block_type();
+		$this->assertCount( 2, $dirs );
+		$this->assertStringEndsWith( '/assets/build/verify-age', $dirs[0] );
+		$this->assertStringEndsWith( '/assets/build/verify-age-no-payment', $dirs[1] );
+		$meta = json_decode( (string) file_get_contents( $dirs[0] . '/block.json' ), true );
+		$this->assertSame( array( 'woocommerce/checkout-payment-block' ), $meta['parent'] );
+		$this->assertTrue( $meta['attributes']['lock']['default']['remove'], 'forced into the checkout' );
+		$fallback = json_decode( (string) file_get_contents( $dirs[1] . '/block.json' ), true );
+		$this->assertSame( array( 'woocommerce/checkout-fields-block' ), $fallback['parent'] );
+		$this->assertTrue( $fallback['attributes']['lock']['default']['remove'] );
+	}
+}

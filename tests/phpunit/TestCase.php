@@ -1,6 +1,7 @@
 <?php
 /**
- * Base test case: Brain Monkey plus in-memory options, transients and HTTP.
+ * Base test case: Brain Monkey plus in-memory options, transients, HTTP,
+ * orders, Action Scheduler, and WooCommerce session, cart and customer doubles.
  *
  * @package Navexa\AgeCheck\Tests
  */
@@ -73,11 +74,24 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 	/** @var array<int, array<string, int[]>> product id => taxonomy => term ids. */
 	public $product_terms = array();
 
-	/** @var FakeWC */
-	public $wc;
+	/**
+	 * What WC() returns: session, cart, customer and mailer doubles.
+	 *
+	 * @var \WooCommerce|null
+	 */
+	public static $wc = null;
 
-	/** @var FakeWpdb */
+	/** @var FakeWpdb Options-table (Lock) and counter-table (RateLimit) SQL. */
 	public $wpdb;
+
+	/** @var array<int, \WC_Order> wc_get_order() answers by id, ahead of WC_Order::$store. */
+	protected $orders = array();
+
+	/** @var string[] wc_get_chosen_shipping_method_ids(). */
+	protected $chosen_methods = array( 'flat_rate' );
+
+	/** @var bool is_user_logged_in(). */
+	protected $logged_in = false;
 
 	/** @var array<string, mixed> Transients for user meta, keyed "{user}:{key}". */
 	public $user_meta = array();
@@ -138,9 +152,22 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 		\WC_Order::$before_save    = array();
 		\WC_Order::$after_save     = array();
 		\WC_Order::$status_actions = array();
-		$this->wc                   = new FakeWC();
+		self::$wc                   = new \WooCommerce();
+		self::$wc->session          = new \WC_Session();
+		self::$wc->cart             = new \WC_Cart();
+		self::$wc->customer         = new \WC_Customer();
 		$this->wpdb                 = new FakeWpdb( $this->options );
 		$GLOBALS['wpdb']            = $this->wpdb;
+		$_SERVER['REMOTE_ADDR']     = '203.0.113.7';
+		\Navexa\AgeCheck\Start::reset();
+		\Navexa\AgeCheck\Checkout\Blocks::reset();
+		\Navexa\AgeCheck\Checkout\Gate::reset();
+
+		Functions\when( 'WC' )->alias(
+			static function () {
+				return self::$wc;
+			}
+		);
 
 		Functions\stubs(
 			array(
@@ -171,11 +198,27 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 				'rest_url'                     => static function ( $path = '' ) {
 					return 'https://shop.example/wp-json/' . ltrim( $path, '/' );
 				},
-				'WC'                           => static function () use ( $test ) {
-					return $test->wc;
-				},
-				'wc_get_order'                 => static function ( $id ) {
+				'wc_get_order'                 => static function ( $id ) use ( $test ) {
+					if ( isset( $test->orders[ (int) $id ] ) ) {
+						return $test->orders[ (int) $id ];
+					}
 					return isset( \WC_Order::$store[ (int) $id ] ) ? \WC_Order::$store[ (int) $id ] : false;
+				},
+				'wc_get_chosen_shipping_method_ids' => static function () use ( $test ) {
+					return $test->chosen_methods;
+				},
+				'is_user_logged_in'            => static function () use ( $test ) {
+					return $test->logged_in;
+				},
+				'trailingslashit'              => static function ( $value ) {
+					return rtrim( $value, '/\\' ) . '/';
+				},
+				'esc_url_raw'                  => null,
+				'wp_rand'                      => 1,
+				'wc_get_checkout_url'          => 'https://shop.example/checkout/',
+				'get_bloginfo'                 => 'en-US',
+				'wp_create_nonce'              => static function ( $action ) {
+					return 'nonce-' . $action;
 				},
 				'wc_get_product'               => static function ( $id ) use ( $test ) {
 					return isset( $test->products[ $id ] ) ? $test->products[ $id ] : false;
@@ -517,7 +560,108 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 
 	protected function tearDown(): void {
 		Monkey\tearDown();
+		unset( $GLOBALS['wpdb'] );
+		self::$wc = null;
 		parent::tearDown();
+	}
+
+	/** The fake WooCommerce session. */
+	protected function session(): \WC_Session {
+		return self::$wc->session;
+	}
+
+	/** A complete US shipping address in WooCommerce's shape. */
+	protected function us_address( array $overrides = array() ): array {
+		return array_merge(
+			array(
+				'first_name' => 'Pat',
+				'last_name'  => 'Doe',
+				'address_1'  => '123 Main St',
+				'address_2'  => 'Apt 4',
+				'city'       => 'Springfield',
+				'state'      => 'IL',
+				'postcode'   => '62701-1234',
+				'country'    => 'US',
+				'email'      => 'pat@example.com',
+			),
+			$overrides
+		);
+	}
+
+	/** Gives the session customer this billing and shipping address. */
+	protected function customer_at( array $address, ?array $billing = null ): void {
+		self::$wc->customer->shipping = $address;
+		self::$wc->customer->billing  = null === $billing ? $address : $billing;
+	}
+
+	/**
+	 * Runs the pre-payment gate as a cart checkout does before its order is
+	 * placed: the session holds a guard for $vid at $address, AgeCheck answers
+	 * PASSED, and Gate::check() admits it (what Binding::bind_checkout()
+	 * binds). Leaves no recorded or queued HTTP behind.
+	 *
+	 * @param string                $vid     Verification id.
+	 * @param array<string, string> $address WooCommerce address the shopper verified at.
+	 */
+	protected function admit_checkout( string $vid, array $address ): void {
+		$requests  = $this->http_requests;
+		$responses = $this->http_responses;
+		$ship_to   = \Navexa\AgeCheck\ShipTo::from_wc_address( $address );
+		$mac       = $ship_to->mac();
+		\Navexa\AgeCheck\Checkout\Session::set_record( $vid, $mac, 0, \Navexa\AgeCheck\Checkout\Session::STATUS_PASSED );
+		\Navexa\AgeCheck\Checkout\Session::set_guard( \Navexa\AgeCheck\GuardToken::mint_checkout_guard( \Navexa\AgeCheck\Checkout\Session::sid( true ), $vid, $mac ), $vid );
+		$this->http_responses = array();
+		$this->respond( 200, $this->live_info() );
+		\Navexa\AgeCheck\Mode::info( Client::KEY_FULFILMENT ); // Uses the answer unless the mode is cached.
+		$this->http_responses = array();
+		$this->respond( 200, array( 'verification' => $this->verification( $vid, 'PASSED' ) ) );
+		$this->assertNull( \Navexa\AgeCheck\Checkout\Gate::check( $ship_to, $ship_to->country() ) );
+		$this->assertSame( $vid, \Navexa\AgeCheck\Checkout\Gate::admitted_verification_id() );
+		$this->http_requests  = $requests;
+		$this->http_responses = $responses;
+	}
+
+	/** A Verification message (proto3 JSON). */
+	protected function verification( string $id, string $status, array $extra = array() ): array {
+		return array_merge(
+			array(
+				'id'       => $id,
+				'status'   => 'VERIFICATION_STATUS_' . $status,
+				'livemode' => true,
+			),
+			'PASSED' === $status ? array( 'passClass' => 'PASS_CLASS_DOC_ONLY' ) : array(),
+			$extra
+		);
+	}
+
+	/**
+	 * A stored order (WC_Order::make()) with one restricted line item, shipping
+	 * by $method to $address (WooCommerce's address shape), billed to $billing
+	 * (default: the same address).
+	 *
+	 * @param array<string, string>      $address Shipping address.
+	 * @param string                     $method  Shipping method id.
+	 * @param array<string, string>|null $billing Billing address.
+	 * @param string                     $status  Status.
+	 * @param int                        $id      Order id (0: the next free one).
+	 */
+	protected function order_at( array $address, string $method = 'flat_rate', ?array $billing = null, string $status = 'checkout-draft', int $id = 0 ): \WC_Order {
+		$order = \WC_Order::make( $status, $id );
+		$order->add_test_item( new \WC_Order_Item_Product( new \WC_Product( 7 ), 1, 20.0 ) );
+		$order->add_test_item( new \WC_Order_Item_Shipping( $method, 5.0 ) );
+		$order->set_test_address( 'shipping', $address );
+		$order->set_test_address( 'billing', null === $billing ? $address : $billing );
+		return $order;
+	}
+
+	/** The RPC name of the $index-th recorded HTTP request. */
+	protected function request_rpc( int $index ): string {
+		return substr( strrchr( $this->http_requests[ $index ]['url'], '/' ), 1 );
+	}
+
+	/** The API key the $index-th recorded HTTP request used. */
+	protected function request_key( int $index ): string {
+		return substr( $this->http_requests[ $index ]['args']['headers']['Authorization'], 7 );
 	}
 
 	/** Initializes the install state and stores both live keys. */
@@ -555,11 +699,12 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 	protected function live_info( array $overrides = array() ): array {
 		return array_merge(
 			array(
-				'livemode'      => true,
-				'scopes'        => array( 'agecheck:verify', 'agecheck:clearance' ),
-				'originAllowed' => true,
-				'minimumAge'    => 21,
-				'displayName'   => 'Shop Example',
+				'livemode'       => true,
+				'scopes'         => array( 'agecheck:verify', 'agecheck:clearance' ),
+				'originAllowed'  => true,
+				'minimumAge'     => 21,
+				'displayName'    => 'Shop Example',
+				'organizationId' => 'org_example',
 			),
 			$overrides
 		);

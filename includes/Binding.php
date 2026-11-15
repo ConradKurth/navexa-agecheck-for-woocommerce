@@ -7,21 +7,33 @@
 
 namespace Navexa\AgeCheck;
 
+use Navexa\AgeCheck\Checkout\Gate;
+use Navexa\AgeCheck\Checkout\Session;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
  * Binds an order to the verification that clears it.
  *
- * - Checkout verification (pre-payment mode, W2): the shopper verified
- *   before paying and the session holds the verification id. On
- *   woocommerce_checkout_order_processed and
- *   woocommerce_store_api_checkout_order_processed (which also fires on every
- *   order-pay POST) the id moves from the session to the order and AttachOrder
- *   binds it with the order's ship-to, idempotency key ao:{external id}. The
+ * - Checkout verification (pre-payment mode): the shopper verified before
+ *   paying, and the cart checkout's gate (Checkout\Gate::check(), run by
+ *   classic woocommerce_after_checkout_validation and by Checkout\Blocks for
+ *   the Store API cart route) admitted the session's guarded verification in
+ *   this request. On woocommerce_checkout_order_processed and
+ *   woocommerce_store_api_checkout_order_processed that verification, and
+ *   only that one (checkout_vid()), moves from the session to the order: the
+ *   order records it with the hash of its ship-to (SHIP_TO_HASH, what a
+ *   resumed order is admitted at), Session::forget_verification() drops the
+ *   id, the guard and the session record, and AttachOrder binds it with the
+ *   order's ship-to, idempotency key ao:{external id}. The Store API hook
+ *   also fires on every order-pay POST, where no gate runs: that order, an
+ *   order placed in accept-and-hold mode, and any order placed without the
+ *   gate bind nothing here and take the order-bound path below (owner
+ *   decision Q11b), even when the session still holds an older check. The
  *   hooks are re-entrant: an order that already has a verification id is
  *   left alone, so a failed-payment retry does not bind twice. A transient
- *   failure leaves ATTACH_PENDING for the release run and the sweep; checkout
- *   never fails on it.
+ *   failure leaves ATTACH_PENDING for the release run and the sweep;
+ *   checkout never fails on it.
  * - Order-bound verification (accept-and-hold, order-pay, or a checkout
  *   verification that cannot be used): CreateVerification with the order id
  *   and ship-to, the billing name, email and address as a partial identity
@@ -33,25 +45,16 @@ defined( 'ABSPATH' ) || exit;
  * order, this one included, so a re-attach after its idempotency key expired
  * (24 h) confirms with GetVerification that the order it holds is ours.
  *
- * Engine contract assumptions (E4a, not in production yet): an identity
- * without a date of birth, document_name_check, return_url, and AttachOrder's
- * FAILED_PRECONDITION "ship_to_changed" when the shopper verified for another
- * ship-to. Today's engine refuses the order-bound create with
- * INVALID_ARGUMENT (identity needs a date of birth), which leaves the order
- * held for review.
+ * Engine contract (E4a, in production since tax v0.0.164; proto
+ * agecheck/v1/verification.proto): an identity without a date of birth is
+ * accepted under an ID-only pass policy (a policy that runs the database
+ * check answers INVALID_ARGUMENT naming the missing field, which leaves the
+ * order held for review); with order_external_id, document_name_check is
+ * always REQUIRED and identity.name required; return_url is signed into the
+ * hosted link; AttachOrder answers FAILED_PRECONDITION "ship_to_changed" when
+ * the shopper verified for another intended ship-to.
  */
 final class Binding {
-
-	/**
-	 * WooCommerce session key holding the checkout verification id (written by
-	 * the start endpoint, W2).
-	 */
-	const SESSION_VID = 'navexa_agecheck_vid';
-
-	/**
-	 * WooCommerce session key holding the checkout guard token (W2).
-	 */
-	const SESSION_GUARD = 'navexa_agecheck_guard';
 
 	const BOUND    = 'bound';
 	const NO_VID   = 'no_vid';
@@ -61,6 +64,8 @@ final class Binding {
 
 	/**
 	 * Verification statuses that wait on the shopper, so a link helps.
+	 * awaiting_identity is E4b's (not in the proto yet); listed so the first
+	 * engine release that sends it needs no plugin release.
 	 */
 	const AWAITING_SHOPPER = array( 'created', 'needs_doc', 'doc_pending', 'awaiting_identity' );
 
@@ -151,15 +156,21 @@ final class Binding {
 				$order->save_meta_data();
 				return;
 			}
-			$vid = self::session_vid();
+			$vid = self::checkout_vid();
 			if ( '' === $vid ) {
 				$order->save_meta_data();
 				return;
 			}
 			Meta::set( $order, Meta::VERIFICATION_ID, $vid );
 			Meta::set( $order, Meta::ATTACH_PENDING, 'yes' );
+			$ship_to = OrderAddress::ship_to( $order );
+			if ( null !== $ship_to ) {
+				// What the guard admitted: a payment retried before AttachOrder
+				// answers is still admitted at this ship-to (Checkout\Gate).
+				Meta::set( $order, Meta::SHIP_TO_HASH, OrderAddress::hash( $ship_to ) );
+			}
 			$order->save_meta_data();
-			self::forget_session();
+			Session::forget_verification();
 			try {
 				self::attach( $order, Client::for_key( Client::KEY_FULFILMENT ) );
 			} catch ( ConnectError $e ) {
@@ -381,12 +392,12 @@ final class Binding {
 			'identity'          => $identity,
 			'orderExternalId'   => $external,
 			'shipTo'            => $ship_to,
-			// E4a (not in production yet): the ID's name must match identity.name.
+			// Always REQUIRED with order_external_id (E4a): the ID's name must match identity.name.
 			'documentNameCheck' => 'DOCUMENT_NAME_CHECK_REQUIRED',
 		);
 		$return  = self::return_url( $order );
 		if ( '' !== $return ) {
-			$request['returnUrl'] = $return; // E4a (not in production yet).
+			$request['returnUrl'] = $return; // Signed into the hosted link (E4a).
 		}
 
 		try {
@@ -643,26 +654,23 @@ final class Binding {
 	}
 
 	/**
-	 * The session's checkout verification id, or ''.
+	 * The checkout verification to bind to the order being placed, or '': the
+	 * one the pre-payment gate admitted in this request through the session's
+	 * guard (Gate::admitted_verification_id(), which is also Session::KEY_VID).
+	 * KEY_VID alone is never enough: it outlives the guard's TTL, is not tied
+	 * to this order's ship-to, and stays in the session when the shopper
+	 * leaves a checkout unfinished. A resumed bound order is admitted on its
+	 * own verification, which is no longer the session's, so it never
+	 * matches (and is skipped earlier anyway).
 	 */
-	private static function session_vid(): string {
-		$session = function_exists( 'WC' ) ? WC()->session : null;
-		if ( ! is_object( $session ) || ! is_callable( array( $session, 'get' ) ) ) {
+	private static function checkout_vid(): string {
+		if ( ! Gate::enforces() ) {
 			return '';
 		}
-		$vid = $session->get( self::SESSION_VID );
-		return is_string( $vid ) && self::is_verification_id( $vid ) ? $vid : '';
-	}
-
-	/**
-	 * Drops the verification id and guard from the session once an order holds them.
-	 */
-	private static function forget_session(): void {
-		$session = function_exists( 'WC' ) ? WC()->session : null;
-		if ( is_object( $session ) && is_callable( array( $session, '__unset' ) ) ) {
-			$session->__unset( self::SESSION_VID );
-			$session->__unset( self::SESSION_GUARD );
-		}
+		$admitted = Gate::admitted_verification_id();
+		$session  = Session::wc_session();
+		$vid      = null === $session ? null : $session->get( Session::KEY_VID );
+		return is_string( $vid ) && self::is_verification_id( $vid ) && $admitted === $vid ? $vid : '';
 	}
 
 	/**

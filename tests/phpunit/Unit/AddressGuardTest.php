@@ -106,7 +106,19 @@ final class AddressGuardTest extends TestCase {
 		$draft->data['status'] = 'checkout-draft';
 		$draft->set_shipping_address_1( '99 Elsewhere Rd' );
 		OrderPay::validate_existing_order( $draft, $errors3 );
-		$this->assertSame( array(), $errors3->added, 'new checkouts are W2\'s' );
+		$this->assertSame( array(), $errors3->added, 'new checkouts are Checkout\\Blocks\'' );
+
+		// A Store API cart checkout reusing a pending or failed order is a new
+		// checkout too: Checkout\Blocks decides it, OrderPay leaves it alone.
+		$reused = $this->bound_order();
+		$reused->data['status'] = 'failed';
+		$reused->set_shipping_address_1( '99 Elsewhere Rd' );
+		\Navexa\AgeCheck\Checkout\Blocks::mark_cart_checkout( $reused );
+		OrderPay::validate_existing_order( $reused, $errors3 );
+		$this->assertSame( array(), $errors3->added, 'the cart checkout\'s order' );
+		\Navexa\AgeCheck\Checkout\Blocks::reset();
+		OrderPay::validate_existing_order( $reused, $errors3 );
+		$this->assertArrayHasKey( 'navexa_agecheck_ship_to_locked', $errors3->added, 'the same order paid on the order-pay route' );
 		OrderPay::validate_existing_order( 'x', $errors3 );
 	}
 

@@ -10,12 +10,14 @@ namespace Navexa\AgeCheck\Tests\Unit;
 
 use Brain\Monkey\Filters;
 use Navexa\AgeCheck\Binding;
+use Navexa\AgeCheck\Checkout\Session;
 use Navexa\AgeCheck\Client;
 use Navexa\AgeCheck\ConnectError;
 use Navexa\AgeCheck\EngineLinkSender;
 use Navexa\AgeCheck\Install;
 use Navexa\AgeCheck\LinkSender;
 use Navexa\AgeCheck\Meta;
+use Navexa\AgeCheck\OrderAddress;
 use Navexa\AgeCheck\Tests\TestCase;
 use Navexa\AgeCheck\UnavailableLinkSender;
 
@@ -104,11 +106,12 @@ final class BindingTest extends TestCase {
 	}
 
 	public function test_checkout_binds_the_session_verification(): void {
-		$this->wc->session->data = array(
-			Binding::SESSION_VID   => self::VID,
-			Binding::SESSION_GUARD => 'guard-token',
-			'other'                => 'kept',
+		self::$wc->session->data = array(
+			Session::KEY_SID => str_repeat( 'a', 32 ),
+			'other'          => 'kept',
 		);
+		$this->admit_checkout( self::VID, $this->us_address() );
+		$this->assertSame( self::VID, self::$wc->session->data[ Session::KEY_VID ] );
 		$order = $this->restricted_order();
 		$this->respond( 200, array( 'verification' => array( 'id' => self::VID, 'status' => 'VERIFICATION_STATUS_PASSED', 'orderExternalId' => 'x' ) ) );
 
@@ -136,10 +139,18 @@ final class BindingTest extends TestCase {
 		$this->assertSame( 'attach', $order->meta[ Meta::BOUND_BY ] );
 		$this->assertSame( 'passed', $order->meta[ Meta::VERIFICATION_STATUS ] );
 		$this->assertArrayNotHasKey( Meta::ATTACH_PENDING, $order->meta );
-		$this->assertSame( array( 'other' => 'kept' ), $this->wc->session->data, 'the vid and guard leave the session' );
+		$this->assertSame(
+			array(
+				Session::KEY_SID => str_repeat( 'a', 32 ),
+				'other'          => 'kept',
+			),
+			self::$wc->session->data,
+			'the vid, guard and record leave the session; the sid stays'
+		);
+		$this->assertSame( OrderAddress::hash( $this->request_body( 0 )['shipTo'] ), $order->meta[ Meta::SHIP_TO_HASH ], 'the bound ship-to a retried payment is admitted at' );
 
 		// A failed-payment retry posts the same order again: nothing more happens.
-		$this->wc->session->data[ Binding::SESSION_VID ] = 'acv_other';
+		self::$wc->session->data[ Session::KEY_VID ] = 'acv_other';
 		Binding::on_store_api_order_processed( $order );
 		$this->assertCount( 1, $this->http_requests );
 	}
@@ -152,29 +163,64 @@ final class BindingTest extends TestCase {
 		$this->assertArrayHasKey( Meta::EXTERNAL_ID, $order->meta );
 		$this->assertGreaterThan( 0, $order->meta_saves );
 
-		$this->wc->session->data[ Binding::SESSION_VID ] = 'not-a-vid';
+		$this->admit_checkout( self::VID, $this->us_address() );
+		self::$wc->session->data[ Session::KEY_VID ] = 'not-a-vid';
 		Binding::bind_checkout( $this->restricted_order() );
 		$this->assertSame( array(), $this->http_requests, 'a malformed session value is ignored' );
 
-		$plain                                           = \WC_Order::make();
-		$this->wc->session->data[ Binding::SESSION_VID ] = self::VID;
+		$plain = \WC_Order::make();
+		$this->admit_checkout( self::VID, $this->us_address() );
 		Binding::bind_checkout( $plain );
 		$this->assertSame( 'no', $plain->meta[ Meta::REQUIRED ] );
 		$this->assertSame( array(), $this->http_requests );
-		$this->assertSame( self::VID, $this->wc->session->data[ Binding::SESSION_VID ], 'an unrestricted order leaves the session alone' );
+		$this->assertSame( self::VID, self::$wc->session->data[ Session::KEY_VID ], 'an unrestricted order leaves the session alone' );
 
 		Binding::on_classic_order_processed( 9999 );
 		Binding::on_store_api_order_processed( 'nope' );
 	}
 
+	public function test_checkout_binds_only_what_the_gate_admitted_in_this_request(): void {
+		// A check passed earlier in the session (its guard may have expired),
+		// with no gate in this request: Store API order-pay fires the same
+		// processed hook. The order takes the order-bound path (Q11b).
+		$this->admit_checkout( self::VID, $this->us_address() );
+		\Navexa\AgeCheck\Checkout\Gate::reset();
+		$order = $this->restricted_order();
+		Binding::on_store_api_order_processed( $order );
+		$this->assertSame( array(), $this->http_requests );
+		$this->assertSame( 'yes', $order->meta[ Meta::REQUIRED ] );
+		$this->assertArrayNotHasKey( Meta::VERIFICATION_ID, $order->meta, 'a leftover session check is never bound' );
+		$this->assertArrayNotHasKey( Meta::BOUND_BY, $order->meta );
+		$this->assertSame( self::VID, self::$wc->session->data[ Session::KEY_VID ], 'and is left for the cart checkout it was made for' );
+
+		// The gate admitted another verification than the session's (a
+		// resumed order's own): not the session's check either.
+		$this->admit_checkout( self::VID, $this->us_address() );
+		self::$wc->session->data[ Session::KEY_VID ] = 'acv_01HZOTHERVERIFICATION';
+		$order = $this->restricted_order();
+		Binding::bind_checkout( $order );
+		$this->assertSame( array(), $this->http_requests );
+		$this->assertArrayNotHasKey( Meta::VERIFICATION_ID, $order->meta );
+
+		// Accept-and-hold mode never binds a checkout verification.
+		$this->admit_checkout( self::VID, $this->us_address() );
+		$this->options[ \Navexa\AgeCheck\Options::MODE ] = \Navexa\AgeCheck\Options::MODE_ACCEPT_AND_HOLD;
+		$order = $this->restricted_order();
+		Binding::on_classic_order_processed( $order->get_id(), array(), $order );
+		$this->assertSame( array(), $this->http_requests );
+		$this->assertArrayNotHasKey( Meta::VERIFICATION_ID, $order->meta );
+	}
+
 	public function test_checkout_survives_an_outage_and_leaves_attach_pending(): void {
-		$this->wc->session->data[ Binding::SESSION_VID ] = self::VID;
+		$this->admit_checkout( self::VID, $this->us_address() );
 		$order = $this->restricted_order();
 		$this->respond( 503, array( 'code' => 'unavailable', 'message' => 'down' ) );
 		Binding::bind_checkout( $order );
 		$this->assertSame( 'yes', $order->meta[ Meta::ATTACH_PENDING ] );
 		$this->assertSame( self::VID, $order->meta[ Meta::VERIFICATION_ID ] );
-		$this->assertArrayNotHasKey( Binding::SESSION_VID, $this->wc->session->data );
+		$this->assertArrayNotHasKey( Session::KEY_VID, self::$wc->session->data );
+		$this->assertSame( OrderAddress::hash( OrderAddress::ship_to( $order ) ), $order->meta[ Meta::SHIP_TO_HASH ], 'recorded before AttachOrder answers, so a retried payment is still admitted' );
+		$this->assertSame( $order->meta, $order->saved_meta, 'saved before the call' );
 	}
 
 	public function test_checkout_never_throws(): void {

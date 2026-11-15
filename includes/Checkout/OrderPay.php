@@ -27,8 +27,10 @@ defined( 'ABSPATH' ) || exit;
  *   WooCommerce (9.9 and 11.3) writes the request's addresses onto the order
  *   and saves it before this validation, and AddressGuard reverts the
  *   ship-to during that save, so the refusal reads AddressGuard's record of
- *   the revert instead of unsaved changes. New checkouts (checkout-draft
- *   orders) are W2's Checkout\Blocks.
+ *   the revert instead of unsaved changes. A new checkout is
+ *   Checkout\Blocks' to decide: a checkout-draft, and any order the Store
+ *   API cart checkout is placing (Blocks::is_cart_checkout(), which may be a
+ *   reused pending or failed order), are skipped here.
  */
 final class OrderPay {
 
@@ -60,7 +62,7 @@ final class OrderPay {
 	 * @param mixed $errors WP_Error collecting validation errors.
 	 */
 	public static function validate_existing_order( $order, $errors ): void {
-		if ( ! $order instanceof \WC_Order || ! $errors instanceof \WP_Error || 'checkout-draft' === $order->get_status( 'edit' ) ) {
+		if ( ! $order instanceof \WC_Order || ! $errors instanceof \WP_Error || 'checkout-draft' === $order->get_status( 'edit' ) || Blocks::is_cart_checkout( $order ) ) {
 			return;
 		}
 		if ( AddressGuard::locked( $order ) && AddressGuard::ship_to_change_requested( $order ) ) {

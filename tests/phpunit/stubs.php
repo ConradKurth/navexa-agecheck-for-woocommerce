@@ -11,20 +11,30 @@
 namespace {
 
 	class WP_Error {
-		private $code;
-		private $message;
+		public $codes    = array();
+		public $messages = array();
 
 		public function __construct( $code = '', $message = '' ) {
-			$this->code    = $code;
-			$this->message = $message;
+			if ( '' !== $code ) {
+				$this->add( $code, $message );
+			}
+		}
+
+		public function add( $code, $message ) {
+			$this->codes[]    = $code;
+			$this->messages[] = $message;
 		}
 
 		public function get_error_code() {
-			return $this->code;
+			return isset( $this->codes[0] ) ? $this->codes[0] : '';
 		}
 
 		public function get_error_message() {
-			return $this->message;
+			return isset( $this->messages[0] ) ? $this->messages[0] : '';
+		}
+
+		public function get_error_codes() {
+			return $this->codes;
 		}
 	}
 
@@ -56,6 +66,77 @@ namespace {
 
 		public static function add_error( $text ) {
 			self::$errors[] = $text;
+		}
+	}
+
+	/** In-memory WooCommerce session. */
+	class WC_Session {
+		public $data        = array();
+		public $customer_id = 't_0123456789abcdef';
+
+		public function get_customer_id() {
+			return $this->customer_id;
+		}
+
+		public function get( $key, $default = null ) {
+			return array_key_exists( $key, $this->data ) ? $this->data[ $key ] : $default;
+		}
+
+		public function set( $key, $value ) {
+			if ( null === $value ) {
+				unset( $this->data[ $key ] );
+				return;
+			}
+			$this->data[ $key ] = $value;
+		}
+
+		public function __unset( $key ) {
+			unset( $this->data[ $key ] );
+		}
+	}
+
+	class WC_Cart {
+		public $empty          = false;
+		public $needs_shipping = true;
+		public $hash           = 'cart-hash';
+		/** @var array<string, array> Cart items: one restricted product by default (rule: every product). */
+		public $items;
+
+		public function __construct() {
+			$this->items = array( 'item-1' => array( 'data' => new WC_Product( 7 ), 'quantity' => 1 ) );
+		}
+
+		public function is_empty() {
+			return $this->empty;
+		}
+
+		public function get_cart() {
+			return $this->empty ? array() : $this->items;
+		}
+
+		public function needs_shipping_address() {
+			return $this->needs_shipping;
+		}
+
+		public function get_cart_hash() {
+			return $this->hash;
+		}
+	}
+
+	class WC_Customer {
+		public $billing  = array();
+		public $shipping = array();
+
+		public function __call( $name, $args ) {
+			if ( preg_match( '/^get_(billing|shipping)_(.+)$/', $name, $m ) ) {
+				$set = 'billing' === $m[1] ? $this->billing : $this->shipping;
+				return isset( $set[ $m[2] ] ) ? $set[ $m[2] ] : '';
+			}
+			throw new \BadMethodCallException( $name );
+		}
+
+		public function get_billing() {
+			return $this->billing;
 		}
 	}
 
@@ -267,13 +348,16 @@ namespace {
 		public $meta_saves       = 0;
 		/** @var array<string, mixed> The meta as of the last save_meta_data() or save(). */
 		public $saved_meta       = array();
-		public $needs_shipping   = true;
+		/** @var bool|null needs_shipping_address(); null: as WooCommerce decides it, from the shipping lines. */
+		public $needs_shipping   = null;
 		public $needs_processing = true;
 		/** @var array|false The pending transition, named as in WC_Order (Hold resets it by reflection). */
 		public $status_transition = false;
 		/** @var array<int, array> Transitions whose status actions ran on save. */
 		public $fired            = array();
 		public $remaining_refund = 25.0;
+		/** @var string What has_cart_hash() matches. */
+		public $cart_hash        = 'cart-hash';
 
 		public function __construct( $id = 0 ) {
 			$this->id = $id;
@@ -405,11 +489,20 @@ namespace {
 		}
 
 		public function get_shipping_methods() {
-			return $this->items['shipping'];
+			return isset( $this->items['shipping'] ) ? $this->items['shipping'] : array();
 		}
 
+		/** WC_Order::needs_shipping_address(): a shipping line that is not local pickup (unless set). */
 		public function needs_shipping_address() {
-			return $this->needs_shipping;
+			if ( null !== $this->needs_shipping ) {
+				return $this->needs_shipping;
+			}
+			foreach ( $this->get_shipping_methods() as $line ) {
+				if ( ! in_array( $line->get_method_id(), array( 'legacy_local_pickup', 'local_pickup', 'pickup_location' ), true ) ) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		public function needs_processing() {
@@ -456,6 +549,37 @@ namespace {
 			return null;
 		}
 
+		public function has_cart_hash( $hash ) {
+			return $hash === $this->cart_hash;
+		}
+
+		public function has_status( $statuses ) {
+			return in_array( $this->get_status(), (array) $statuses, true );
+		}
+
+		public function get_address( $type = 'billing' ) {
+			$out = array();
+			foreach ( $this->data[ 'shipping' === $type ? 'shipping' : 'billing' ] as $field => $value ) {
+				$out[ $field ] = $this->{'get_' . ( 'shipping' === $type ? 'shipping' : 'billing' ) . '_' . $field}();
+			}
+			return $out;
+		}
+
+		/** Replaces the saved $type address (no change tracking); fields left out become ''. */
+		public function set_test_address( $type, array $address ) {
+			foreach ( array_keys( $this->data[ $type ] ) as $field ) {
+				$this->data[ $type ][ $field ] = isset( $address[ $field ] ) ? (string) $address[ $field ] : '';
+			}
+			if ( 'billing' === $type && isset( $address['email'] ) ) {
+				$this->data['billing']['email'] = (string) $address['email'];
+			}
+		}
+
+		/** Removes every item of $type (line_item, shipping, fee). */
+		public function clear_test_items( $type ) {
+			$this->items[ $type ] = array();
+		}
+
 		/** get_/set_ billing_* and shipping_* address props, tracked like WC_Order. */
 		public function __call( $name, $args ) {
 			if ( preg_match( '/^(get|set)_(billing|shipping)_(\w+)$/', $name, $m ) && array_key_exists( $m[3], $this->data[ $m[2] ] ) ) {
@@ -469,6 +593,48 @@ namespace {
 			}
 			throw new BadMethodCallException( $name );
 		}
+	}
+	if ( ! class_exists( 'Normalizer' ) ) {
+		/**
+		 * Stand-in for ext-intl's Normalizer (not in the php Docker images):
+		 * composes the few decomposed sequences the tests use.
+		 */
+		class Normalizer {
+			const FORM_C = 16;
+
+			public static function normalize( $string, $form = self::FORM_C ) {
+				return strtr( $string, array( "e\u{0301}" => "\u{00e9}", "E\u{0301}" => "\u{00c9}", "n\u{0303}" => "\u{00f1}" ) );
+			}
+		}
+	}
+
+	/** WC() container (TestCase stubs WC() to return one). */
+	class WooCommerce {
+		public $session;
+		public $cart;
+		public $customer;
+		public $countries;
+		/** @var \Navexa\AgeCheck\Tests\FakeMailer */
+		public $mailer;
+
+		public function __construct() {
+			$this->mailer = new \Navexa\AgeCheck\Tests\FakeMailer();
+		}
+
+		public function mailer() {
+			return $this->mailer;
+		}
+	}
+}
+
+namespace Automattic\WooCommerce\Blocks\Integrations {
+
+	interface IntegrationInterface {
+		public function get_name();
+		public function initialize();
+		public function get_script_handles();
+		public function get_editor_script_handles();
+		public function get_script_data();
 	}
 }
 
@@ -495,14 +661,23 @@ namespace Automattic\WooCommerce\Utilities {
 namespace Navexa\AgeCheck\Tests {
 
 	/**
-	 * $wpdb stand-in for Lock: understands exactly the statements Lock sends,
-	 * against the test's in-memory options.
+	 * $wpdb stand-in. Understands exactly the statements Lock sends, against
+	 * the test's in-memory options (anything else on the options table
+	 * throws), and RateLimit's counter table: INSERT ... ON DUPLICATE KEY
+	 * UPDATE hits = hits + 1, SELECT hits, the expiry DELETE and SHOW TABLES
+	 * LIKE. $fail makes every counter-table query fail; $table_exists false
+	 * makes SHOW TABLES find nothing.
 	 */
 	class FakeWpdb {
-		public $options = 'wp_options';
+		public $prefix       = 'wp_';
+		public $options      = 'wp_options';
 		/** @var array<string, mixed> */
 		public $store;
-		public $queries = array();
+		/** @var array<string, array{hits: int, expires_at: int}> Counter-table rows. */
+		public $rows         = array();
+		public $fail         = false;
+		public $table_exists = true;
+		public $queries      = array();
 
 		public function __construct( array &$store ) {
 			$this->store = &$store;
@@ -529,6 +704,62 @@ namespace Navexa\AgeCheck\Tests {
 
 		public function query( $sql ) {
 			$this->queries[] = $sql;
+			if ( false !== strpos( $sql, $this->options ) ) {
+				return $this->options_query( $sql );
+			}
+			if ( $this->fail ) {
+				return false;
+			}
+			if ( preg_match( "/^INSERT INTO \\S+ \\(bucket_key, hits, expires_at\\) VALUES \\('([0-9a-f]{64})', 1, (\\d+)\\)/", $sql, $m ) ) {
+				if ( isset( $this->rows[ $m[1] ] ) ) {
+					++$this->rows[ $m[1] ]['hits'];
+					return 2;
+				}
+				$this->rows[ $m[1] ] = array(
+					'hits'       => 1,
+					'expires_at' => (int) $m[2],
+				);
+				return 1;
+			}
+			if ( preg_match( '/^DELETE FROM \\S+ WHERE expires_at < (\\d+)/', $sql, $m ) ) {
+				$before     = count( $this->rows );
+				$this->rows = array_filter(
+					$this->rows,
+					static function ( $row ) use ( $m ) {
+						return $row['expires_at'] >= (int) $m[1];
+					}
+				);
+				return $before - count( $this->rows );
+			}
+			return 0;
+		}
+
+		public function get_var( $sql ) {
+			$this->queries[] = $sql;
+			if ( preg_match( "/^SELECT option_value FROM wp_options WHERE option_name = '(.*?)'$/", $sql, $m ) ) {
+				return array_key_exists( $m[1], $this->store ) ? (string) $this->store[ $m[1] ] : null;
+			}
+			if ( false !== strpos( $sql, $this->options ) ) {
+				throw new \RuntimeException( 'FakeWpdb: unexpected query ' . $sql );
+			}
+			if ( $this->fail ) {
+				return null;
+			}
+			if ( 0 === strpos( $sql, 'SHOW TABLES LIKE ' ) ) {
+				return $this->table_exists ? $this->prefix . 'navexa_agecheck_rate_limits' : null;
+			}
+			if ( preg_match( "/WHERE bucket_key = '([0-9a-f]{64})'/", $sql, $m ) ) {
+				return isset( $this->rows[ $m[1] ] ) ? (string) $this->rows[ $m[1] ]['hits'] : null;
+			}
+			return null;
+		}
+
+		public function get_charset_collate() {
+			return 'DEFAULT CHARSET=utf8mb4';
+		}
+
+		/** Lock's statements against the options table. */
+		private function options_query( $sql ) {
 			if ( preg_match( "/^INSERT IGNORE INTO wp_options \\(option_name, option_value, autoload\\) VALUES \\('(.*?)', '(.*?)', 'off'\\)$/", $sql, $m ) ) {
 				if ( array_key_exists( $m[1], $this->store ) ) {
 					return 0;
@@ -563,14 +794,6 @@ namespace Navexa\AgeCheck\Tests {
 			}
 			throw new \RuntimeException( 'FakeWpdb: unexpected query ' . $sql );
 		}
-
-		public function get_var( $sql ) {
-			$this->queries[] = $sql;
-			if ( preg_match( "/^SELECT option_value FROM wp_options WHERE option_name = '(.*?)'$/", $sql, $m ) ) {
-				return array_key_exists( $m[1], $this->store ) ? (string) $this->store[ $m[1] ] : null;
-			}
-			throw new \RuntimeException( 'FakeWpdb: unexpected query ' . $sql );
-		}
 	}
 
 	/** Records the WooCommerce emails triggered. */
@@ -594,37 +817,6 @@ namespace Navexa\AgeCheck\Tests {
 
 		public function get_emails() {
 			return $this->emails;
-		}
-	}
-
-	class FakeSession {
-		public $data = array();
-
-		public function get( $key, $default = null ) {
-			return array_key_exists( $key, $this->data ) ? $this->data[ $key ] : $default;
-		}
-
-		public function set( $key, $value ) {
-			$this->data[ $key ] = $value;
-		}
-
-		public function __unset( $key ) {
-			unset( $this->data[ $key ] );
-		}
-	}
-
-	class FakeWC {
-		public $session;
-		public $mailer;
-		public $countries;
-
-		public function __construct() {
-			$this->session = new FakeSession();
-			$this->mailer  = new FakeMailer();
-		}
-
-		public function mailer() {
-			return $this->mailer;
 		}
 	}
 

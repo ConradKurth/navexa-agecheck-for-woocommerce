@@ -1,7 +1,7 @@
 <?php
 /**
- * wp-env smoke test for the W0 scaffold and the W1 hold core
- * (smoke-hold.php), run inside WordPress:
+ * wp-env smoke test for the W0 scaffold, the W2 pre-payment pieces and the
+ * W1 hold core (smoke-hold.php), run inside WordPress:
  *
  *   npm run smoke   (wp eval-file .../tests/wp-env/smoke.php)
  *
@@ -12,8 +12,12 @@
  *
  * Checks what the unit suite can only stub: activation state and autoload
  * flags, the HPOS and block-checkout declarations, WC_Admin_Settings saving
- * and rendering the key fields, the REST settings API not exposing keys, and
- * GetIntegrationInfo over the real WordPress HTTP API.
+ * and rendering the key fields, the REST settings API not exposing keys,
+ * GetIntegrationInfo over the real WordPress HTTP API, and (W2) the rate-limit
+ * table, the Store API extension, the return page and the checkout block.
+ * tests/wp-env/prepayment.mjs runs the W2 flow itself over HTTP, and
+ * tests/wp-env/prepayment-orders.php then follows the orders it placed
+ * through binding, the hold and release.
  *
  * @package Navexa\AgeCheck\Tests
  */
@@ -202,6 +206,32 @@ remove_filter( 'wp_die_handler', $navexa_smoke_die, PHP_INT_MAX );
 navexa_smoke_check( Install::confirm_site() && $before !== Install::install_id() && ! Install::is_paused(), 'confirming rotates the install_id and unpauses' );
 remove_filter( 'pre_option_home', $navexa_smoke_copy );
 navexa_smoke_check( Install::is_paused() && Install::confirm_site() && ! Install::is_paused(), 'moving back pauses again; re-confirmed for the next run' );
+
+// W2: the rate-limit table and its atomic counter in MySQL.
+navexa_smoke_check( \Navexa\AgeCheck\RateLimit::DB_VERSION === get_option( \Navexa\AgeCheck\RateLimit::OPTION_DB_VERSION ), 'rate-limit table version recorded' );
+navexa_smoke_check( \Navexa\AgeCheck\RateLimit::table() === $GLOBALS['wpdb']->get_var( $GLOBALS['wpdb']->prepare( 'SHOW TABLES LIKE %s', \Navexa\AgeCheck\RateLimit::table() ) ), 'rate-limit table exists' );
+navexa_smoke_check( \Navexa\AgeCheck\RateLimit::table_exists(), 'RateLimit::table_exists() finds it (escaped LIKE)' );
+$navexa_smoke_subject = 'smoke-' . wp_generate_password( 12, false );
+$navexa_smoke_hits    = array();
+for ( $i = 0; $i < 3; $i++ ) {
+	$navexa_smoke_hits[] = \Navexa\AgeCheck\RateLimit::hit( 'smoke', $navexa_smoke_subject, 2, 3600 );
+}
+navexa_smoke_check( array( true, true, false ) === $navexa_smoke_hits, 'rate limit counts in MySQL' );
+
+// W2: the Store API extension, the return page and the checkout block.
+$navexa_smoke_extend = \Automattic\WooCommerce\StoreApi\StoreApi::container()->get( \Automattic\WooCommerce\StoreApi\Schemas\ExtendSchema::class );
+navexa_smoke_check( is_callable( $navexa_smoke_extend->get_update_callback( 'navexa-agecheck' ) ), 'Store API update callback registered' );
+$navexa_smoke_cart = rest_do_request( new WP_REST_Request( 'GET', '/wc/store/v1/cart' ) );
+$navexa_smoke_data = 200 === $navexa_smoke_cart->get_status() ? json_decode( wp_json_encode( $navexa_smoke_cart->get_data() ), true ) : array();
+navexa_smoke_check( isset( $navexa_smoke_data['extensions']['navexa-agecheck']['required'] ), 'cart response carries navexa-agecheck data (' . $navexa_smoke_cart->get_status() . ')' );
+navexa_smoke_check( 0 === strpos( \Navexa\AgeCheck\ReturnPage::url( true ), Install::home() ) && false !== strpos( \Navexa\AgeCheck\ReturnPage::url( true ), 'wc-api=navexa_agecheck_return&popup=1' ), 'return page URL on the store address' );
+navexa_smoke_check( WP_Block_Type_Registry::get_instance()->is_registered( 'navexa-agecheck/verify-age' ), 'Verify age block registered' );
+\Navexa\AgeCheck\Frontend::register_scripts();
+foreach ( array( \Navexa\AgeCheck\Frontend::HANDLE_LOADER, \Navexa\AgeCheck\Frontend::HANDLE_CLASSIC, \Navexa\AgeCheck\Frontend::HANDLE_BLOCK ) as $navexa_smoke_handle ) {
+	navexa_smoke_check( wp_script_is( $navexa_smoke_handle, 'registered' ), "script {$navexa_smoke_handle} registered" );
+}
+navexa_smoke_check( has_action( 'woocommerce_checkout_validate_order_before_payment', array( \Navexa\AgeCheck\Checkout\Blocks::class, 'validate' ) ) && has_action( 'woocommerce_after_checkout_validation', array( \Navexa\AgeCheck\Checkout\Classic::class, 'validate' ) ), 'checkout validation hooks wired' );
+navexa_smoke_check( has_action( 'woocommerce_checkout_validate_order_before_payment', array( \Navexa\AgeCheck\Checkout\OrderPay::class, 'validate_existing_order' ) ), 'order-pay validation wired next to the block checkout gate' );
 
 // W1: holds, binding, release, webhook, sweep, shipment.
 require __DIR__ . '/smoke-hold.php';

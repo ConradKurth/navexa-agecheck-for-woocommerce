@@ -65,8 +65,8 @@ final class HoldTest extends TestCase {
 		$order->save();
 		$this->assertSame( Hold::STATUS, $order->get_status() );
 		$this->assertSame( array( $order->get_id() ), $this->stock_reduced, 'entering the hold reduces stock' );
-		$this->assertSame( array( $order->get_id() ), $this->wc->mailer->emails['WC_Email_New_Order']->triggered, 'the admin gets the new-order email' );
-		$this->assertSame( array(), $this->wc->mailer->emails['WC_Email_Customer_Processing_Order']->triggered, 'no customer email yet' );
+		$this->assertSame( array( $order->get_id() ), self::$wc->mailer->emails['WC_Email_New_Order']->triggered, 'the admin gets the new-order email' );
+		$this->assertSame( array(), self::$wc->mailer->emails['WC_Email_Customer_Processing_Order']->triggered, 'no customer email yet' );
 		$jobs = $this->scheduled_for( Release::HOOK );
 		$this->assertCount( 1, $jobs );
 		$this->assertSame( array( $order->get_id(), 0, Release::TRIGGER_HOLD ), $jobs[0]['args'] );
@@ -254,7 +254,7 @@ final class HoldTest extends TestCase {
 		$this->assertTrue( Hold::release( $order, 'AgeCheck: passed.' ) );
 		$this->assertSame( 'processing', $order->get_status() );
 		$this->assertArrayNotHasKey( Meta::HELD, $order->meta );
-		$this->assertSame( array( $order->get_id() ), $this->wc->mailer->emails['WC_Email_Customer_Processing_Order']->triggered );
+		$this->assertSame( array( $order->get_id() ), self::$wc->mailer->emails['WC_Email_Customer_Processing_Order']->triggered );
 		$this->assertStringContainsString( 'AgeCheck: passed. [status agecheck-hold -> processing]', implode( "\n", $order->notes ) );
 		$this->assertFalse( Hold::is_releasing( $order->get_id() ) );
 
@@ -262,7 +262,7 @@ final class HoldTest extends TestCase {
 		$digital->meta[ Meta::INTERCEPTED_STATUS ] = 'completed';
 		$this->assertTrue( Hold::release( $digital, 'ok' ) );
 		$this->assertSame( 'completed', $digital->get_status() );
-		$this->assertCount( 1, $this->wc->mailer->emails['WC_Email_Customer_Processing_Order']->triggered, 'WooCommerce sends the completed email itself' );
+		$this->assertCount( 1, self::$wc->mailer->emails['WC_Email_Customer_Processing_Order']->triggered, 'WooCommerce sends the completed email itself' );
 	}
 
 	public function test_release_falls_back_when_the_intercepted_status_is_unusable(): void {

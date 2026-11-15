@@ -11,8 +11,9 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * Every AgeCheck key looks like txk_..., so the prefix cannot tell a test key
- * from a live one. GetIntegrationInfo (any API key; scope agecheck:verify)
- * answers {livemode, scopes, origin_allowed, minimum_age, display_name} for
+ * from a live one. GetIntegrationInfo (E10a, in production since tax
+ * v0.0.164; any API key with scope agecheck:verify) answers {livemode,
+ * scopes, origin_allowed, minimum_age, display_name, organization_id} for
  * the key and the store's origin. The answer is cached for an hour per key;
  * a failure is cached for a minute so an outage does not cost every request
  * an 8-second timeout. The last livemode seen for each key is also kept in a

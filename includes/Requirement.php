@@ -19,7 +19,10 @@ defined( 'ABSPATH' ) || exit;
  * - The order's customer (customer_id, not whoever placed it) in an exempt
  *   role skips the check.
  * - Local pickup orders skip it (owner decision Q11c: staff check ID at the
- *   counter). An order is pickup when every shipping line is a pickup method.
+ *   counter). An order is pickup when every shipping line is a pickup method
+ *   from pickup_method_ids(), the plugin's one pickup list: the pre-payment
+ *   gate (Checkout\Gate, for the session cart) reads it too, so a pickup
+ *   order is neither verified nor held.
  * - Orders created before the plugin was first activated are left alone.
  *
  * There is no minimum-total, payment-method or other shipping-method
@@ -27,6 +30,10 @@ defined( 'ABSPATH' ) || exit;
  * loaded counts as needing the check. Once an order needs a check it keeps
  * needing one (REQUIRED is sticky), so changing the rules later never
  * releases a held order.
+ *
+ * The pre-payment checkout asks cart_required() before an order exists; it
+ * applies the same product rules and exempt roles (the signed-in shopper is
+ * the order's customer).
  */
 final class Requirement {
 
@@ -39,10 +46,11 @@ final class Requirement {
 	const PRODUCT_EXEMPT  = 'exempt';
 
 	/**
-	 * Shipping method ids that mean local pickup: the classic Local pickup
-	 * method and the checkout block's pickup locations.
+	 * Shipping method ids that always mean local pickup, on top of
+	 * WooCommerce's own list: the classic Local pickup method (and its legacy
+	 * id) and the checkout block's pickup locations.
 	 */
-	const PICKUP_METHODS = array( 'local_pickup', 'pickup_location' );
+	const PICKUP_METHODS = array( 'legacy_local_pickup', 'local_pickup', 'pickup_location' );
 
 	const REASON_REQUIRED          = 'restricted_items';
 	const REASON_NO_RESTRICTED     = 'no_restricted_items';
@@ -139,29 +147,85 @@ final class Requirement {
 	}
 
 	/**
+	 * Whether the session cart needs an age check: it holds a line item whose
+	 * product needs one (product_requires()), and the signed-in shopper holds
+	 * no exempt role. Pickup is decided apart (cart_is_pickup()), so the
+	 * shopper can be told why nothing is checked.
+	 *
+	 * @param \WC_Cart $cart Cart.
+	 */
+	public static function cart_required( \WC_Cart $cart ): bool {
+		try {
+			if ( $cart->is_empty() || self::user_exempt( get_current_user_id() ) ) {
+				return false;
+			}
+			foreach ( (array) $cart->get_cart() as $item ) {
+				$product = is_array( $item ) && isset( $item['data'] ) ? $item['data'] : null;
+				if ( self::product_requires( $product instanceof \WC_Product ? $product : null ) ) {
+					return true;
+				}
+			}
+			return false;
+		} catch ( \Throwable $e ) {
+			Client::log( 'error', 'agecheck requirement unreadable for the cart; treated as required' );
+			return true;
+		}
+	}
+
+	/**
+	 * Shipping method ids that count as local pickup: WooCommerce's list
+	 * (every method that supports local-pickup) plus PICKUP_METHODS, through
+	 * the navexa_agecheck_pickup_methods filter. The one pickup list of the
+	 * plugin: the hold path (is_pickup()) and the pre-payment gate
+	 * (cart_is_pickup()) both read it.
+	 *
+	 * @param \WC_Order|null $order The order being decided, or null for the session cart.
+	 * @return string[]
+	 */
+	public static function pickup_method_ids( ?\WC_Order $order = null ): array {
+		$ids = class_exists( '\Automattic\WooCommerce\StoreApi\Utilities\LocalPickupUtils' )
+			? \Automattic\WooCommerce\StoreApi\Utilities\LocalPickupUtils::get_local_pickup_method_ids()
+			: apply_filters( 'woocommerce_local_pickup_methods', self::PICKUP_METHODS ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- WooCommerce's own filter.
+		$ids = array_merge( self::PICKUP_METHODS, is_array( $ids ) ? $ids : array() );
+		/**
+		 * Shipping method ids that count as local pickup. AgeCheck skips an
+		 * order (or cart) whose every shipping method is one of them.
+		 *
+		 * @since 0.1.0
+		 *
+		 * @param string[]       $methods Method ids.
+		 * @param \WC_Order|null $order   The order, or null when deciding on the session cart before an order exists.
+		 */
+		$ids = apply_filters( 'navexa_agecheck_pickup_methods', array_values( array_unique( array_filter( $ids, 'is_string' ) ) ), $order );
+		return is_array( $ids ) ? array_values( array_filter( $ids, 'is_string' ) ) : self::PICKUP_METHODS;
+	}
+
+	/**
 	 * Whether every shipping line of $order is a pickup method. An order with
 	 * no shipping lines is not a pickup order.
 	 *
 	 * @param \WC_Order $order Order.
 	 */
 	public static function is_pickup( \WC_Order $order ): bool {
-		$lines = $order->get_shipping_methods();
-		if ( empty( $lines ) ) {
-			return false;
-		}
-		/**
-		 * Filters the shipping method ids that count as local pickup.
-		 *
-		 * @param string[]  $methods Method ids.
-		 * @param \WC_Order $order   Order.
-		 */
-		$pickup = (array) apply_filters( 'navexa_agecheck_pickup_methods', self::PICKUP_METHODS, $order );
-		foreach ( $lines as $line ) {
-			if ( ! is_object( $line ) || ! is_callable( array( $line, 'get_method_id' ) ) || ! in_array( (string) $line->get_method_id(), $pickup, true ) ) {
+		$ids = array();
+		foreach ( (array) $order->get_shipping_methods() as $line ) {
+			if ( ! is_object( $line ) || ! is_callable( array( $line, 'get_method_id' ) ) ) {
 				return false;
 			}
+			$ids[] = (string) $line->get_method_id();
 		}
-		return true;
+		return self::all_pickup( $ids, self::pickup_method_ids( $order ) );
+	}
+
+	/**
+	 * Whether every chosen shipping method of the session cart is a pickup
+	 * method. False when the cart ships nothing.
+	 */
+	public static function cart_is_pickup(): bool {
+		if ( ! function_exists( 'wc_get_chosen_shipping_method_ids' ) ) {
+			return false;
+		}
+		return self::all_pickup( wc_get_chosen_shipping_method_ids(), self::pickup_method_ids() );
 	}
 
 	/**
@@ -170,8 +234,16 @@ final class Requirement {
 	 * @param \WC_Order $order Order.
 	 */
 	public static function customer_exempt( \WC_Order $order ): bool {
+		return self::user_exempt( (int) $order->get_customer_id() );
+	}
+
+	/**
+	 * Whether user $id holds an exempt role. Guests (0) never do.
+	 *
+	 * @param int $id User id.
+	 */
+	private static function user_exempt( int $id ): bool {
 		$roles = Options::exempt_roles();
-		$id    = (int) $order->get_customer_id();
 		if ( empty( $roles ) || $id <= 0 ) {
 			return false;
 		}
@@ -180,6 +252,24 @@ final class Requirement {
 			return false;
 		}
 		return array() !== array_intersect( $roles, (array) $user->roles );
+	}
+
+	/**
+	 * Whether $method_ids is non-empty and all pickup.
+	 *
+	 * @param mixed    $method_ids Method ids.
+	 * @param string[] $pickup     pickup_method_ids().
+	 */
+	private static function all_pickup( $method_ids, array $pickup ): bool {
+		if ( ! is_array( $method_ids ) || array() === $method_ids ) {
+			return false;
+		}
+		foreach ( $method_ids as $id ) {
+			if ( ! in_array( $id, $pickup, true ) ) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**

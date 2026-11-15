@@ -58,6 +58,7 @@ final class Plugin {
 		self::$file   = $file;
 
 		register_activation_hook( $file, array( Install::class, 'activate' ) );
+		register_activation_hook( $file, array( RateLimit::class, 'install' ) );
 		register_deactivation_hook( $file, array( Sweep::class, 'unschedule' ) );
 		add_action( 'before_woocommerce_init', array( self::class, 'declare_compatibility' ) );
 		add_action( 'woocommerce_loaded', array( self::class, 'wire' ) );
@@ -100,8 +101,17 @@ final class Plugin {
 		Mode::register();
 		add_filter( 'woocommerce_get_settings_pages', array( self::class, 'add_settings_page' ) );
 
-		// W1 hold core: nothing below makes a network call in a shopper's
-		// request except Binding's AttachOrder after an order is placed.
+		// Pre-payment: the shopper verifies before the order is placed
+		// (Start and ReturnPage), and checkout refuses an order that has not
+		// passed (Classic, Blocks).
+		RateLimit::register();
+		Start::register();
+		ReturnPage::register();
+		Checkout\Classic::register();
+		Checkout\Blocks::register();
+
+		// Holds: nothing below makes a network call in a shopper's request
+		// except Binding's AttachOrder after an order is placed.
 		OrderQuery::register();
 		Hold::register();
 		AddressGuard::register();

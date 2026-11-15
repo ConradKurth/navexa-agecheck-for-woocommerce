@@ -109,7 +109,7 @@ final class AddressGuard {
 		$before = self::original( $order );
 		$after  = OrderAddress::parts( $order, 'shipping' );
 		foreach ( self::FIELDS as $field ) {
-			if ( self::fold( $before[ $field ] ) !== self::fold( $after[ $field ] ) ) {
+			if ( ShipTo::fold( $before[ $field ] ) !== ShipTo::fold( $after[ $field ] ) ) {
 				return true;
 			}
 		}
@@ -130,14 +130,5 @@ final class AddressGuard {
 			$out[ $field ] = isset( $shipping[ $field ] ) && is_scalar( $shipping[ $field ] ) ? (string) $shipping[ $field ] : '';
 		}
 		return $out;
-	}
-
-	/**
-	 * Case- and whitespace-insensitive form of a field.
-	 *
-	 * @param string $value Value.
-	 */
-	private static function fold( string $value ): string {
-		return trim( (string) preg_replace( '/\s+/u', ' ', strtolower( $value ) ) );
 	}
 }

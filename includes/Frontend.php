@@ -18,8 +18,9 @@ defined( 'ABSPATH' ) || exit;
  * - block checkout: the Verify age inner block, assets/build/verify-age/
  *   (assets/src/blocks/verify-age/, built with wp-scripts).
  *
- * Minified files load unless SCRIPT_DEBUG is on. Nothing is loaded from a
- * third-party host, and nothing is loaded outside checkout.
+ * Minified files load unless SCRIPT_DEBUG is on. Nothing is loaded outside
+ * checkout, and nothing from a third-party host except Cloudflare's Turnstile
+ * script when the merchant turns Turnstile on (disclosed in readme.txt).
  */
 final class Frontend {
 
@@ -34,13 +35,34 @@ final class Frontend {
 	const HANDLE_BLOCK   = 'navexa-agecheck-verify-age';
 
 	/**
+	 * Cloudflare's Turnstile API and the plugin's Turnstile glue
+	 * (assets/js/turnstile.js), registered and depended on only while the
+	 * merchant has Turnstile on.
+	 */
+	const HANDLE_TURNSTILE_API = 'navexa-agecheck-turnstile-api';
+	const HANDLE_TURNSTILE     = 'navexa-agecheck-turnstile';
+
+	/**
 	 * Registers the scripts (idempotent).
 	 */
 	public static function register_scripts(): void {
 		if ( wp_script_is( self::HANDLE_LOADER, 'registered' ) ) {
 			return;
 		}
-		$min = defined( 'SCRIPT_DEBUG' ) && SCRIPT_DEBUG ? '' : '.min';
+		$min       = defined( 'SCRIPT_DEBUG' ) && SCRIPT_DEBUG ? '' : '.min';
+		$turnstile = array();
+		if ( Turnstile::enabled() ) {
+			// Version null: Cloudflare's script URL must not carry a ver query.
+			wp_register_script( self::HANDLE_TURNSTILE_API, Turnstile::SCRIPT_URL, array(), null, array( 'in_footer' => true ) ); // phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion -- Cloudflare's own script, loaded as documented.
+			wp_register_script(
+				self::HANDLE_TURNSTILE,
+				self::asset_url( 'assets/js/turnstile' . $min . '.js' ),
+				array( self::HANDLE_TURNSTILE_API ),
+				NAVEXA_AGECHECK_VERSION,
+				array( 'in_footer' => true )
+			);
+			$turnstile = array( self::HANDLE_TURNSTILE );
+		}
 		wp_register_script(
 			self::HANDLE_LOADER,
 			self::asset_url( 'assets/js/agecheck-' . self::LOADER_VERSION . $min . '.js' ),
@@ -51,7 +73,7 @@ final class Frontend {
 		wp_register_script(
 			self::HANDLE_CLASSIC,
 			self::asset_url( 'assets/js/checkout-classic' . $min . '.js' ),
-			array( self::HANDLE_LOADER ),
+			array_merge( array( self::HANDLE_LOADER ), $turnstile ),
 			NAVEXA_AGECHECK_VERSION,
 			array( 'in_footer' => true )
 		);
@@ -59,7 +81,7 @@ final class Frontend {
 		wp_register_script(
 			self::HANDLE_BLOCK,
 			self::asset_url( 'assets/build/verify-age/frontend.js' ),
-			array_values( array_unique( array_merge( $asset['dependencies'], array( self::HANDLE_LOADER, 'wc-blocks-checkout', 'wc-blocks-data-store', 'wc-settings' ) ) ) ),
+			array_values( array_unique( array_merge( $asset['dependencies'], array( self::HANDLE_LOADER, 'wc-blocks-checkout', 'wc-blocks-data-store', 'wc-settings' ), $turnstile ) ) ),
 			$asset['version'],
 			array( 'in_footer' => true )
 		);
@@ -101,12 +123,13 @@ final class Frontend {
 	}
 
 	/**
-	 * Data both checkouts' scripts read: the copy.
+	 * Data both checkouts' scripts read: the copy, and the Turnstile site key
+	 * and action while Turnstile is on.
 	 *
 	 * @return array<string, mixed>
 	 */
 	public static function script_data(): array {
-		return array(
+		$data      = array(
 			'namespace' => Start::STORE_NAMESPACE,
 			'i18n'      => array(
 				'verify'      => __( 'Verify age', 'navexa-agecheck-for-woocommerce' ),
@@ -120,8 +143,16 @@ final class Frontend {
 				'required'    => __( 'Verify your age before placing this order.', 'navexa-agecheck-for-woocommerce' ),
 				'opening'     => __( 'Opening the secure age check…', 'navexa-agecheck-for-woocommerce' ),
 				'closed'      => __( 'The age check window was closed. Select Verify age to try again.', 'navexa-agecheck-for-woocommerce' ),
+				'turnstile'   => __( 'The security check could not be completed. Reload the page, then select Verify age again.', 'navexa-agecheck-for-woocommerce' ),
+				'challenge'   => __( 'Complete the security check shown below, then select Verify age again.', 'navexa-agecheck-for-woocommerce' ),
+				'security'    => __( 'Security check', 'navexa-agecheck-for-woocommerce' ),
 			),
 		);
+		$turnstile = Turnstile::script_data();
+		if ( null !== $turnstile ) {
+			$data['turnstile'] = $turnstile;
+		}
+		return $data;
 	}
 
 	/**

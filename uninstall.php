@@ -2,54 +2,16 @@
 /**
  * Uninstall: deletes the plugin's options, secrets, locks, webhook markers,
  * cached connection info, scheduled actions, the rate-limit table and per-user
- * notice state.
- * Order meta (and the "Awaiting age check" orders) is kept as an audit trail;
- * product age-check settings are kept too.
+ * notice state, and moves orders still awaiting an age check to On hold.
+ * Order meta (the audit trail) and product age-check settings are kept unless
+ * "Delete data on uninstall" is on. See includes/Uninstall.php.
  *
  * @package Navexa\AgeCheck
  */
 
 defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 
-/**
- * Deletes this site's navexa_agecheck_* options and transients.
- */
-function navexa_agecheck_uninstall_site(): void {
-	global $wpdb;
-	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- uninstall: one-off scan of this plugin's own option names.
-	$names = $wpdb->get_col(
-		$wpdb->prepare(
-			"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s",
-			$wpdb->esc_like( 'navexa_agecheck_' ) . '%',
-			$wpdb->esc_like( '_transient_navexa_agecheck_' ) . '%',
-			$wpdb->esc_like( '_transient_timeout_navexa_agecheck_' ) . '%'
-		)
-	);
-	foreach ( $names as $name ) {
-		delete_option( $name );
-	}
-	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange -- uninstall: drop the plugin's own rate-limit table.
-	$wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}navexa_agecheck_rate_limits" );
-	if ( function_exists( 'as_unschedule_all_actions' ) ) {
-		as_unschedule_all_actions( '', array(), 'navexa-agecheck' );
-	}
-	wp_clear_scheduled_hook( 'navexa_agecheck_sweep_cron' );
-}
+// The plugin is not loaded here, so neither is its autoloader.
+require_once __DIR__ . '/includes/Uninstall.php';
 
-if ( is_multisite() ) {
-	foreach ( get_sites(
-		array(
-			'fields' => 'ids',
-			'number' => 0,
-		)
-	) as $navexa_agecheck_site_id ) {
-		switch_to_blog( $navexa_agecheck_site_id );
-		navexa_agecheck_uninstall_site();
-		restore_current_blog();
-	}
-} else {
-	navexa_agecheck_uninstall_site();
-}
-
-// User meta is network-wide: the dismissed-notice state of every user.
-delete_metadata( 'user', 0, 'navexa_agecheck_dismissed_counts', '', true );
+\Navexa\AgeCheck\Uninstall::run();

@@ -222,6 +222,25 @@ final class CheckoutTest extends TestCase {
 		$this->assertSame( '', ob_get_clean(), 'nothing for pickup' );
 	}
 
+	public function test_classic_button_markup_is_accessible(): void {
+		$this->customer_at( $this->us_address() );
+		ob_start();
+		Classic::render_button();
+		$html = ob_get_clean();
+		$this->assertStringContainsString( '<p class="navexa-agecheck__message" id="navexa-agecheck-message" tabindex="-1"', $html, 'focus target once the button is gone' );
+		$this->assertStringContainsString( 'aria-describedby="navexa-agecheck-message"', $html );
+		$this->assertStringContainsString( 'aria-busy="false"', $html );
+		$this->assertStringContainsString( '<button type="button"', $html, 'a native button: keyboard operable' );
+		$this->assertStringNotContainsString( ' disabled', $html );
+		$this->assertStringNotContainsString( 'aria-live', $html, 'the replaced fragment is not the live region; the glue keeps one outside it' );
+		$this->assertStringNotContainsString( 'data-navexa-agecheck-turnstile', $html, 'no Turnstile container while Turnstile is off' );
+
+		$this->options[ \Navexa\AgeCheck\Options::TURNSTILE ] = 'yes';
+		ob_start();
+		Classic::render_button();
+		$this->assertStringContainsString( '<div class="navexa-agecheck__turnstile" data-navexa-agecheck-turnstile="1" role="group" aria-label="Security check" tabindex="-1"></div>', ob_get_clean(), 'a focusable, named group for an interactive challenge' );
+	}
+
 	public function test_classic_enqueues_only_on_the_classic_checkout(): void {
 		$enqueued = array();
 		Functions\when( 'wp_enqueue_script' )->alias(

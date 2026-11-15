@@ -514,6 +514,127 @@ final class SettingsTest extends TestCase {
 		$this->assertFalse( Options::looks_like_webhook_secret( 'short' ) );
 	}
 
+	public function test_w4_fields_and_their_defaults(): void {
+		$fields = array();
+		foreach ( $this->page->get_settings_for_section( '' ) as $field ) {
+			$fields[ $field['id'] . ':' . $field['type'] ] = $field;
+		}
+		$this->assertSame( 'yes', $fields[ Options::HIDE_EXPRESS . ':checkbox' ]['default'], 'express buttons hidden by default' );
+		$this->assertSame( 'no', $fields[ Options::TURNSTILE . ':checkbox' ]['default'], 'Turnstile off by default' );
+		$this->assertSame( 'no', $fields[ Options::DELETE_DATA . ':checkbox' ]['default'], 'order meta kept by default' );
+		$this->assertSame( '', $fields[ Options::TURNSTILE_SITE_KEY . ':text' ]['default'] );
+		$secret = $fields[ Options::TURNSTILE_SECRET . ':' . Settings::FIELD_SECRET ];
+		$this->assertFalse( $secret['autoload'], 'the Turnstile secret is never autoloaded' );
+		$this->assertStringContainsString( 'express checkout buttons on age-restricted carts', $fields[ Options::HIDE_EXPRESS . ':checkbox' ]['desc'] );
+	}
+
+	public function test_w4_option_helpers(): void {
+		$this->assertTrue( Options::hide_express(), 'unset reads as on' );
+		$this->options[ Options::HIDE_EXPRESS ] = 'no';
+		$this->assertFalse( Options::hide_express() );
+		$this->options[ Options::HIDE_EXPRESS ] = 'garbage';
+		$this->assertTrue( Options::hide_express(), 'only an explicit no turns it off' );
+
+		$this->assertFalse( Options::turnstile_enabled() );
+		$this->options[ Options::TURNSTILE ] = 'yes';
+		$this->assertTrue( Options::turnstile_enabled() );
+		$this->options[ Options::TURNSTILE_SITE_KEY ] = ' 1x00000000000000000000AA ';
+		$this->assertSame( '1x00000000000000000000AA', Options::turnstile_site_key() );
+		$this->options[ Options::TURNSTILE_SECRET ] = array( 'not a string' );
+		$this->assertSame( '', Options::turnstile_secret() );
+
+		$this->assertTrue( Options::looks_like_turnstile_key( '0x4AAAAAAABkMYinukE8nzYS' ) );
+		$this->assertTrue( Options::looks_like_turnstile_key( '1x0000000000000000000000000000000AA' ) );
+		$this->assertFalse( Options::looks_like_turnstile_key( 'txk_' . str_repeat( 'a', 64 ) ) );
+		$this->assertFalse( Options::looks_like_turnstile_key( '0x short' ) );
+
+		$this->assertFalse( Options::delete_data_on_uninstall() );
+		$this->options[ Options::DELETE_DATA ] = 'yes';
+		$this->assertTrue( Options::delete_data_on_uninstall() );
+	}
+
+	public function test_turnstile_secret_is_saved_like_a_secret_and_never_shown(): void {
+		$secret = '0x4AAAAAAA' . str_repeat( 'Zz9', 9 );
+		$this->assertNull( $this->sanitize( Options::TURNSTILE_SECRET, $secret ) );
+		$this->assertSame( $secret, $this->options[ Options::TURNSTILE_SECRET ] );
+		$this->assertFalse( $this->autoload[ Options::TURNSTILE_SECRET ] );
+
+		$this->assertNull( $this->sanitize( Options::TURNSTILE_SECRET, 'txk_not_a_turnstile_key_at_all' ) );
+		$this->assertSame( $secret, $this->options[ Options::TURNSTILE_SECRET ], 'a malformed secret is refused' );
+		$this->assertStringContainsString( 'Turnstile secret key', end( \WC_Admin_Settings::$errors ) );
+
+		$this->assertNull( $this->sanitize( Options::TURNSTILE_SECRET, '' ) );
+		$this->assertSame( $secret, $this->options[ Options::TURNSTILE_SECRET ], 'blank keeps it' );
+
+		ob_start();
+		$this->page->output_secret_field( array( 'id' => Options::TURNSTILE_SECRET ) );
+		$html = ob_get_clean();
+		$this->assertStringNotContainsString( substr( $secret, 0, 6 ), $html, 'no part of the secret is printed' );
+		$this->assertStringContainsString( 'A secret is saved.', $html );
+		$this->assertStringNotContainsString( 'txk_', $html );
+
+		$_POST[ Options::TURNSTILE_SECRET . '_clear' ] = '1';
+		$this->assertNull( $this->sanitize( Options::TURNSTILE_SECRET, '' ) );
+		$this->assertArrayNotHasKey( Options::TURNSTILE_SECRET, $this->options );
+	}
+
+	public function test_turnstile_site_key_shape_is_checked(): void {
+		$this->assertSame( '0x4AAAAAAABkMYinukE8nzYS', $this->page->sanitize_turnstile_site_key( 'x', array(), ' 0x4AAAAAAABkMYinukE8nzYS ' ) );
+		$this->assertSame( '', $this->page->sanitize_turnstile_site_key( '', array(), '' ), 'blank clears it' );
+		$this->options[ Options::TURNSTILE_SITE_KEY ] = '1x00000000000000000000AA';
+		$this->assertSame( '1x00000000000000000000AA', $this->page->sanitize_turnstile_site_key( 'bad key', array(), 'bad key' ), 'a malformed key keeps the saved one' );
+		$this->assertNotEmpty( \WC_Admin_Settings::$errors );
+	}
+
+	public function test_status_flags_turnstile_without_keys(): void {
+		$this->options[ Options::TURNSTILE ] = 'yes';
+		$this->respond( 200, $this->live_info() );
+		$this->respond( 200, $this->live_info() );
+		$lines = $this->page->status_lines();
+		$text  = implode( "\n", array_column( array_filter( $lines, array( $this, 'is_error' ) ), 'text' ) );
+		$this->assertStringContainsString( 'Turnstile is on, but its site key or secret key is missing', $text );
+
+		$this->options[ Options::TURNSTILE_SITE_KEY ] = '0x4AAAAAAABkMYinukE8nzYS';
+		$this->options[ Options::TURNSTILE_SECRET ]   = '0x4AAAAAAABkMYinukE8nzYS_secret_value';
+		$this->transients                             = array();
+		$this->respond( 200, $this->live_info() );
+		$this->respond( 200, $this->live_info() );
+		$text = implode( "\n", array_column( $this->page->status_lines(), 'text' ) );
+		$this->assertStringContainsString( 'Turnstile checks shoppers', $text );
+		$this->assertStringNotContainsString( 'missing', $text );
+	}
+
+	public function test_status_flags_cloudflare_test_keys(): void {
+		$this->options[ Options::TURNSTILE ]          = 'yes';
+		$this->options[ Options::TURNSTILE_SITE_KEY ] = '0x4AAAAAAABkMYinukE8nzYS';
+		$this->options[ Options::TURNSTILE_SECRET ]   = '1x0000000000000000000000000000000AA';
+		$this->respond( 200, $this->live_info() );
+		$this->respond( 200, $this->live_info() );
+		$errors = implode( "\n", array_column( array_filter( $this->page->status_lines(), array( $this, 'is_error' ) ), 'text' ) );
+		$this->assertStringContainsString( 'test keys', $errors, 'live keys + Cloudflare\'s always-pass test secret: an error' );
+
+		$this->options[ Options::TURNSTILE_SITE_KEY ] = '3x00000000000000000000FF';
+		$this->options[ Options::TURNSTILE_SECRET ]   = '0x4AAAAAAABkMYinukE8nzYS_secret_value';
+		$this->transients                             = array();
+		$this->respond( 200, $this->live_info( array( 'livemode' => false ) ) );
+		$this->respond( 200, $this->live_info( array( 'livemode' => false ) ) );
+		$lines = $this->page->status_lines();
+		$test  = array_values(
+			array_filter(
+				$lines,
+				static function ( $line ) {
+					return false !== strpos( $line['text'], 'test keys' );
+				}
+			)
+		);
+		$this->assertCount( 1, $test );
+		$this->assertSame( 'warning', $test[0]['level'], 'test-mode AgeCheck keys: a warning' );
+		$this->assertStringNotContainsString( 'Turnstile checks shoppers', implode( "\n", array_column( $lines, 'text' ) ) );
+
+		$this->assertTrue( Options::is_turnstile_test_key( '2x00000000000000000000AB' ) );
+		$this->assertFalse( Options::is_turnstile_test_key( '0x4AAAAAAABkMYinukE8nzYS' ) );
+	}
+
 	/**
 	 * Whether a status line is an error.
 	 *

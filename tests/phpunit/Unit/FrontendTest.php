@@ -25,10 +25,11 @@ final class FrontendTest extends TestCase {
 			}
 		);
 		Functions\when( 'wp_register_script' )->alias(
-			static function ( $handle, $src, $deps ) use ( $test ) {
+			static function ( $handle, $src, $deps, $ver = false ) use ( $test ) {
 				$test->registered[ $handle ] = array(
 					'src'  => $src,
 					'deps' => $deps,
+					'ver'  => $ver,
 				);
 				return true;
 			}
@@ -114,5 +115,36 @@ final class FrontendTest extends TestCase {
 		$fallback = json_decode( (string) file_get_contents( $dirs[1] . '/block.json' ), true );
 		$this->assertSame( array( 'woocommerce/checkout-fields-block' ), $fallback['parent'] );
 		$this->assertTrue( $fallback['attributes']['lock']['default']['remove'] );
+	}
+
+	public function test_turnstile_scripts_only_when_turnstile_is_on(): void {
+		$this->options[ \Navexa\AgeCheck\Options::TURNSTILE ]          = 'yes';
+		$this->options[ \Navexa\AgeCheck\Options::TURNSTILE_SITE_KEY ] = '1x00000000000000000000AA';
+		Frontend::register_scripts();
+
+		$api = $this->registered[ Frontend::HANDLE_TURNSTILE_API ];
+		$this->assertSame( \Navexa\AgeCheck\Turnstile::SCRIPT_URL, $api['src'] );
+		$this->assertNull( $api['ver'], 'no ver query on Cloudflare\'s URL' );
+		$this->assertSame( array( Frontend::HANDLE_TURNSTILE_API ), $this->registered[ Frontend::HANDLE_TURNSTILE ]['deps'] );
+		$this->assertStringEndsWith( '/assets/js/turnstile.min.js', $this->registered[ Frontend::HANDLE_TURNSTILE ]['src'] );
+		$this->assertContains( Frontend::HANDLE_TURNSTILE, $this->registered[ Frontend::HANDLE_CLASSIC ]['deps'] );
+		$this->assertContains( Frontend::HANDLE_TURNSTILE, $this->registered[ Frontend::HANDLE_BLOCK ]['deps'] );
+		$this->assertSame( array( Frontend::HANDLE_LOADER ), array_slice( $this->registered[ Frontend::HANDLE_CLASSIC ]['deps'], 0, 1 ) );
+		$this->assertSame( array(), $this->registered[ Frontend::HANDLE_LOADER ]['deps'], 'the loader stays dependency-free' );
+
+		$data = Frontend::script_data();
+		$this->assertSame( '1x00000000000000000000AA', $data['turnstile']['siteKey'] );
+		$this->assertSame( \Navexa\AgeCheck\Turnstile::ACTION, $data['turnstile']['action'] );
+		$this->assertNotSame( '', $data['i18n']['turnstile'] );
+		$root = dirname( __DIR__, 3 );
+		$this->assertFileExists( $root . '/assets/js/turnstile.js' );
+		$this->assertFileExists( $root . '/assets/js/turnstile.min.js' );
+	}
+
+	public function test_no_turnstile_data_while_it_is_off(): void {
+		$this->assertArrayNotHasKey( 'turnstile', Frontend::script_data() );
+		Frontend::register_scripts();
+		$this->assertArrayNotHasKey( Frontend::HANDLE_TURNSTILE_API, $this->registered );
+		$this->assertNotContains( Frontend::HANDLE_TURNSTILE, $this->registered[ Frontend::HANDLE_BLOCK ]['deps'] );
 	}
 }

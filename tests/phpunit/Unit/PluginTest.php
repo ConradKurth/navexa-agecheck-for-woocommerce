@@ -82,6 +82,14 @@ final class PluginTest extends TestCase {
 		$this->assertNotFalse( has_action( 'woocommerce_checkout_validate_order_before_payment', array( Blocks::class, 'validate' ) ) );
 		$this->assertNotFalse( has_action( 'woocommerce_store_api_checkout_update_order_meta', array( Blocks::class, 'mark_cart_checkout' ) ) );
 		$this->assertNotFalse( has_action( 'woocommerce_blocks_checkout_block_registration', array( Blocks::class, 'register_integration' ) ) );
+
+		// W4 hardening.
+		$this->assertNotFalse( has_filter( 'wcpay_payment_request_is_product_supported', array( \Navexa\AgeCheck\Express::class, 'supported_for_product' ) ) );
+		$this->assertNotFalse( has_filter( 'wc_stripe_show_payment_request_on_cart', array( \Navexa\AgeCheck\Express::class, 'supported_for_cart' ) ) );
+		$this->assertNotFalse( has_filter( 'woocommerce_paypal_payments_buttons_disabled', array( \Navexa\AgeCheck\Express::class, 'paypal_context_disabled' ) ) );
+		$this->assertNotFalse( has_filter( 'wp_privacy_personal_data_exporters', array( \Navexa\AgeCheck\Privacy::class, 'register_exporter' ) ) );
+		$this->assertNotFalse( has_filter( 'wp_privacy_personal_data_erasers', array( \Navexa\AgeCheck\Privacy::class, 'register_eraser' ) ) );
+		$this->assertNotFalse( has_action( 'admin_init', array( \Navexa\AgeCheck\Privacy::class, 'add_policy_content' ) ) );
 	}
 
 	public function test_wire_registers_admin_components_in_the_admin(): void {

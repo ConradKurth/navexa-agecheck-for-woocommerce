@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { storeApiTransport } from "./store-api.ts"
+import { StartRefused, storeApiTransport } from "./store-api.ts"
 
 function fakeFetch(replies: Array<{ status: number; body?: unknown; nonce?: string }>) {
   const calls: Array<{ url: string; init: any }> = []
@@ -52,4 +52,48 @@ test("errors and answers without the extension throw", async () => {
   await assert.rejects(storeApiTransport({ base: "/x/", namespace: "navexa-agecheck", fetch: empty.fetch })("start"))
   const nononce = fakeFetch([{ status: 200 }])
   await assert.rejects(storeApiTransport({ base: "/x/", namespace: "navexa-agecheck", fetch: nononce.fetch })("start"))
+})
+
+test("startData adds fields to a start only, after beforeStart", async () => {
+  const f = fakeFetch([{ status: 200, nonce: "n1" }, { status: 200, body: answer }, { status: 200, body: answer }])
+  const order: string[] = []
+  const transport = storeApiTransport({
+    base: "/x/",
+    namespace: "navexa-agecheck",
+    fetch: f.fetch,
+    beforeStart: async () => void order.push("before"),
+    startData: async () => {
+      order.push("data")
+      return { turnstile: "tok", v: 99, action: "refresh" }
+    },
+  })
+  await transport("start")
+  assert.deepEqual(order, ["before", "data"])
+  assert.deepEqual(JSON.parse(f.calls[1].init.body), { namespace: "navexa-agecheck", data: { turnstile: "tok", v: 1, action: "start" } }, "v and action cannot be overridden")
+  await transport("refresh")
+  assert.deepEqual(JSON.parse(f.calls[2].init.body).data, { v: 1, action: "refresh" })
+  assert.equal(order.length, 2, "startData runs for start only")
+})
+
+test("startData refusing answers refused without calling the store; other errors throw", async () => {
+  const f = fakeFetch([])
+  const refused = storeApiTransport({
+    base: "/x/",
+    namespace: "navexa-agecheck",
+    fetch: f.fetch,
+    startData: async () => {
+      throw new StartRefused("security check failed")
+    },
+  })
+  assert.deepEqual(await refused("start"), { v: 1, status: "refused", message: "security check failed" })
+  assert.equal(f.calls.length, 0)
+  const broken = storeApiTransport({
+    base: "/x/",
+    namespace: "navexa-agecheck",
+    fetch: f.fetch,
+    startData: async () => {
+      throw new Error("boom")
+    },
+  })
+  await assert.rejects(broken("start"), /boom/)
 })

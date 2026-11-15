@@ -156,6 +156,14 @@ namespace {
 		public $id = '';
 	}
 
+	class WP_Post {
+		public $ID = 0;
+
+		public function __construct( $id = 0 ) {
+			$this->ID = $id;
+		}
+	}
+
 	class WP_REST_Request {
 		private $body;
 		private $headers;
@@ -197,6 +205,8 @@ namespace {
 		public $id        = 0;
 		public $parent_id = 0;
 		public $meta      = array();
+		/** @var int[] get_children(): a variable product's variation ids. */
+		public $children  = array();
 
 		public function __construct( $id = 0, $parent_id = 0, $meta = array() ) {
 			$this->id        = $id;
@@ -210,6 +220,10 @@ namespace {
 
 		public function get_parent_id() {
 			return $this->parent_id;
+		}
+
+		public function get_children() {
+			return $this->children;
 		}
 
 		public function get_meta( $key, $single = true, $context = 'view' ) {
@@ -373,6 +387,10 @@ namespace {
 
 		public function get_id() {
 			return $this->id;
+		}
+
+		public function get_order_number() {
+			return (string) $this->id;
 		}
 
 		public function get_type() {

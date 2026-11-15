@@ -1,6 +1,7 @@
 // Builds the AgeCheck loader and the classic checkout glue with esbuild:
 //   assets/src/loader/index.ts   -> assets/js/agecheck-<LOADER_VERSION>.js and .min.js
 //   assets/src/loader/classic.ts -> assets/js/checkout-classic.js and .min.js
+//   assets/src/loader/turnstile.ts -> assets/js/turnstile.js and .min.js (loaded only with Turnstile on)
 // Run: npm run build:loader. The output is committed (wordpress.org
 // Guideline 4: the readable source and its build ship together).
 import { build } from "esbuild"
@@ -18,6 +19,7 @@ const banner = (name) =>
 const targets = [
   { entry: "index.ts", out: `agecheck-${version}`, name: `Navexa AgeCheck loader ${version}` },
   { entry: "classic.ts", out: "checkout-classic", name: "Navexa AgeCheck classic checkout" },
+  { entry: "turnstile.ts", out: "turnstile", name: "Navexa AgeCheck Turnstile glue" },
 ]
 
 for (const target of targets) {
@@ -36,4 +38,4 @@ for (const target of targets) {
     })
   }
 }
-console.log(`built loader ${version} and the classic glue`)
+console.log(`built loader ${version}, the classic glue and the Turnstile glue`)

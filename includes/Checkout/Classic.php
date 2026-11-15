@@ -11,6 +11,7 @@ use Navexa\AgeCheck\Frontend;
 use Navexa\AgeCheck\Requirement;
 use Navexa\AgeCheck\ShipTo;
 use Navexa\AgeCheck\Start;
+use Navexa\AgeCheck\Turnstile;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -120,15 +121,26 @@ final class Classic {
 				? __( 'Age verified.', 'navexa-agecheck-for-woocommerce' )
 				: __( 'This order contains age-restricted items. Verify your age to place it.', 'navexa-agecheck-for-woocommerce' );
 		}
+		// The status line is not a live region here: WooCommerce replaces this
+		// fragment on every update, so the classic glue announces changes
+		// through one region outside it. tabindex -1 lets the glue move the
+		// focus to the status once the button is gone (after a pass).
 		printf(
-			'<div class="navexa-agecheck" data-navexa-agecheck="1" data-status="%1$s" style="margin:0 0 1em">'
-			. '<p class="navexa-agecheck__message" role="status" aria-live="polite" style="margin:0 0 .5em">%2$s</p>',
+			'<div class="navexa-agecheck" data-navexa-agecheck="1" data-status="%1$s" aria-busy="false" style="margin:0 0 1em">'
+			. '<p class="navexa-agecheck__message" id="navexa-agecheck-message" tabindex="-1" style="margin:0 0 .5em">%2$s</p>',
 			esc_attr( $status ),
 			esc_html( $message )
 		);
 		if ( ! $passed ) {
+			if ( Turnstile::enabled() ) {
+				// A group the glue can focus when Cloudflare shows a challenge in it.
+				printf(
+					'<div class="navexa-agecheck__turnstile" data-navexa-agecheck-turnstile="1" role="group" aria-label="%s" tabindex="-1"></div>',
+					esc_attr__( 'Security check', 'navexa-agecheck-for-woocommerce' )
+				);
+			}
 			printf(
-				'<button type="button" class="button alt navexa-agecheck__verify" data-navexa-agecheck-verify="1"%2$s>%1$s</button>',
+				'<button type="button" class="button alt navexa-agecheck__verify" data-navexa-agecheck-verify="1" aria-describedby="navexa-agecheck-message" aria-disabled="false"%2$s>%1$s</button>',
 				esc_html__( 'Verify age', 'navexa-agecheck-for-woocommerce' ),
 				Start::STATUS_PENDING === $status ? ' data-pending="1"' : ''
 			);

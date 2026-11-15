@@ -2,7 +2,7 @@
 
 WordPress plugin that gates age-restricted WooCommerce orders on a Navexa AgeCheck pass. US ship-to addresses only. GPL-2.0-or-later. The wordpress.org readme is `readme.txt`.
 
-Status: **W0 scaffold + W1 hold core + W2 pre-payment**, merged. Paid age-restricted orders are held in "Awaiting age check" until AgeCheck clears them (or staff use the logged override): binding, release, the webhook receiver, the sweep, ReportShipment, the ship-to guard, denial handling, the order panel and Orders filters (W1). In pre-payment mode the shopper verifies before placing the order, on classic and block checkout: the checkout guard, rate limits, the Store API start/refresh extension, the return page, the bundled loader and the checkout block (W2); the order is then bound to that verification and released by the same hold path. The engine contract is E3, E9 (hosted status CORS, tax v0.0.163), E4a and E10a (tax v0.0.164); see `proto/agecheck/v1/verification.proto` in the tax repo. Verification emails still need engine PR E8c. The plan is `design-final.md` §5 in the AgeCheck planning cache; owner decisions that override it are in `owner-decisions.md` there.
+Status: **W0 scaffold + W1 hold core + W2 pre-payment**, merged; **W4 hardening** (express buttons, i18n, privacy, readme, uninstall, button accessibility, optional Turnstile) on top. Paid age-restricted orders are held in "Awaiting age check" until AgeCheck clears them (or staff use the logged override): binding, release, the webhook receiver, the sweep, ReportShipment, the ship-to guard, denial handling, the order panel and Orders filters (W1). In pre-payment mode the shopper verifies before placing the order, on classic and block checkout: the checkout guard, rate limits, the Store API start/refresh extension, the return page, the bundled loader and the checkout block (W2); the order is then bound to that verification and released by the same hold path. The engine contract is E3, E9 (hosted status CORS, tax v0.0.163), E4a and E10a (tax v0.0.164); see `proto/agecheck/v1/verification.proto` in the tax repo. Verification emails still need engine PR E8c. The plan is `design-final.md` §5 in the AgeCheck planning cache; owner decisions that override it are in `owner-decisions.md` there.
 
 ## Layout
 
@@ -41,13 +41,19 @@ Status: **W0 scaffold + W1 hold core + W2 pre-payment**, merged. Paid age-restri
 | `includes/Checkout/Session.php` | The shopper's sid, counter, verification record and guard in the WooCommerce session |
 | `includes/Checkout/Classic.php` | `woocommerce_after_checkout_validation` + the Verify age button above Place order |
 | `includes/Checkout/Blocks.php`, `BlocksIntegration.php` | `woocommerce_checkout_validate_order_before_payment` (WC 9.9+) and the checkout block integration |
-| `assets/src/loader/` | The loader (TypeScript, zero dependencies) and the classic glue; esbuild → `assets/js/` |
+| `includes/Express.php` | Hides express payment buttons on restricted products and carts through each gateway's own filters (W4; matrix below) |
+| `includes/Turnstile.php` | Optional Cloudflare Turnstile on the start (off by default; siteverify; fail closed) |
+| `includes/Privacy.php` | Privacy policy suggestion; personal data exporter and eraser for the plugin's order meta |
+| `includes/Uninstall.php` | What `uninstall.php` removes (self-contained: the plugin is not loaded at uninstall) |
+| `languages/` | `navexa-agecheck-for-woocommerce.pot` (wp-cli `i18n make-pot`; PHP, the built JS and block.json) |
+| `assets/src/loader/` | The loader (TypeScript, zero dependencies), the classic glue, the Turnstile glue (`turnstile.ts`, loaded only with Turnstile on) and the button's accessibility helpers (`a11y.ts`); esbuild → `assets/js/` |
 | `assets/src/blocks/` | The Verify age checkout inner blocks; wp-scripts → `assets/build/` |
 | `tests/phpunit/` | Unit tests (Brain Monkey, no WordPress); `fixtures/ship-to-vectors.json` is exported from the engine |
 | `tests/mock-agecheck/` | Zero-dependency Node mock of the engine's Connect API and hosted surface, with fault injection |
 | `tests/wp-env/smoke.php` | Smoke checks inside a real WordPress + WooCommerce (wp-env) |
 | `tests/wp-env/prepayment.mjs` | The W2 flow over HTTP against wp-env and the mock (setup: `prepayment-setup.php`; `prepayment-orders.php` then follows its orders through the hold and release) |
-| `tests/e2e/prepayment-browser.mjs` | The W2 flow in Chromium, WebKit and Firefox (Playwright) |
+| `tests/e2e/prepayment-browser.mjs` | The W2 flow in Chromium, WebKit and Firefox (Playwright), and the W4 keyboard and focus checks |
+| `tests/wp-env/w4.php`, `w4-uninstall.php` | W4 in real WordPress: express filters (and WooCommerce Stripe Gateway's own helper when it is active), the hold fallback, Turnstile against Cloudflare's test keys, privacy tools, JS translation wiring; then `uninstall.php` with the plugin skipped |
 
 ## Development
 
@@ -68,7 +74,14 @@ npm run test:mock      # mock engine
 npm run test:loader    # loader and Store API transport (node --test, type stripping)
 npm run typecheck      # tsc over assets/src/loader
 npm run build          # esbuild loader + wp-scripts block; the output is committed, CI checks it is current
+# translation template (after changing any string; I18nTest fails when a PHP string is missing from it)
+docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD":/app -w /app --entrypoint wp wordpress:cli \
+  i18n make-pot /app /app/languages/navexa-agecheck-for-woocommerce.pot --slug=navexa-agecheck-for-woocommerce \
+  --domain=navexa-agecheck-for-woocommerce --exclude=node_modules,vendor,tests,assets/src,languages \
+  --headers='{"Report-Msgid-Bugs-To":"https://github.com/ConradKurth/navexa-agecheck-for-woocommerce/issues"}'
 ```
+
+The template scans the built scripts (`assets/build/`), not `assets/src/`, so its references name the files WordPress loads (what `wp i18n make-json` needs). No `load_plugin_textdomain()`: WordPress loads the `navexa-agecheck-for-woocommerce` domain just in time (from wordpress.org language packs, or `languages/` through `Domain Path`), and `wp_set_script_translations()` (the front-end block script) and block.json `textdomain` (the editor scripts) cover the JavaScript.
 
 ### wp-env
 
@@ -84,11 +97,20 @@ node tests/wp-env/prepayment.mjs --site http://localhost:8888 --mock http://loca
   --exempt <exempt_product> --order-pay <order_pay>
 # the orders that flow placed: bound by AttachOrder, held, released; reused drafts not held; the order-pay order bound by an order-bound check
 npm run env -- run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp eval-file tests/wp-env/prepayment-orders.php
+# W4 (needs prepayment-setup.php first; optionally `wp plugin install woocommerce-gateway-stripe --activate` to ask Stripe's own helper)
+npm run env -- run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp eval-file tests/wp-env/w4.php
+# last: uninstall.php with the plugin skipped, as WordPress runs it (never `wp plugin uninstall`: the plugin directory is this checkout)
+npm run env -- run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp --skip-plugins=navexa-agecheck-for-woocommerce eval-file tests/wp-env/w4-uninstall.php
 # the same in browsers (npx playwright-core install chromium webkit firefox)
 node tests/e2e/prepayment-browser.mjs --site http://localhost:8888 --mock http://localhost:8787 \
   --product <product> --block <block_checkout> --classic <classic_checkout> --free-product <free_product> --browsers chromium,webkit,firefox
+# Turnstile's interactive challenge: Turnstile on, site key 3x00000000000000000000FF, secret 1x0000000000000000000000000000000AA
+node tests/e2e/prepayment-browser.mjs --site http://localhost:8888 --mock http://localhost:8787 \
+  --product <product> --block <block_checkout> --classic <classic_checkout> --browsers chromium,webkit,firefox --turnstile-interactive
 npm run env destroy -- --force
 ```
+
+Every browser run starts age checks from one IP, and the start limit is 20 an hour per IP: between runs, empty the counters (`wp eval 'global $wpdb; $wpdb->query("DELETE FROM {$wpdb->prefix}navexa_agecheck_rate_limits");'`), or a later check reads "Too many age check attempts".
 
 The smoke runs the W0 and W2 checks and then `tests/wp-env/smoke-hold.php` (real WooCommerce orders through the hold, release, webhook, override, denial, pickup, ship-to guard and order-pay refusal, ReportShipment, the sweep, per-order queueing on the bundled Action Scheduler, and a copied order). It expects a fresh environment.
 
@@ -126,7 +148,53 @@ Spike results (Playwright builds of Chromium 1248, WebKit 2370, Firefox 157; WC 
 
 Use `.wp-env.override.json` (git-ignored) to change ports, the mock URL, WordPress or WooCommerce versions. CI runs the smoke on eight legs: WordPress 6.7 + WooCommerce 9.9.0 and the latest WordPress + WooCommerce 11.3.0, each on PHP 7.4 and 8.3, each with HPOS on and off. WooCommerce 9.9.0 needs WordPress 6.7, so the plan's WordPress 6.5 leg cannot exist. Not covered yet: WooCommerce 9.9.0 on the latest WordPress, and WooCommerce Subscriptions (W1).
 
-### wp-config constants
+## Hardening (W4)
+
+### Express payment buttons
+
+Spike (2026-11-15): sources of WooPayments 11.3.0, WooCommerce Stripe Gateway 11.2.0 and WooCommerce PayPal Payments 4.2.2 (the wordpress.org zips) read for how each express button places its order, and whether that order passes the plugin's pre-payment gates (classic `woocommerce_after_checkout_validation`, Store API `woocommerce_checkout_validate_order_before_payment`). "Hidden by" are the gateways' own filters `Express` uses while "Hide express checkout buttons on age-restricted carts and products" (`navexa_agecheck_hide_express`, default on) is on. Whatever gets through, the W1 hold still applies: a paid restricted order goes to "Awaiting age check" (`payment_complete` interception and the pre-save backstop), never to Processing.
+
+| Gateway | Button | Pages | How the order is placed | Pre-payment gate | Hidden by | If it still gets through |
+|---|---|---|---|---|---|---|
+| WooPayments 11.3.0 | Apple Pay, Google Pay, Amazon Pay (Express Checkout Element) | product | Store API `POST /wc/store/v1/checkout` in a separate tokenized-cart session (`dist/express-checkout.js` `placeOrder`, `X-WooPayments-Tokenized-Cart`) | Store API gate runs; that session holds no guard, so it refuses ("Verify your age on the checkout page") | `wcpay_payment_request_is_product_supported` (button helper :1160) | refused before payment; held after payment in accept-and-hold |
+| | | cart, checkout (classic and block) | Store API `/checkout` in the shopper's session | Store API gate; admitted only with the session's guard for the same ship-to | `wcpay_payment_request_is_cart_supported` (:907); on block pages a false answer keeps `wcpayExpressCheckoutParams` unset, so the block methods' `canMakePayment` answers false | as above |
+| | | pay for order | Store API `/checkout/{id}` | `Checkout\OrderPay`: accept and hold (Q11b) | not hidden (Q11b): WooPayments treats order-pay as the checkout and asks `wcpay_payment_request_is_cart_supported` about the session cart, so `Express::supported_for_cart()` answers as the gateway decides there | held, link emailed (E8c) |
+| | WooPay | product, cart, checkout | WooPay, then the Store API checkout in a WooPay session | Store API gate; no guard, refused | `wcpay_woopay_button_is_product_supported`, `wcpay_platform_checkout_button_are_cart_items_supported` (WooPay button handler :406, :436) | as above |
+| | Link | checkout | a card-form payment method (UPE), not an express button: the normal checkout submit | classic or Store API gate | n/a | n/a |
+| Stripe 11.2.0 | Apple Pay, Google Pay, Link, Amazon Pay (Express Checkout Element) | product | `wc_stripe_add_to_cart` into the shopper's session, then Store API `POST /wc/store/v1/checkout` (`build/express-checkout.js` `expressCheckoutECECreateOrder`) | Store API gate; admitted only with a guard this session earned for the same ship-to | `wc_stripe_hide_payment_request_on_product_page` (ECE helper :1208) | refused / held |
+| | | cart, checkout (classic and block) | Store API `/checkout` | Store API gate | `wc_stripe_show_payment_request_on_cart` (:1161), `wc_stripe_show_payment_request_on_checkout` (:1179); block pages read the same decision (`WC_Stripe_Blocks_Support` `shouldShowExpressCheckoutButton`, :383) | refused / held |
+| | | pay for order | Store API `/checkout/{id}` | `Checkout\OrderPay` | not hidden (Q11b): order-pay is `is_checkout()` to Stripe, so it asks `wc_stripe_show_payment_request_on_checkout`, which answers as Stripe decides there | held |
+| | agentic commerce | none | `wc_create_order()` (`agentic-commerce/...-order-mapper.php`) | none | n/a | held |
+| PayPal Payments 4.2.2, SDK v6 (the default: `modules.php` loads `ppcp-sdk-v6` unless the option `woocommerce-ppcp-sdk-v6-eligible` is `no`, which only an unsupported merchant country sets) | PayPal, Pay Later, Venmo, Apple Pay, Google Pay | product, cart, mini-cart (classic) | approve, then either back to checkout ("final review") or the order is created from the cart by `WooCommerceOrderCreator` and paid (`SdkV6Module` :212-214: every v6 express payment) | `WooCommerceOrderCreator`: **bypasses both gates** | v6 swaps the v5 `SmartButton` for `DisabledSmartButton` on every page it owns (`ppcp-sdk-v6/extensions.php`), so v5's "disabled" filters are never asked; its wrappers print on the renderer hooks it shares with v5 (`SdkV6Module::register_render_hooks()`): `woocommerce_paypal_payments_single_product_renderer_hook`, `..._proceed_to_checkout_button_renderer_hook`, `..._mini_cart_button_renderer_hook`. `Express` hands PayPal its own hook (`navexa_agecheck_paypal_{product,cart,mini_cart}`) and forwards to it at PayPal's priority (31, 20, 30) only when the product or cart is not restricted at render time; no wrapper, no buttons | held after payment |
+| | | block cart, block checkout (express area) | as above | as above | `woocommerce_paypal_payments_blocks_payment_method_data` (`V6PaymentMethod::get_payment_method_data()`): `buttons_enabled` false (its block script registers the PayPal express methods only when true) and `apple_pay`/`google_pay` `styles` emptied (each wallet registers only when its styles name the page) | held |
+| | | classic checkout | the button posts the checkout form (`form_encoded`, then the form submits) | classic gate | not hidden (the payment method) | n/a |
+| PayPal Payments 4.2.2, SDK v5 | PayPal smart buttons (PayPal, Pay Later, Venmo) | product, cart, mini-cart (classic) | approve, then back to checkout ("continuation") and Place order; with PayPal's "Pay now" (`enable_pay_now`, never on checkout) `wc_create_order()` + `process_payment()` (`PayNowOrderHandler::pay()`); cross-browser App Switch creates the order and sends the shopper to pay-for-order | continuation: gated; Pay now and App Switch: **bypass both gates** | the renderer hooks above (v5's `SmartButton` reads the same filters), and `woocommerce_paypal_payments_product_buttons_disabled`, `woocommerce_paypal_payments_buttons_disabled` with `cart`, `mini-cart` (SmartButton :1285, :1290; the classic button script disables the button) | held after payment (the hold, verified in wp-env with `wc_create_order()` + `payment_complete()`); App Switch orders through `Checkout\OrderPay` |
+| | | block cart, block checkout (express area) | the same approve flow; express buttons exist only with `smartButtonsEnabled` | as above | `woocommerce_paypal_payments_blocks_payment_method_data` (PayPalPaymentMethod :213) sets `smartButtonsEnabled` false; PayPal stays a block payment method only in its "Place order" mode | held |
+| | | classic checkout | the PayPal button is the payment method: `CheckoutFormValidator` runs `WC_Checkout::validate_checkout()` (so the classic gate) before PayPal opens, then the form submits | classic gate | not hidden (not an express button) | n/a |
+| | Apple Pay (PayPal) | product, cart | `ApplePayButton` posts `WC()->checkout()->process_checkout()` | classic gate | not verified that it follows the disabled flag (its boot script does not read `button.is_disabled`) | refused / held |
+| | Google Pay (PayPal) | product, cart | the approve flow above | as smart buttons | not verified, as Apple Pay | held |
+
+What was verified, and how:
+- Every "Hidden by" filter answers through `Express` in unit tests and in wp-env with real products, a variable product and a real session cart (`tests/wp-env/w4.php`, WooCommerce 9.9.0 and 11.3.0).
+- WooCommerce Stripe Gateway 11.2.0's own `WC_Stripe_Express_Checkout_Helper` (product, cart and checkout decisions) in wp-env on WooCommerce 11.3.0: no Express Checkout Element for a restricted product or cart, Stripe's own answer for an exempt one.
+- Express-style orders made outside both checkouts (`wc_create_order()` + `payment_complete()`, as PayPal's Pay now and Stripe's agentic orders do; payment methods `ppcp-gateway`, `woocommerce_payments`, `stripe`) are held, in wp-env on both legs.
+- A Store API checkout without the session's guard is refused (`tests/wp-env/prepayment.mjs`, "block checkout without a check is refused"): the path WooPayments' tokenized cart and Stripe's Express Checkout take.
+- PayPal SDK v6: read in the 4.2.2 source (`ppcp-sdk-v6`), and the renderer-hook forwarding and the block data in unit tests and wp-env; PayPal Payments itself was not installed (its stacks render nothing without a connected account).
+- Not verified: the wallet buttons rendering or disappearing in a browser (needs connected WooPayments, Stripe and PayPal accounts, for PayPal a sandbox account), WooPayments' and PayPal's own helpers executed (both need a connected account to get that far), and PayPal SDK v5's Apple Pay and Google Pay buttons following the disabled flag. Other gateways' express buttons are not hidden; the gates and the hold still apply to their orders.
+- Decided when the page renders: a block cart that becomes restricted afterwards (a cross-sell added in the cart block) keeps buttons shown at load, and WooPayments loads its express scripts on an empty block cart. The gates and the hold cover those orders.
+
+### Turnstile
+
+Off by default (`navexa_agecheck_turnstile`). On, the checkout pages load Cloudflare's `api.js?render=explicit` and `assets/js/turnstile.js`; a start renders an execute-mode, interaction-only widget in the Verify age box after the popup opens (so it never blocks the popup), and sends the single-use token as `data.turnstile`. `Turnstile::verify()` posts it with the secret and the client IP to `challenges.cloudflare.com/turnstile/v0/siteverify` (8 s, no redirects) after the rate limits and before any AgeCheck call: no token or a refused one answers `refused` with "The security check did not pass", Turnstile on without both keys or Cloudflare not answering answers `unavailable`. Refresh is never checked. When Cloudflare needs the shopper to interact (`before-interactive-callback`), the challenge shows in the Verify age box on the checkout page, not in the popup: the start gives up at once (no token wait, nothing sent to the store, no rate-limit count), the popup closes, the status says "Complete the security check shown below, then select Verify age again" (announced; the classic live region, the block status line), and the focus moves to the widget's "Security check" group; the solved challenge's token is kept (at most 240 s) for the next click. The setup checklist flags Cloudflare's test keys (`1x`/`2x`/`3x`): an error with live AgeCheck keys, a warning with test keys. Verified in wp-env against Cloudflare's always-pass and always-fail test secrets, in Chromium with the always-pass site key, and with the force-interactive site key (`3x00000000000000000000FF`, `tests/e2e/prepayment-browser.mjs --turnstile-interactive`: popup closed, copy, focus, challenge solved, next click opens the age check) in Chromium, WebKit and Firefox, on block and classic checkout. Right after the popup closes Firefox ignores `focus()` for a moment, so the focus move is retried briefly (`a11y.ts` `focusOnReturn()`, the block's focus effect).
+
+### Privacy, i18n, accessibility, uninstall
+
+- Privacy: `Privacy` suggests a policy section (what is sent to AgeCheck and kept) and registers an exporter and an eraser for the requester's orders (billing email or the account with that email, ten a page). The eraser follows WooCommerce's "Remove personal data from orders on request" (and `woocommerce_privacy_erase_order_personal_data`), never touches an order still held, waiting for a manual refund or still able to ship (any status but completed, cancelled, refunded, failed or trash: the verification id locks its ship-to), removes the verification ids, verification status, reason, link state and ship-to hash, and keeps the release state so an erased order is never held again. It runs before WooCommerce's own order eraser (priority 5; WooCommerce's anonymizes the billing email and customer id the orders are found by), and the same erasure runs on `woocommerce_privacy_before_remove_order_personal_data`, so WooCommerce's bulk "Remove personal data" action and its retention cleanup take the plugin's meta too. `AddressGuard` does not undo WooCommerce's anonymization of the shipping address. Checked in wp-env by running every registered eraser in order, as wp-admin does.
+- i18n: every PHP string uses the text domain (phpcs `WordPress.WP.I18n`); `I18nTest` fails when one is missing from the template.
+- Accessibility (WCAG 2.1 AA): native button; `aria-disabled` instead of `disabled` while busy (the focus stays); `aria-busy`; the button is described by the status line; classic checkout announces through one polite live region outside the replaced fragment, the block's status line is the live region; after a check the shopper started, the focus goes to the status line on a pass (the button is gone) or back to the button. Colour contrast is the theme's (theme button classes; no colours of our own). Verified in Chromium, WebKit and Firefox (keyboard Enter, popup, focus after return, live region).
+- Uninstall: `Uninstall` (run by `uninstall.php` without the plugin loaded) deletes every `navexa_agecheck_*` option and transient, the rate-limit table, the plugin's Action Scheduler group and WP-Cron hook and the dismissed-notice user meta, on every site; keeps order meta and product settings unless "Delete data on uninstall" (`navexa_agecheck_delete_data_on_uninstall`, default off) is on; moves orders still "Awaiting age check" to On hold with a note (never released) with the status registered for the move, so WooCommerce does not read it as "pending" and email the shopper "Order on hold" (found in wp-env).
+
+## wp-config constants
 
 | Constant | Effect |
 |---|---|

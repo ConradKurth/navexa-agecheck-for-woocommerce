@@ -104,6 +104,93 @@ final class Options {
 	const TRUSTED_PROXY_HEADER = 'navexa_agecheck_trusted_proxy_header';
 
 	/**
+	 * 'yes' (default) or 'no': hide express payment buttons (Apple Pay, Google
+	 * Pay, PayPal and the like) on age-restricted products and carts.
+	 */
+	const HIDE_EXPRESS = 'navexa_agecheck_hide_express';
+
+	/**
+	 * 'yes' or 'no' (default): ask for a Cloudflare Turnstile token before a
+	 * shopper's age check starts.
+	 */
+	const TURNSTILE = 'navexa_agecheck_turnstile';
+
+	/**
+	 * Cloudflare Turnstile site key (public; printed into the checkout page).
+	 */
+	const TURNSTILE_SITE_KEY = 'navexa_agecheck_turnstile_site_key';
+
+	/**
+	 * Cloudflare Turnstile secret key. Stored with autoload off, never printed.
+	 */
+	const TURNSTILE_SECRET = 'navexa_agecheck_turnstile_secret';
+
+	/**
+	 * 'yes' or 'no' (default): uninstalling the plugin also deletes its order
+	 * and product meta. Off, that meta stays as an audit trail.
+	 */
+	const DELETE_DATA = 'navexa_agecheck_delete_data_on_uninstall';
+
+	/**
+	 * Whether express payment buttons are hidden on age-restricted products
+	 * and carts. Anything but a stored 'no' reads as on.
+	 */
+	public static function hide_express(): bool {
+		return 'no' !== get_option( self::HIDE_EXPRESS, 'yes' );
+	}
+
+	/**
+	 * Whether the merchant turned Turnstile on. Only a stored 'yes' does.
+	 */
+	public static function turnstile_enabled(): bool {
+		return 'yes' === get_option( self::TURNSTILE, 'no' );
+	}
+
+	/**
+	 * The Turnstile site key, or ''.
+	 */
+	public static function turnstile_site_key(): string {
+		$key = get_option( self::TURNSTILE_SITE_KEY, '' );
+		return is_string( $key ) ? trim( $key ) : '';
+	}
+
+	/**
+	 * The Turnstile secret key, or ''.
+	 */
+	public static function turnstile_secret(): string {
+		$secret = get_option( self::TURNSTILE_SECRET, '' );
+		return is_string( $secret ) ? trim( $secret ) : '';
+	}
+
+	/**
+	 * Whether $key has the shape of a Turnstile site or secret key (0x… or
+	 * Cloudflare's 1x/2x/3x test keys). Only catches paste mistakes.
+	 *
+	 * @param string $key Candidate key.
+	 */
+	public static function looks_like_turnstile_key( string $key ): bool {
+		return 1 === preg_match( '/^[0-3]x[A-Za-z0-9_-]{16,128}$/', $key );
+	}
+
+	/**
+	 * Whether $key is one of Cloudflare's Turnstile test keys (1x…, 2x…,
+	 * 3x…). Their secrets accept Cloudflare's public dummy token, so a store
+	 * on them has no bot protection.
+	 *
+	 * @param string $key Site or secret key.
+	 */
+	public static function is_turnstile_test_key( string $key ): bool {
+		return 1 === preg_match( '/^[1-3]x/', $key );
+	}
+
+	/**
+	 * Whether uninstalling deletes the plugin's order and product meta.
+	 */
+	public static function delete_data_on_uninstall(): bool {
+		return 'yes' === get_option( self::DELETE_DATA, 'no' );
+	}
+
+	/**
 	 * The trusted proxy header's $_SERVER key, or '' for none.
 	 */
 	public static function trusted_proxy_header(): string {

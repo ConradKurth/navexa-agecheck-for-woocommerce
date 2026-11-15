@@ -162,6 +162,7 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 		\Navexa\AgeCheck\Start::reset();
 		\Navexa\AgeCheck\Checkout\Blocks::reset();
 		\Navexa\AgeCheck\Checkout\Gate::reset();
+		\Navexa\AgeCheck\Express::reset();
 
 		Functions\when( 'WC' )->alias(
 			static function () {
@@ -262,6 +263,7 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 					return number_format( (float) $value, (int) $dp, '.', '' );
 				},
 				'wc_get_price_decimals'        => 2,
+				'is_checkout_pay_page'         => false,
 				'get_user_meta'                => static function ( $user, $key ) use ( $test ) {
 					return isset( $test->user_meta[ $user . ':' . $key ] ) ? $test->user_meta[ $user . ':' . $key ] : '';
 				},
@@ -456,6 +458,16 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 			if ( isset( $args['meta_query'] ) && ! $this->meta_matches( $order, $args['meta_query'] ) ) {
 				continue;
 			}
+			// 'customer': billing emails and customer ids, as WooCommerce matches them.
+			if ( isset( $args['customer'] ) ) {
+				$match = false;
+				foreach ( (array) $args['customer'] as $who ) {
+					$match = $match || ( is_int( $who ) ? $who === (int) $order->get_customer_id() : $who === $order->get_billing_email() );
+				}
+				if ( ! $match ) {
+					continue;
+				}
+			}
 			// OrderQuery's posts-table bridge, as cpt_meta_query() applies it.
 			if ( isset( $args[ \Navexa\AgeCheck\OrderQuery::QUERY_VAR ] ) && ! $this->meta_matches( $order, $args[ \Navexa\AgeCheck\OrderQuery::QUERY_VAR ] ) ) {
 				continue;
@@ -463,7 +475,8 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 			$out[] = $order;
 		}
 		$limit  = isset( $args['limit'] ) ? (int) $args['limit'] : 10;
-		$offset = isset( $args['paged'] ) ? ( (int) $args['paged'] - 1 ) * $limit : 0;
+		$page   = isset( $args['paged'] ) ? (int) $args['paged'] : ( isset( $args['page'] ) ? (int) $args['page'] : 1 );
+		$offset = ( $page - 1 ) * $limit;
 		$out    = array_slice( $out, $offset, $limit );
 		if ( isset( $args['return'] ) && 'ids' === $args['return'] ) {
 			return array_map(

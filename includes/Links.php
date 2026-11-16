@@ -25,7 +25,9 @@ defined( 'ABSPATH' ) || exit;
  *   recorded in Meta::LINK as "{state}:{vid}", with the link's id, expiry and
  *   send time; an order note marks each change. Staff can resend (a new
  *   link; the earlier one stops working) and withdraw (RevokeVerificationLinks)
- *   from Order actions (Admin\OrderPanel).
+ *   from Order actions (Admin\OrderPanel). An order that will not ship has
+ *   its links withdrawn by itself (LinkRevoke, STATE_REVOKED); held again,
+ *   its next release run asks for a new one.
  * - Idempotency: the key (vl:{vid}:{random}) is stored on the order before
  *   the call and reused until an answer is recorded, so a retry after a lost
  *   answer replays it and emails nobody twice. Any recorded answer, a refusal
@@ -56,6 +58,7 @@ final class Links {
 	const STATE_NOT_ALLOWED     = 'not_allowed';
 	const STATE_REFUSED         = 'refused';
 	const STATE_WITHDRAWN       = 'withdrawn';
+	const STATE_REVOKED         = 'revoked';
 	const STATE_NOT_ELIGIBLE    = 'not_eligible';
 
 	/**
@@ -86,9 +89,10 @@ final class Links {
 
 	/**
 	 * States after which a release run never asks again for that verification
-	 * (staff may still resend).
+	 * (staff may still resend). STATE_REVOKED only while the order will not
+	 * ship (LinkRevoke::is_closed()): held again, it is asked again.
 	 */
-	const FINAL_STATES = array( self::STATE_SENT, self::STATE_NOT_QUEUED, self::STATE_NO_EMAIL, self::STATE_NOT_ALLOWED, self::STATE_REFUSED, self::STATE_WITHDRAWN, self::STATE_NOT_ELIGIBLE );
+	const FINAL_STATES = array( self::STATE_SENT, self::STATE_NOT_QUEUED, self::STATE_NO_EMAIL, self::STATE_NOT_ALLOWED, self::STATE_REFUSED, self::STATE_WITHDRAWN, self::STATE_REVOKED, self::STATE_NOT_ELIGIBLE );
 
 	/**
 	 * States whose link may still be open (withdraw() applies).
@@ -167,6 +171,12 @@ final class Links {
 			return self::STATE_NOT_ELIGIBLE;
 		}
 		$current = self::state( $order );
+		if ( self::STATE_REVOKED === $current && ! LinkRevoke::is_closed( $order ) ) {
+			// Withdrawn because the order would not ship, and it can ship
+			// again (paid after failing, restored from the trash): the shopper
+			// needs a link that works.
+			$current = '';
+		}
 		if ( in_array( $current, self::FINAL_STATES, true ) ) {
 			return $current;
 		}
@@ -398,6 +408,8 @@ final class Links {
 				return __( 'Not sent: AgeCheck refused (see the order notes).', 'navexa-agecheck-for-woocommerce' );
 			case self::STATE_WITHDRAWN:
 				return __( 'Withdrawn by staff: the emailed link no longer works.', 'navexa-agecheck-for-woocommerce' );
+			case self::STATE_REVOKED:
+				return __( 'Withdrawn because the order will not ship (cancelled, refunded in full, failed or trashed): the emailed link no longer works.', 'navexa-agecheck-for-woocommerce' );
 			case self::STATE_NOT_ELIGIBLE:
 				return __( 'Not sent: a check the shopper started at checkout is never emailed.', 'navexa-agecheck-for-woocommerce' );
 			default:

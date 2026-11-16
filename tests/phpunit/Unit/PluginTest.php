@@ -90,6 +90,15 @@ final class PluginTest extends TestCase {
 		$this->assertNotFalse( has_filter( 'wp_privacy_personal_data_exporters', array( \Navexa\AgeCheck\Privacy::class, 'register_exporter' ) ) );
 		$this->assertNotFalse( has_filter( 'wp_privacy_personal_data_erasers', array( \Navexa\AgeCheck\Privacy::class, 'register_eraser' ) ) );
 		$this->assertNotFalse( has_action( 'admin_init', array( \Navexa\AgeCheck\Privacy::class, 'add_policy_content' ) ) );
+
+		// W5: emailed links withdrawn once an order will not ship.
+		$this->assertNotFalse( has_action( 'woocommerce_order_status_changed', array( \Navexa\AgeCheck\LinkRevoke::class, 'on_status_changed' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_order_fully_refunded', array( \Navexa\AgeCheck\LinkRevoke::class, 'on_fully_refunded' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_trash_order', array( \Navexa\AgeCheck\LinkRevoke::class, 'on_trashed' ) ) );
+		$this->assertNotFalse( has_action( 'trashed_post', array( \Navexa\AgeCheck\LinkRevoke::class, 'on_trashed_post' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_before_delete_order', array( \Navexa\AgeCheck\LinkRevoke::class, 'on_before_delete' ) ) );
+		$this->assertNotFalse( has_action( 'before_delete_post', array( \Navexa\AgeCheck\LinkRevoke::class, 'on_before_delete_post' ) ) );
+		$this->assertNotFalse( has_action( \Navexa\AgeCheck\LinkRevoke::HOOK, array( \Navexa\AgeCheck\LinkRevoke::class, 'run_job' ) ) );
 	}
 
 	public function test_wire_registers_admin_components_in_the_admin(): void {

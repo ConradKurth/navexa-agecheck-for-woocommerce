@@ -69,6 +69,8 @@ final class Privacy {
 		Meta::LINK_EXPIRES_AT,
 		Meta::LINK_SENT_AT,
 		Meta::LINK_KEY,
+		Meta::REVOKE,
+		Meta::REVOKE_KEY,
 		Meta::SHIP_TO_HASH,
 	);
 
@@ -285,6 +287,13 @@ final class Privacy {
 			return sprintf(
 				/* translators: %s: an order number. */
 				__( 'Kept the age check details of order %s: the order is still waiting for its age check or a refund.', 'navexa-agecheck-for-woocommerce' ),
+				$order->get_order_number()
+			);
+		}
+		if ( 0 === strpos( Meta::get( $order, Meta::REVOKE ), LinkRevoke::STATE_PENDING . ':' ) ) {
+			return sprintf(
+				/* translators: %s: an order number. */
+				__( 'Kept the age check details of order %s: AgeCheck is still withdrawing its emailed verification link.', 'navexa-agecheck-for-woocommerce' ),
 				$order->get_order_number()
 			);
 		}

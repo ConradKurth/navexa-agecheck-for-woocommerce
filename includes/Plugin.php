@@ -122,6 +122,8 @@ final class Plugin {
 		AddressGuard::register();
 		Binding::register();
 		Release::register();
+		// Emailed links withdrawn once an order will not ship (W5).
+		LinkRevoke::register();
 		Denial::register();
 		Webhook::register();
 		Sweep::register();

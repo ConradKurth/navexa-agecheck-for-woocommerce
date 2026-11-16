@@ -615,6 +615,12 @@ test("RevokeVerificationLinks withdraws the open links, any status (E8c)", async
   const state = await (await fetch(`${base}/__mock/verifications`)).json()
   assert.equal(state.links[0].revokedReason, "merchant")
   assert.equal((await (await call("RevokeVerificationLinks", { idempotencyKey: "rvl:2", verificationId: "acv_nope" })).json()).code, "not_found")
+  await control("config", { links: "off" })
+  assert.deepEqual(await (await call("RevokeVerificationLinks", { idempotencyKey: "rvl:3", verificationId: id })).json(), {}, "links off gates sending, never withdrawing")
+  await control("config", { links: "absent" })
+  const absent = await call("RevokeVerificationLinks", { idempotencyKey: "rvl:4", verificationId: id })
+  assert.equal(absent.status, 404, "an engine without E8c")
+  assert.match(absent.headers.get("content-type"), /^text\/plain/)
 })
 
 test("per-store reuse: off by default; on, a returning customer passes as reused (E12a)", async () => {

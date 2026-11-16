@@ -218,6 +218,30 @@ final class PrivacyTest extends TestCase {
 		}
 	}
 
+	public function test_eraser_waits_for_a_pending_link_withdrawal_then_takes_its_state(): void {
+		$this->allow_order_erasure();
+		$order = $this->cleared_order();
+		$order->set_status( 'refunded' );
+		$order->save();
+		Meta::set( $order, Meta::REVOKE, 'pending:acv_1' );
+		Meta::set( $order, Meta::REVOKE_KEY, 'rvk:acv_1:0123456789abcdef' );
+
+		$result = Privacy::erase( self::EMAIL, 1 );
+
+		$this->assertFalse( $result['items_removed'] );
+		$this->assertTrue( $result['items_retained'] );
+		$this->assertSame( 'acv_1', Meta::get( $order, Meta::VERIFICATION_ID ), 'the withdrawal still needs the verification id' );
+		$this->assertStringContainsString( 'still withdrawing its emailed verification link', $result['messages'][0] );
+
+		Meta::set( $order, Meta::REVOKE, 'revoked:acv_1' );
+		Meta::set( $order, Meta::REVOKE_KEY, '' );
+		$this->assertTrue( Privacy::erase( self::EMAIL, 1 )['items_removed'] );
+		foreach ( array( Meta::REVOKE, Meta::REVOKE_KEY ) as $key ) {
+			$this->assertContains( $key, Privacy::ERASABLE_META, 'it names the verification' );
+			$this->assertSame( '', Meta::get( $order, $key ), $key );
+		}
+	}
+
 	public function test_woocommerce_own_erasure_erases_closed_orders_first(): void {
 		$closed = $this->cleared_order();
 		$open   = $this->cleared_order();

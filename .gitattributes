@@ -1,6 +1,11 @@
-# Kept out of `git archive` (the release zip).
+# Kept out of `git archive` (the release zip, bin/build-zip.sh). The zip keeps
+# the plugin's PHP, the built assets with their unminified builds and their
+# sources in assets/src/ (wordpress.org Guideline 4), readme.txt, languages/
+# and LICENSE; build-zip.sh refuses anything else.
 /.github export-ignore
+/bin export-ignore
 /tests export-ignore
+/assets/src/**/*.test.ts export-ignore
 /.wp-env.json export-ignore
 /.gitattributes export-ignore
 /.gitignore export-ignore

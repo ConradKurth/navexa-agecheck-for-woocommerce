@@ -391,6 +391,7 @@ namespace {
 		/** @var array<int, array> Transitions whose status actions ran on save. */
 		public $fired            = array();
 		public $remaining_refund = 25.0;
+		public $total_refunded   = 0.0;
 		/** @var string What has_cart_hash() matches. */
 		public $cart_hash        = 'cart-hash';
 
@@ -574,6 +575,10 @@ namespace {
 
 		public function get_remaining_refund_amount() {
 			return $this->remaining_refund;
+		}
+
+		public function get_total_refunded() {
+			return $this->total_refunded;
 		}
 
 		public function get_qty_refunded_for_item( $item_id, $item_type = 'line_item' ) {

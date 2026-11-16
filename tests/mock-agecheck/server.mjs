@@ -35,8 +35,10 @@
 //     email in org.confirmedRecipients. links "absent" answers the plain 404
 //     of an engine without the RPC. A decided verification's links are
 //     revoked (decided).
-//   RevokeVerificationLinks (E8c): any status; {revokedCount} of the links
-//     still open, revoked (merchant)
+//   RevokeVerificationLinks (E8c): any status, and whatever config links
+//     says (AGECHECK_LINKS gates sending only); {revokedCount} of the links
+//     still open, revoked (merchant); links "absent" answers the plain 404
+//     of an engine without E8c
 // Per-store reuse (E12a; config reuse "on", default "off" as in production):
 //   a create with a customerRef under a policy other than default passes at
 //   once as PASS_CLASS_REUSED on the newest earlier passed verification of
@@ -756,6 +758,7 @@ const RPCS = {
   },
 
   RevokeVerificationLinks(state, key, request) {
+    if (state.links === "absent") return null
     return (
       requireScope(key, "agecheck:verify") ??
       idempotent(state, key, request, "RevokeVerificationLinks", () => {

@@ -15,7 +15,9 @@ defined( 'ABSPATH' ) || exit;
  * rotating page, and for each order whose checkout verification still waits
  * to be bound. The release run itself skips orders not due yet
  * (NEXT_CHECK_AT), so orders waiting on staff are asked about every six hours.
- * It also forgets handled-webhook markers older than a week.
+ * It also queues again link withdrawals left pending
+ * (LinkRevoke::requeue_stale()) and forgets handled-webhook markers older
+ * than a week.
  *
  * Only wc_get_orders() with a status and meta query (OrderQuery), which works
  * on HPOS and on the posts table. When Action Scheduler is unavailable, a WP-Cron event
@@ -149,6 +151,8 @@ final class Sweep {
 			Release::enqueue( $order_id, Release::TRIGGER_SWEEP );
 			++$queued;
 		}
+		// Link withdrawals left pending (an action that died or was never queued).
+		LinkRevoke::requeue_stale();
 		Lock::purge_claims( Webhook::SEEN_PREFIX, time() - Webhook::SEEN_TTL );
 		return $queued;
 	}

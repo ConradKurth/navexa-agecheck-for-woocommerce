@@ -148,6 +148,31 @@ final class Meta {
 	const LINK_KEY = '_navexa_agecheck_link_key';
 
 	/**
+	 * Withdrawal of the verification's emailed links once the order will not
+	 * ship (LinkRevoke): a LinkRevoke::STATE_* plus ':' and the verification
+	 * id it is for.
+	 */
+	const REVOKE = '_navexa_agecheck_revoke';
+
+	/**
+	 * RevokeVerificationLinks idempotency key, stored before the call and
+	 * reused until an answer is recorded.
+	 */
+	const REVOKE_KEY = '_navexa_agecheck_revoke_key';
+
+	/**
+	 * The recorded withdrawal's detail: how many links were still open
+	 * (LinkRevoke::STATE_REVOKED), or the error code (STATE_FAILED).
+	 */
+	const REVOKE_DETAIL = '_navexa_agecheck_revoke_detail';
+
+	/**
+	 * Unix time the withdrawal's result was recorded; while it is pending,
+	 * since when (renewed each time the sweep queues it again).
+	 */
+	const REVOKE_AT = '_navexa_agecheck_revoke_at';
+
+	/**
 	 * Denied-order refund state: REFUND_*.
 	 */
 	const REFUND = '_navexa_agecheck_refund';

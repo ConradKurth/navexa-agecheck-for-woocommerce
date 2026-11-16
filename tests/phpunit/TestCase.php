@@ -163,6 +163,7 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 		\Navexa\AgeCheck\Checkout\Blocks::reset();
 		\Navexa\AgeCheck\Checkout\Gate::reset();
 		\Navexa\AgeCheck\Express::reset();
+		\Navexa\AgeCheck\LinkRevoke::reset();
 
 		Functions\when( 'WC' )->alias(
 			static function () {
@@ -438,7 +439,7 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 	}
 
 	/**
-	 * A small wc_get_orders(): status, meta_query (=, !=, <, NOT EXISTS, OR),
+	 * A small wc_get_orders(): status, meta_query (=, !=, <, LIKE, NOT EXISTS, OR),
 	 * limit, paged, return ids.
 	 *
 	 * @param array $args Query args.
@@ -513,6 +514,9 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 					break;
 				case '<':
 					$results[] = $exists && (float) $value < (float) $clause['value'];
+					break;
+				case 'LIKE':
+					$results[] = $exists && false !== strpos( (string) $value, (string) $clause['value'] );
 					break;
 				default:
 					$results[] = $exists && (string) $value === (string) $clause['value'];

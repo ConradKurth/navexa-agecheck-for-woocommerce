@@ -10,6 +10,7 @@ namespace Navexa\AgeCheck\Admin;
 use Navexa\AgeCheck\Client;
 use Navexa\AgeCheck\ConnectError;
 use Navexa\AgeCheck\Hold;
+use Navexa\AgeCheck\LinkRevoke;
 use Navexa\AgeCheck\Links;
 use Navexa\AgeCheck\Meta;
 use Navexa\AgeCheck\Mode;
@@ -136,6 +137,10 @@ final class OrderPanel {
 		$link = Links::describe( $order );
 		if ( '' !== $link ) {
 			$rows[ __( 'Verification link', 'navexa-agecheck-for-woocommerce' ) ] = $link;
+		}
+		$revoke = LinkRevoke::describe( $order );
+		if ( '' !== $revoke ) {
+			$rows[ __( 'Link withdrawal', 'navexa-agecheck-for-woocommerce' ) ] = $revoke;
 		}
 		$refund = Meta::get( $order, Meta::REFUND );
 		if ( '' !== $refund ) {

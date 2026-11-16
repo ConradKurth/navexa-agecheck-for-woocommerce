@@ -74,6 +74,11 @@ jobs:
       - run: npm run build
       - name: Built assets match their sources
         run: git diff --exit-code -- assets/ && test -z "$(git status --porcelain -- assets/)"
+      # What a release zip would hold (export-ignore, versions, changelog), so
+      # a new development file or a half-done version bump fails here, not at
+      # the tag (release.yml builds and installs the zip).
+      - name: Release zip contents and versions
+        run: bin/build-zip.sh --ref HEAD --check
 
   wp-env:
     name: wp-env smoke (WP ${{ matrix.wp }}, WC ${{ matrix.wc }}, PHP ${{ matrix.php }}, HPOS ${{ matrix.hpos }})
@@ -132,6 +137,8 @@ jobs:
         run: |
           node tests/e2e/gate-browser.mjs --http-only --site http://localhost:8888 --mock http://localhost:8787 \
             --setup-cmd "$WP_ENV run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp eval-file tests/wp-env/gate-setup.php"
+      - name: Emailed links withdrawn on closed orders (W5)
+        run: $WP_ENV run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp eval-file tests/wp-env/w5.php
       # Last: destroys the plugin's state. The plugin is skipped, as WordPress
       # runs uninstall.php; never `wp plugin uninstall` (the directory is the checkout).
       - name: Uninstall (W4)

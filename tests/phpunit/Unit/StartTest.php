@@ -216,6 +216,39 @@ final class StartTest extends TestCase {
 		$this->assertSame( 'passed', Start::state()['status'] );
 	}
 
+	public function test_a_signed_in_shopper_sends_a_customer_ref_and_guests_none(): void {
+		$this->respond_created( 'acv_guest' );
+		$this->respond( 200, array( 'hostedUrl' => self::HOSTED ) );
+		$this->start();
+		$this->assertArrayNotHasKey( 'customerRef', $this->request_body( 0 ) );
+		$guest_key = $this->request_body( 0 )['idempotencyKey'];
+		$this->assertStringEndsWith( ':0', $guest_key, 'a guest\'s key is unchanged' );
+
+		Session::forget_verification();
+		$this->current_user = 42;
+		$this->respond_created( 'acv_signed' );
+		$this->respond( 200, array( 'hostedUrl' => self::HOSTED ) );
+		$this->start();
+		$body = $this->request_body( 2 );
+		$this->assertSame( \Navexa\AgeCheck\CustomerRef::for_user( 42 ), $body['customerRef'] );
+		$this->assertMatchesRegularExpression( '/^' . preg_quote( Install::install_id() . ':' . Session::sid() . ':' . $this->mac() . ':1', '/' ) . ':c[0-9a-f]{16}$/', $body['idempotencyKey'], 'the key changes with the request: a guest who signs in never replays a guest create' );
+	}
+
+	public function test_a_returning_customer_passes_at_start_on_a_reused_check(): void {
+		$this->current_user = 42;
+		$this->respond_created( 'acv_reused', 'PASSED', array( 'passClass' => 'PASS_CLASS_REUSED' ) );
+		$this->assertSame(
+			array(
+				'v'      => 1,
+				'status' => 'passed',
+			),
+			$this->start(),
+			'no popup: the loader closes it and shows the pass'
+		);
+		$this->assertSame( 'acv_reused', Session::guarded_verification_id( $this->mac() ) );
+		$this->assertCount( 1, $this->http_requests, 'no hosted session for a pass' );
+	}
+
 	public function test_refresh_reads_the_verification_and_mints_the_guard_on_pass(): void {
 		$this->respond_created();
 		$this->respond( 200, array( 'hostedUrl' => self::HOSTED ) );

@@ -136,6 +136,48 @@ final class OrdersFilterTest extends TestCase {
 		$this->assertSame( '', ob_get_clean(), 'only on WooCommerce screens' );
 	}
 
+	public function test_the_link_refusal_notice_shows_on_woocommerce_screens_while_recent(): void {
+		$screen     = new \WP_Screen();
+		$screen->id = 'woocommerce_page_wc-orders';
+		Functions\when( 'get_current_screen' )->justReturn( $screen );
+		Functions\when( 'wp_nonce_url' )->alias(
+			static function ( $url ) {
+				return $url . '&_wpnonce=n';
+			}
+		);
+		$this->options[ \Navexa\AgeCheck\Links::OPTION_BLOCK ] = array(
+			'reason' => \Navexa\AgeCheck\Links::STATE_LINKS_OFF,
+			'at'     => time(),
+		);
+		ob_start();
+		Notices::render();
+		$html = ob_get_clean();
+		$this->assertStringContainsString( 'AgeCheck is not sending verification emails yet', $html );
+		$this->assertStringContainsString( 'notice-warning', $html );
+		$this->assertStringContainsString( 'links=links_off', $html, 'dismissible' );
+
+		$this->user_meta[ '3:' . Notices::USER_META_LINKS ] = 'links_off';
+		ob_start();
+		Notices::render();
+		$this->assertSame( '', ob_get_clean(), 'dismissed until the reason changes' );
+
+		$this->options[ \Navexa\AgeCheck\Links::OPTION_BLOCK ]['reason'] = \Navexa\AgeCheck\Links::STATE_NO_DISPLAY_NAME;
+		ob_start();
+		Notices::render();
+		$this->assertStringContainsString( 'set your store name in the AgeCheck dashboard', ob_get_clean() );
+
+		$screen->id = 'edit-post';
+		ob_start();
+		Notices::render();
+		$this->assertSame( '', ob_get_clean(), 'only on WooCommerce screens' );
+
+		$screen->id = 'dashboard';
+		$this->caps = array();
+		ob_start();
+		Notices::render();
+		$this->assertSame( '', ob_get_clean(), 'only for shop managers' );
+	}
+
 	public function test_flash_notices_are_shown_once_and_escaped(): void {
 		Notices::flash( 'Kept <b>held</b>' );
 		Functions\when( 'get_current_screen' )->justReturn( null );

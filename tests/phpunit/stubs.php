@@ -69,13 +69,30 @@ namespace {
 		}
 	}
 
-	/** In-memory WooCommerce session. */
+	/** In-memory WooCommerce session (with WC_Session_Handler's cookie methods). */
 	class WC_Session {
 		public $data        = array();
 		public $customer_id = 't_0123456789abcdef';
+		/** @var bool Whether the visitor has a session (cookie). */
+		public $has_session = true;
+		/** @var bool Whether set_customer_session_cookie( true ) can start one. */
+		public $can_start = true;
+		/** @var int set_customer_session_cookie( true ) calls. */
+		public $cookie_set = 0;
 
 		public function get_customer_id() {
 			return $this->customer_id;
+		}
+
+		public function has_session() {
+			return $this->has_session;
+		}
+
+		public function set_customer_session_cookie( $set ) {
+			if ( $set ) {
+				++$this->cookie_set;
+				$this->has_session = $this->has_session || $this->can_start;
+			}
 		}
 
 		public function get( $key, $default = null ) {
@@ -548,7 +565,11 @@ namespace {
 		}
 
 		public function get_checkout_order_received_url() {
-			return 'https://shop.example/checkout/order-received/' . $this->id . '/?key=wc_order_test';
+			return 'https://shop.example/checkout/order-received/' . $this->id . '/?key=' . $this->get_order_key();
+		}
+
+		public function get_order_key() {
+			return isset( $this->data['order_key'] ) ? $this->data['order_key'] : 'wc_order_test';
 		}
 
 		public function get_remaining_refund_amount() {

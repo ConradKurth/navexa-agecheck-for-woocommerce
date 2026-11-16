@@ -43,7 +43,12 @@ defined( 'ABSPATH' ) || exit;
  *   ship-to) is the residential address the engine's data match (E5,
  *   data_then_doc) compares with the ship-to: an order shipping to its
  *   billing address may pass on the data match, any other takes the ID
- *   check. Then SendVerificationLink through a LinkSender.
+ *   check. A signed-in customer's order also carries customer_ref
+ *   (CustomerRef: a keyed hash of the WooCommerce customer id, never PII;
+ *   guests none), so a returning customer may pass at once on their earlier
+ *   check while AgeCheck's per-store reuse is on (E12a, PASS_CLASS_REUSED,
+ *   which clears like any pass). Then Links emails the shopper a link while
+ *   the verification waits on them.
  *
  * AttachOrder answers FAILED_PRECONDITION for a verification bound to any
  * order, this one included, so a re-attach after its idempotency key expired
@@ -67,13 +72,6 @@ final class Binding {
 	const DENIED   = 'denied';
 
 	/**
-	 * Verification statuses that wait on the shopper, so a link helps.
-	 * awaiting_identity is E4b's (the data match's consent and DOB step);
-	 * listed so the engine release that sends it needs no plugin release.
-	 */
-	const AWAITING_SHOPPER = array( 'created', 'needs_doc', 'doc_pending', 'awaiting_identity' );
-
-	/**
 	 * Meta that belongs to the order named by the external id
 	 * (forget_foreign()).
 	 */
@@ -92,7 +90,12 @@ final class Binding {
 		Meta::CLEARANCE_KEY,
 		Meta::CLEARED_AT,
 		Meta::CREATE_ATTEMPT,
+		Meta::PASS_CLASS,
 		Meta::LINK,
+		Meta::LINK_ID,
+		Meta::LINK_EXPIRES_AT,
+		Meta::LINK_SENT_AT,
+		Meta::LINK_KEY,
 		Meta::REFUND,
 		Meta::SHIPMENT_REPORTED,
 		Meta::NEXT_CHECK_AT,
@@ -101,11 +104,6 @@ final class Binding {
 		Meta::OVERRIDE_BY,
 		Meta::OVERRIDE_AT,
 	);
-
-	/**
-	 * Meta::LINK result when the verification may not be emailed (Q7).
-	 */
-	const LINK_NOT_ELIGIBLE = 'not_eligible';
 
 	/**
 	 * Registers the checkout hooks.
@@ -356,7 +354,7 @@ final class Binding {
 		}
 		self::mark_bound( $order, $vid, 'attach', $ship_to );
 		$verification = isset( $answer['verification'] ) && is_array( $answer['verification'] ) ? $answer['verification'] : array();
-		Meta::set( $order, Meta::VERIFICATION_STATUS, self::status_name( $verification ) );
+		self::record_verification( $order, $verification );
 		return self::BOUND;
 	}
 
@@ -403,6 +401,11 @@ final class Binding {
 		if ( '' !== $return ) {
 			$request['returnUrl'] = $return; // Signed into the hosted link (E4a).
 		}
+		$customer = CustomerRef::for_order( $order );
+		if ( '' !== $customer ) {
+			// Per-store reuse (E12a): a returning customer may pass on their earlier check.
+			$request['customerRef'] = $customer;
+		}
 
 		try {
 			$answer = $client->call( 'CreateVerification', $request );
@@ -430,7 +433,7 @@ final class Binding {
 			throw new ConnectError( 'CreateVerification', 'internal', 200, null, '', ConnectError::REASON_UNREADABLE_RESPONSE );
 		}
 		self::mark_bound( $order, $vid, 'create', $ship_to );
-		Meta::set( $order, Meta::VERIFICATION_STATUS, self::status_name( $verification ) );
+		self::record_verification( $order, $verification );
 		Meta::note(
 			$order,
 			sprintf(
@@ -441,72 +444,6 @@ final class Binding {
 		);
 		Client::log( 'info', sprintf( 'agecheck order-bound create order=%d vid=%s', $order->get_id(), $vid ) );
 		return self::BOUND;
-	}
-
-	/**
-	 * Asks AgeCheck to email the shopper a verification link, once per
-	 * verification (an unavailable sender is asked again on later runs).
-	 * Unsaved meta changes.
-	 *
-	 * Only for a verification this plugin created for the order (BOUND_BY
-	 * create), which asks for document_name_check REQUIRED: an emailed link
-	 * lasts about 7 days and can be forwarded, so the ID must match the
-	 * billing name (owner decision Q7). A checkout verification (attach) is
-	 * created with NONE, and an adopted one's name check is unknown (the
-	 * Verification message does not carry it), so neither is emailed; the
-	 * order keeps waiting for the shopper to finish the check they started,
-	 * or for staff. A fresh order-bound verification cannot replace it either:
-	 * AgeCheck keeps one verification per order external id.
-	 *
-	 * @param \WC_Order  $order  Order.
-	 * @param Client     $client Fulfilment-key client.
-	 * @param LinkSender $sender Sender.
-	 * @return string LinkSender::RESULT_*, LINK_NOT_ELIGIBLE, or '' without a verification.
-	 * @throws ConnectError A retryable failure.
-	 */
-	public static function send_link( \WC_Order $order, Client $client, LinkSender $sender ): string {
-		$vid = Meta::get( $order, Meta::VERIFICATION_ID );
-		if ( '' === $vid ) {
-			return '';
-		}
-		$previous = Meta::get( $order, Meta::LINK );
-		if ( 'create' !== Meta::get( $order, Meta::BOUND_BY ) ) {
-			Meta::set( $order, Meta::LINK, self::LINK_NOT_ELIGIBLE . ':' . $vid );
-			if ( self::LINK_NOT_ELIGIBLE . ':' . $vid !== $previous ) {
-				Meta::note( $order, self::link_note( self::LINK_NOT_ELIGIBLE ) );
-			}
-			return self::LINK_NOT_ELIGIBLE;
-		}
-		foreach ( array( LinkSender::RESULT_SENT, LinkSender::RESULT_REFUSED ) as $final ) {
-			if ( $final . ':' . $vid === $previous ) {
-				return $final;
-			}
-		}
-		$result = $sender->send( $client, $vid, 'vl:' . $vid );
-		if ( ! in_array( $result, array( LinkSender::RESULT_SENT, LinkSender::RESULT_UNAVAILABLE, LinkSender::RESULT_REFUSED ), true ) ) {
-			$result = LinkSender::RESULT_REFUSED;
-		}
-		Meta::set( $order, Meta::LINK, $result . ':' . $vid );
-		if ( $result . ':' . $vid !== $previous ) {
-			Meta::note( $order, self::link_note( $result ) );
-		}
-		return $result;
-	}
-
-	/**
-	 * The link sender: UnavailableLinkSender until AgeCheck can email links
-	 * (E8c), EngineLinkSender when wp-config.php defines
-	 * NAVEXA_AGECHECK_EMAIL_LINKS as true.
-	 */
-	public static function link_sender(): LinkSender {
-		$sender = defined( 'NAVEXA_AGECHECK_EMAIL_LINKS' ) && true === NAVEXA_AGECHECK_EMAIL_LINKS ? new EngineLinkSender() : new UnavailableLinkSender();
-		/**
-		 * Filters the verification-link sender.
-		 *
-		 * @param LinkSender $sender Sender.
-		 */
-		$filtered = apply_filters( 'navexa_agecheck_link_sender', $sender );
-		return $filtered instanceof LinkSender ? $filtered : $sender;
 	}
 
 	/**
@@ -523,7 +460,7 @@ final class Binding {
 			$previous[] = $vid;
 			Meta::set( $order, Meta::PREVIOUS_VERIFICATION_IDS, implode( ',', array_slice( array_unique( $previous ), -10 ) ) );
 		}
-		foreach ( array( Meta::VERIFICATION_ID, Meta::ATTACH_PENDING, Meta::BOUND_AT, Meta::BOUND_BY, Meta::SHIP_TO_HASH, Meta::CLEARANCE_KEY, Meta::LINK, Meta::VERIFICATION_STATUS ) as $key ) {
+		foreach ( array( Meta::VERIFICATION_ID, Meta::ATTACH_PENDING, Meta::BOUND_AT, Meta::BOUND_BY, Meta::SHIP_TO_HASH, Meta::CLEARANCE_KEY, Meta::LINK, Meta::LINK_ID, Meta::LINK_EXPIRES_AT, Meta::LINK_SENT_AT, Meta::LINK_KEY, Meta::VERIFICATION_STATUS, Meta::PASS_CLASS ) as $key ) {
 			Meta::set( $order, $key, '' );
 		}
 		Meta::set( $order, Meta::CREATE_ATTEMPT, Meta::get_int( $order, Meta::CREATE_ATTEMPT ) + 1 );
@@ -561,6 +498,46 @@ final class Binding {
 			$status = substr( $status, strlen( $prefix ) );
 		}
 		return 'UNSPECIFIED' === $status ? '' : strtolower( $status );
+	}
+
+	/**
+	 * The pass class of a Verification message without its prefix
+	 * (PASS_CLASS_REUSED -> REUSED), or '' when absent or unspecified.
+	 * Accepts the proto3 JSON name and the number.
+	 *
+	 * @param array<string, mixed> $verification Verification message.
+	 */
+	public static function pass_class_name( array $verification ): string {
+		$numbers = array(
+			1 => 'DB_VERIFIED',
+			2 => 'DB_UNATTESTED',
+			3 => 'DOC_ONLY',
+			4 => 'MERCHANT_OVERRIDE',
+			5 => 'DATA_VERIFIED',
+			6 => 'REUSED',
+		);
+		$class   = isset( $verification['passClass'] ) ? $verification['passClass'] : '';
+		if ( is_int( $class ) ) {
+			return isset( $numbers[ $class ] ) ? $numbers[ $class ] : '';
+		}
+		$class = is_string( $class ) ? $class : '';
+		$class = 0 === strpos( $class, 'PASS_CLASS_' ) ? substr( $class, strlen( 'PASS_CLASS_' ) ) : $class;
+		return 1 === preg_match( '/^[A-Z][A-Z_]{0,40}$/', $class ) && 'UNSPECIFIED' !== $class ? $class : '';
+	}
+
+	/**
+	 * Records a Verification message's status and, once passed, its pass
+	 * class on the order (unsaved; for the admin panel: release decisions
+	 * come from GetClearance). Returns the status name.
+	 *
+	 * @param \WC_Order            $order        Order.
+	 * @param array<string, mixed> $verification Verification message.
+	 */
+	public static function record_verification( \WC_Order $order, array $verification ): string {
+		$status = self::status_name( $verification );
+		Meta::set( $order, Meta::VERIFICATION_STATUS, $status );
+		Meta::set( $order, Meta::PASS_CLASS, 'passed' === $status ? self::pass_class_name( $verification ) : '' );
+		return $status;
 	}
 
 	/**
@@ -634,7 +611,7 @@ final class Binding {
 			self::reverify( $order, 'order_bound_elsewhere' );
 		}
 		self::mark_bound( $order, $vid, 'adopt', $ship_to );
-		Meta::set( $order, Meta::VERIFICATION_STATUS, self::status_name( $found ) );
+		self::record_verification( $order, $found );
 		return self::BOUND;
 	}
 
@@ -690,23 +667,5 @@ final class Binding {
 			return '';
 		}
 		return $url;
-	}
-
-	/**
-	 * Order note for a link result.
-	 *
-	 * @param string $result LinkSender::RESULT_* or LINK_NOT_ELIGIBLE.
-	 */
-	private static function link_note( string $result ): string {
-		switch ( $result ) {
-			case self::LINK_NOT_ELIGIBLE:
-				return __( 'AgeCheck: the shopper has not finished the age check linked to this order (usually one started at checkout). AgeCheck emails links only for checks that match the ID to the billing name, so none was sent. The order stays held until the shopper finishes it. Release it without an age check only if you have checked the buyer\'s age yourself.', 'navexa-agecheck-for-woocommerce' );
-			case LinkSender::RESULT_SENT:
-				return __( 'AgeCheck: emailed the shopper a link to verify their age. The order stays held until they pass.', 'navexa-agecheck-for-woocommerce' );
-			case LinkSender::RESULT_UNAVAILABLE:
-				return __( 'AgeCheck: verification emails are not available yet, so the shopper has not been asked to verify. The order stays held. Release it without an age check only if you have checked the buyer\'s age yourself.', 'navexa-agecheck-for-woocommerce' );
-			default:
-				return __( 'AgeCheck: could not email the shopper a verification link (check the billing email address). The order stays held.', 'navexa-agecheck-for-woocommerce' );
-		}
 	}
 }

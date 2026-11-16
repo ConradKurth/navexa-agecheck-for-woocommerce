@@ -8,18 +8,15 @@
 
 namespace Navexa\AgeCheck\Tests\Unit;
 
-use Brain\Monkey\Filters;
 use Navexa\AgeCheck\Binding;
 use Navexa\AgeCheck\Checkout\Session;
 use Navexa\AgeCheck\Client;
 use Navexa\AgeCheck\ConnectError;
-use Navexa\AgeCheck\EngineLinkSender;
+use Navexa\AgeCheck\CustomerRef;
 use Navexa\AgeCheck\Install;
-use Navexa\AgeCheck\LinkSender;
 use Navexa\AgeCheck\Meta;
 use Navexa\AgeCheck\OrderAddress;
 use Navexa\AgeCheck\Tests\TestCase;
-use Navexa\AgeCheck\UnavailableLinkSender;
 
 final class BindingTest extends TestCase {
 
@@ -434,88 +431,64 @@ final class BindingTest extends TestCase {
 		Binding::create( $this->restricted_order( 'agecheck-hold' ), $this->fulfilment_client() );
 	}
 
-	public function test_send_link_unavailable_until_the_engine_has_it(): void {
-		$order = $this->created_order();
-		$this->assertSame( LinkSender::RESULT_UNAVAILABLE, Binding::send_link( $order, $this->fulfilment_client(), new UnavailableLinkSender() ) );
-		$this->assertSame( 'unavailable:' . self::VID, $order->meta[ Meta::LINK ] );
-		$this->assertStringContainsString( 'verification emails are not available yet', end( $order->notes ) );
-		$notes = count( $order->notes );
-		$this->assertSame( LinkSender::RESULT_UNAVAILABLE, Binding::send_link( $order, $this->fulfilment_client(), new UnavailableLinkSender() ) );
-		$this->assertCount( $notes, $order->notes, 'asked again later, noted once' );
-		$this->assertSame( array(), $this->http_requests );
-		$this->assertSame( '', Binding::send_link( $this->restricted_order(), $this->fulfilment_client(), new UnavailableLinkSender() ) );
+	public function test_create_sends_a_customer_ref_for_an_account_order_only(): void {
+		$guest = $this->restricted_order( 'agecheck-hold' );
+		$this->respond( 200, array( 'verification' => array( 'id' => self::VID, 'status' => 'VERIFICATION_STATUS_NEEDS_DOC' ) ) );
+		Binding::create( $guest, $this->fulfilment_client() );
+		$this->assertArrayNotHasKey( 'customerRef', $this->request_body( 0 ), 'guests get none' );
+
+		$account                      = $this->restricted_order( 'agecheck-hold' );
+		$account->data['customer_id'] = 42;
+		$this->respond( 200, array( 'verification' => array( 'id' => 'acv_ACCOUNT', 'status' => 'VERIFICATION_STATUS_NEEDS_DOC' ) ) );
+		Binding::create( $account, $this->fulfilment_client() );
+		$body = $this->request_body( 1 );
+		$this->assertSame( CustomerRef::for_user( 42 ), $body['customerRef'] );
+		$this->assertMatchesRegularExpression( '/^wpc1_[0-9a-f]{64}$/', $body['customerRef'] );
+		$this->assertStringEndsWith( ':0', $body['idempotencyKey'], 'the key is unchanged' );
 	}
 
-	public function test_send_link_through_the_engine(): void {
-		$order = $this->created_order();
-		$this->respond( 200, array( 'linkId' => 'acl_1', 'expiresAt' => '2026-11-21T00:00:00Z', 'emailQueued' => true ) );
-		$this->assertSame( LinkSender::RESULT_SENT, Binding::send_link( $order, $this->fulfilment_client(), new EngineLinkSender() ) );
-		$this->assertSame( array( 'idempotencyKey' => 'vl:' . self::VID, 'verificationId' => self::VID ), $this->request_body( 0 ) );
-		$this->assertSame( LinkSender::RESULT_SENT, Binding::send_link( $order, $this->fulfilment_client(), new EngineLinkSender() ) );
-		$this->assertCount( 1, $this->http_requests, 'sent once per verification' );
-		$this->assertStringContainsString( 'emailed the shopper a link', end( $order->notes ) );
+	public function test_a_reused_pass_is_recorded_with_its_class(): void {
+		$order                      = $this->restricted_order( 'agecheck-hold' );
+		$order->data['customer_id'] = 42;
+		$this->respond( 200, array( 'verification' => $this->verification( self::VID, 'PASSED', array( 'passClass' => 'PASS_CLASS_REUSED' ) ) ) );
+		$this->assertSame( Binding::BOUND, Binding::create( $order, $this->fulfilment_client() ) );
+		$this->assertSame( 'passed', $order->meta[ Meta::VERIFICATION_STATUS ] );
+		$this->assertSame( 'REUSED', $order->meta[ Meta::PASS_CLASS ] );
+
+		$attached = $this->bound_order();
+		$this->respond( 200, array( 'verification' => $this->verification( self::VID, 'PASSED', array( 'passClass' => 6 ) ) ) );
+		$this->assertSame( Binding::BOUND, Binding::attach( $attached, $this->fulfilment_client() ) );
+		$this->assertSame( 'REUSED', $attached->meta[ Meta::PASS_CLASS ], 'the enum number is read too' );
+
+		$pending = $this->bound_order();
+		$pending->meta[ Meta::PASS_CLASS ] = 'DOC_ONLY';
+		$this->respond( 200, array( 'verification' => $this->verification( self::VID, 'NEEDS_DOC' ) ) );
+		Binding::attach( $pending, $this->fulfilment_client() );
+		$this->assertArrayNotHasKey( Meta::PASS_CLASS, $pending->meta, 'only a passed verification has a class' );
 	}
 
-	public function test_only_order_bound_verifications_this_plugin_created_are_emailed(): void {
-		$sender = new class() implements LinkSender {
-			public $calls = 0;
-			public function send( Client $client, string $verification_id, string $idempotency_key ): string {
-				++$this->calls;
-				return LinkSender::RESULT_SENT;
-			}
-		};
-		foreach ( array( 'attach', 'adopt', '' ) as $by ) {
-			$order = $this->bound_order();
-			if ( '' !== $by ) {
-				$order->meta[ Meta::BOUND_BY ] = $by;
-			}
-			$this->assertSame( Binding::LINK_NOT_ELIGIBLE, Binding::send_link( $order, $this->fulfilment_client(), $sender ), $by );
-			$this->assertSame( Binding::LINK_NOT_ELIGIBLE . ':' . self::VID, $order->meta[ Meta::LINK ] );
-			$this->assertStringContainsString( 'match the ID to the billing name, so none was sent', end( $order->notes ) );
-			$notes = count( $order->notes );
-			Binding::send_link( $order, $this->fulfilment_client(), $sender );
-			$this->assertCount( $notes, $order->notes, 'noted once per verification' );
+	public function test_pass_class_name(): void {
+		$this->assertSame( 'REUSED', Binding::pass_class_name( array( 'passClass' => 'PASS_CLASS_REUSED' ) ) );
+		$this->assertSame( 'DATA_VERIFIED', Binding::pass_class_name( array( 'passClass' => 5 ) ) );
+		$this->assertSame( 'SOMETHING_NEW', Binding::pass_class_name( array( 'passClass' => 'PASS_CLASS_SOMETHING_NEW' ) ) );
+		$this->assertSame( '', Binding::pass_class_name( array( 'passClass' => 'PASS_CLASS_UNSPECIFIED' ) ) );
+		$this->assertSame( '', Binding::pass_class_name( array( 'passClass' => 99 ) ) );
+		$this->assertSame( '', Binding::pass_class_name( array( 'passClass' => '<b>x</b>' ) ) );
+		$this->assertSame( '', Binding::pass_class_name( array() ) );
+	}
+
+	public function test_reverify_drops_the_link_and_pass_state(): void {
+		$order = $this->bound_order();
+		foreach ( array( Meta::LINK => 'sent:' . self::VID, Meta::LINK_ID => 'acl_1', Meta::LINK_EXPIRES_AT => 1, Meta::LINK_SENT_AT => 1, Meta::LINK_KEY => 'vl:k', Meta::PASS_CLASS => 'DOC_ONLY' ) as $key => $value ) {
+			$order->meta[ $key ] = $value;
 		}
-		$this->assertSame( 0, $sender->calls, 'a checkout verification (name check NONE) is never emailed (Q7)' );
-	}
-
-	public function test_engine_link_sender_maps_answers(): void {
-		$sender = new EngineLinkSender();
-		$client = $this->fulfilment_client();
-		$this->respond( 404, '404 page not found' );
-		$this->assertSame( LinkSender::RESULT_UNAVAILABLE, $sender->send( $client, self::VID, 'k' ) );
-		$this->respond( 400, array( 'code' => 'failed_precondition', 'message' => 'no email' ) );
-		$this->assertSame( LinkSender::RESULT_REFUSED, $sender->send( $client, self::VID, 'k' ) );
-		$this->respond( 200, array( 'linkId' => 'acl_1' ) );
-		$this->assertSame( LinkSender::RESULT_REFUSED, $sender->send( $client, self::VID, 'k' ), 'no email queued' );
-		$this->respond( 503, array( 'code' => 'unavailable' ) );
-		$this->expectException( ConnectError::class );
-		$sender->send( $client, self::VID, 'k' );
-	}
-
-	public function test_a_refused_link_is_final_and_odd_sender_answers_are_refusals(): void {
-		$order  = $this->created_order();
-		$sender = new class() implements LinkSender {
-			public $calls = 0;
-			public function send( Client $client, string $verification_id, string $idempotency_key ): string {
-				++$this->calls;
-				return 'weird';
-			}
-		};
-		$this->assertSame( LinkSender::RESULT_REFUSED, Binding::send_link( $order, $this->fulfilment_client(), $sender ) );
-		$this->assertSame( LinkSender::RESULT_REFUSED, Binding::send_link( $order, $this->fulfilment_client(), $sender ) );
-		$this->assertSame( 1, $sender->calls );
-	}
-
-	public function test_link_sender_default_and_filter(): void {
-		$this->assertInstanceOf( UnavailableLinkSender::class, Binding::link_sender() );
-		Filters\expectApplied( 'navexa_agecheck_link_sender' )->andReturn( new EngineLinkSender() );
-		$this->assertInstanceOf( EngineLinkSender::class, Binding::link_sender() );
-	}
-
-	public function test_link_sender_filter_cannot_return_junk(): void {
-		Filters\expectApplied( 'navexa_agecheck_link_sender' )->andReturn( 'junk' );
-		$this->assertInstanceOf( UnavailableLinkSender::class, Binding::link_sender() );
+		Binding::reverify( $order, 'verification_purged' );
+		foreach ( array( Meta::LINK, Meta::LINK_ID, Meta::LINK_EXPIRES_AT, Meta::LINK_SENT_AT, Meta::LINK_KEY, Meta::PASS_CLASS ) as $key ) {
+			$this->assertArrayNotHasKey( $key, $order->meta, $key );
+		}
+		foreach ( array( Meta::LINK_ID, Meta::LINK_EXPIRES_AT, Meta::LINK_SENT_AT, Meta::LINK_KEY, Meta::PASS_CLASS ) as $key ) {
+			$this->assertContains( $key, Binding::COPIED_STATE, 'copied link state is dropped with the external id' );
+		}
 	}
 
 	public function test_status_name(): void {
@@ -523,14 +496,6 @@ final class BindingTest extends TestCase {
 		$this->assertSame( 'awaiting_identity', Binding::status_name( array( 'status' => 'VERIFICATION_STATUS_AWAITING_IDENTITY' ) ) );
 		$this->assertSame( '', Binding::status_name( array( 'status' => 'VERIFICATION_STATUS_UNSPECIFIED' ) ) );
 		$this->assertSame( '', Binding::status_name( array() ) );
-	}
-
-	/** A held order bound to an order-bound verification this plugin created. */
-	private function created_order(): \WC_Order {
-		$order                         = $this->bound_order();
-		$order->meta[ Meta::BOUND_BY ] = 'create';
-		unset( $order->meta[ Meta::ATTACH_PENDING ] );
-		return $order;
 	}
 
 	/** A held order with a checkout verification still to attach. */

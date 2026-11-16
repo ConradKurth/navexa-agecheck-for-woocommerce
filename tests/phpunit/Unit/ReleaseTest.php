@@ -104,12 +104,14 @@ final class ReleaseTest extends TestCase {
 		$copy->meta = $source->meta; // Copied straight into the hold: mark_held never ran.
 		$this->respond( 200, $this->live_info() );
 		$this->respond( 200, array( 'verification' => array( 'id' => 'acv_OWNCHECK', 'status' => 'VERIFICATION_STATUS_NEEDS_DOC' ) ) );
+		$this->respond( 200, array( 'linkId' => 'acl_OWN', 'emailQueued' => true ) );
 		$this->respond( 200, $this->clearance( 'DENIED', 'replayed' ) );
 		$outcome = Release::run( $copy->get_id(), Release::TRIGGER_SWEEP );
-		$this->assertSame( array( 'GetIntegrationInfo', 'CreateVerification', 'GetClearance' ), $this->rpcs() );
+		$this->assertSame( array( 'GetIntegrationInfo', 'CreateVerification', 'SendVerificationLink', 'GetClearance' ), $this->rpcs() );
 		$own = 'wc:' . \Navexa\AgeCheck\Install::install_id() . ':1:' . $copy->get_id();
 		$this->assertSame( $own, $this->request_body( 1 )['orderExternalId'] );
-		$this->assertSame( $own, $this->request_body( 2 )['orderExternalId'], 'GetClearance asks about this order, not the source' );
+		$this->assertSame( 'acv_OWNCHECK', $this->request_body( 2 )['verificationId'], 'the link is for its own check' );
+		$this->assertSame( $own, $this->request_body( 3 )['orderExternalId'], 'GetClearance asks about this order, not the source' );
 		$this->assertSame( 'acv_OWNCHECK', $copy->meta[ Meta::VERIFICATION_ID ] );
 		$this->assertSame( Release::RELEASED, $outcome, 'replayed on its own id means its own clearance was spent' );
 	}
@@ -234,12 +236,109 @@ final class ReleaseTest extends TestCase {
 		Binding::external_id( $order );
 		$this->respond( 200, $this->live_info() );
 		$this->respond( 200, array( 'verification' => array( 'id' => self::VID, 'status' => 'VERIFICATION_STATUS_NEEDS_DOC', 'livemode' => true ) ) );
+		$this->respond( 200, array( 'linkId' => 'acl_RELEASE', 'expiresAt' => '2026-11-22T00:00:00Z', 'emailQueued' => true ) );
 		$this->respond( 200, $this->clearance( 'HOLD', 'pending' ) );
 		$this->assertSame( Release::PENDING, Release::run( $order->get_id(), Release::TRIGGER_HOLD ) );
-		$this->assertSame( array( 'GetIntegrationInfo', 'CreateVerification', 'GetClearance' ), $this->rpcs() );
+		$this->assertSame( array( 'GetIntegrationInfo', 'CreateVerification', 'SendVerificationLink', 'GetClearance' ), $this->rpcs() );
 		$this->assertSame( self::VID, $order->meta[ Meta::VERIFICATION_ID ] );
-		$this->assertSame( 'unavailable:' . self::VID, $order->meta[ Meta::LINK ], 'E8c is not available: the order stays held, no call' );
-		$this->assertGreaterThan( time() + 21000, $order->meta[ Meta::NEXT_CHECK_AT ], 'an unasked shopper is polled every six hours' );
+		$this->assertSame( 'sent:' . self::VID, $order->meta[ Meta::LINK ] );
+		$this->assertSame( 'acl_RELEASE', $order->meta[ Meta::LINK_ID ] );
+		$this->assertStringContainsString( 'https://shop.example/?wc-api=navexa_agecheck_order&step=return', $this->request_body( 2 )['returnUrl'] );
+		$this->assertArrayNotHasKey( Meta::NEXT_CHECK_AT, $order->meta, 'an emailed shopper is polled every sweep' );
+
+		// The next run asks for no second link.
+		$this->respond( 200, $this->clearance( 'HOLD', 'pending' ) );
+		Release::run( $order->get_id(), Release::TRIGGER_SWEEP );
+		$this->assertSame( 'GetClearance', $this->request_rpc( 4 ) );
+		$this->assertCount( 5, $this->http_requests );
+	}
+
+	public function test_links_off_keeps_the_order_held_and_polls_it_every_sweep(): void {
+		$order = $this->restricted_order( Hold::STATUS );
+		$order->meta[ Meta::HELD ] = 'yes';
+		Binding::external_id( $order );
+		$this->respond( 200, $this->live_info() );
+		$this->respond( 200, array( 'verification' => array( 'id' => self::VID, 'status' => 'VERIFICATION_STATUS_NEEDS_DOC', 'livemode' => true ) ) );
+		$this->respond( 400, array( 'code' => 'failed_precondition', 'message' => 'agecheck: verification links are not enabled' ) );
+		$this->respond( 200, $this->clearance( 'HOLD', 'pending' ) );
+		$this->assertSame( Release::PENDING, Release::run( $order->get_id(), Release::TRIGGER_HOLD ) );
+		$this->assertSame( Hold::STATUS, $order->get_status() );
+		$this->assertSame( 'links_off:' . self::VID, $order->meta[ Meta::LINK ] );
+		$this->assertArrayNotHasKey( Meta::NEXT_CHECK_AT, $order->meta, 'a shopper who was not emailed can still pass from Verify now: polled every sweep' );
+		$this->assertSame( \Navexa\AgeCheck\Links::STATE_LINKS_OFF, \Navexa\AgeCheck\Links::store_block()['reason'] );
+		foreach ( array( 'not_eligible:', 'no_display_name:', 'no_email:', 'refused:', 'withdrawn:', 'disabled:' ) as $state ) {
+			$order->meta[ Meta::LINK ]          = $state . self::VID;
+			$order->meta[ Meta::NEXT_CHECK_AT ] = time() + 21600;
+			$this->respond( 200, $this->clearance( 'HOLD', 'pending' ) );
+			$this->assertSame( Release::PENDING, Release::run( $order->get_id(), Release::TRIGGER_ADMIN ), $state );
+			$this->assertArrayNotHasKey( Meta::NEXT_CHECK_AT, $order->meta, $state );
+		}
+	}
+
+	public function test_a_link_failure_never_stops_the_clearance(): void {
+		$order                                    = $this->held_bound_order();
+		$order->meta[ Meta::BOUND_BY ]            = 'create';
+		$order->meta[ Meta::VERIFICATION_STATUS ] = 'needs_doc';
+		$this->respond( 200, $this->live_info() );
+		$this->respond( 503, array( 'code' => 'unavailable' ) );
+		$this->respond( 200, $this->clearance( 'CLEARED', 'verified' ) );
+
+		$this->assertSame( Release::RELEASED, Release::run( $order->get_id(), Release::TRIGGER_WEBHOOK ), 'the shopper passed from the order page' );
+		$this->assertSame( array( 'GetIntegrationInfo', 'SendVerificationLink', 'GetClearance' ), $this->rpcs() );
+		$this->assertSame( 'processing', $order->get_status() );
+	}
+
+	public function test_a_link_failure_still_counts_while_the_order_waits(): void {
+		$order                                    = $this->held_bound_order();
+		$order->meta[ Meta::BOUND_BY ]            = 'create';
+		$order->meta[ Meta::VERIFICATION_STATUS ] = 'needs_doc';
+		$this->respond( 200, $this->live_info() );
+		$this->respond( 503, array( 'code' => 'unavailable' ) );
+		$this->respond( 200, $this->clearance( 'HOLD', 'pending' ) );
+		try {
+			Release::run( $order->get_id(), Release::TRIGGER_HOLD );
+			$this->fail( 'a retryable link failure is rethrown after the clearance' );
+		} catch ( ConnectError $e ) {
+			$this->assertTrue( $e->is_retryable() );
+			$this->assertSame( 'SendVerificationLink', $e->rpc() );
+		}
+		$this->assertSame( array( 'GetIntegrationInfo', 'SendVerificationLink', 'GetClearance' ), $this->rpcs() );
+		$key = $order->meta[ Meta::LINK_KEY ];
+		$this->assertStringStartsWith( 'vl:' . self::VID . ':', $key, 'kept: the retry replays it' );
+		$this->assertSame( 'pending', $order->meta[ Meta::REASON ], 'the HOLD answer is recorded' );
+
+		$this->respond( 200, array( 'linkId' => 'acl_RETRY', 'emailQueued' => true ) );
+		$this->respond( 200, $this->clearance( 'HOLD', 'pending' ) );
+		$this->assertSame( Release::PENDING, Release::run( $order->get_id(), Release::TRIGGER_RETRY ) );
+		$this->assertSame( $key, $this->request_body( 3 )['idempotencyKey'], 'the same key: one email at most' );
+		$this->assertSame( 'sent:' . self::VID, $order->meta[ Meta::LINK ] );
+
+		$other                                    = $this->held_bound_order();
+		$other->meta[ Meta::BOUND_BY ]            = 'create';
+		$other->meta[ Meta::VERIFICATION_STATUS ] = 'needs_doc';
+		$this->respond( 403, array( 'code' => 'permission_denied', 'message' => 'agecheck: AgeCheck is not enabled for this organization' ) );
+		$this->respond( 200, $this->clearance( 'HOLD', 'pending' ) );
+		try {
+			Release::run( $other->get_id(), Release::TRIGGER_HOLD );
+			$this->fail( 'a refusal is rethrown after the clearance' );
+		} catch ( ConnectError $e ) {
+			$this->assertFalse( $e->is_retryable() );
+		}
+		$this->assertSame( 'release_error_permission_denied', $other->meta[ Meta::REASON ], 'staff look, as for any refusal' );
+	}
+
+	public function test_no_link_is_asked_for_a_verification_not_waiting_at_agecheck_page(): void {
+		foreach ( array( 'created', 'held', 'db_checking', 'passed' ) as $status ) {
+			$order                                    = $this->held_bound_order();
+			$order->meta[ Meta::BOUND_BY ]            = 'create';
+			$order->meta[ Meta::VERIFICATION_STATUS ] = $status;
+			$this->http_requests                      = array();
+			$this->respond( 200, $this->live_info() );
+			$this->respond( 200, $this->clearance( 'HOLD', 'pending' ) );
+			Release::run( $order->get_id(), Release::TRIGGER_HOLD );
+			$this->assertNotContains( 'SendVerificationLink', $this->rpcs(), $status );
+			$this->assertArrayNotHasKey( Meta::LINK, $order->meta, $status );
+		}
 	}
 
 	public function test_a_pending_checkout_verification_is_attached_before_the_clearance(): void {

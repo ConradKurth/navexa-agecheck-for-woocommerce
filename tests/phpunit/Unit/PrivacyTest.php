@@ -45,6 +45,11 @@ final class PrivacyTest extends TestCase {
 		Meta::set( $order, Meta::VERIFICATION_STATUS, 'passed' );
 		Meta::set( $order, Meta::SHIP_TO_HASH, str_repeat( 'a', 64 ) );
 		Meta::set( $order, Meta::LINK, 'sent:acv_1' );
+		Meta::set( $order, Meta::LINK_ID, 'acl_1' );
+		Meta::set( $order, Meta::LINK_EXPIRES_AT, 1700600000 );
+		Meta::set( $order, Meta::LINK_SENT_AT, 1700000000 );
+		Meta::set( $order, Meta::LINK_KEY, 'vl:acv_1:0123456789abcdef' );
+		Meta::set( $order, Meta::PASS_CLASS, 'REUSED' );
 		Meta::set( $order, Meta::REASON, 'cleared' );
 		Meta::set( $order, Meta::BOUND_AT, 1700000000 );
 		Meta::set( $order, Meta::EXTERNAL_ID, 'wc:abc:1:' . $order->get_id() );
@@ -74,7 +79,7 @@ final class PrivacyTest extends TestCase {
 		$this->assertCount( 1, $this->policies );
 		$text = $this->policies[0][1];
 		$this->assertSame( 'Navexa AgeCheck for WooCommerce', $this->policies[0][0] );
-		foreach ( array( 'verify.navexa.co', 'billing name', 'date of birth', 'Didit', 'https://navexa.co/privacy', 'keyed hashes' ) as $needle ) {
+		foreach ( array( 'verify.navexa.co', 'billing name', 'date of birth', 'Didit', 'https://navexa.co/privacy', 'keyed hashes', 'email you a link to verify your age', 'keyed reference to your account' ) as $needle ) {
 			$this->assertStringContainsString( $needle, $text );
 		}
 		$this->assertStringNotContainsString( 'challenges.cloudflare.com', $text, 'Cloudflare only when Turnstile is on' );
@@ -98,6 +103,8 @@ final class PrivacyTest extends TestCase {
 		$this->assertSame( 'acv_1', $values['AgeCheck verification'] );
 		$this->assertSame( 'acv_0', $values['Earlier AgeCheck verifications'] );
 		$this->assertSame( Meta::STATUS_CLEARED, $values['Age check result'] );
+		$this->assertSame( 'REUSED', $values['How the age check passed'] );
+		$this->assertSame( '2023-11-14 22:13:20 UTC', $values['Verification link emailed'] );
 		$this->assertSame( '2023-11-14 22:13:20 UTC', $values['Linked to the order'] );
 		$this->assertArrayNotHasKey( 'Cleared', $values );
 	}
@@ -147,6 +154,12 @@ final class PrivacyTest extends TestCase {
 		foreach ( Privacy::ERASABLE_META as $key ) {
 			$this->assertSame( '', Meta::get( $order, $key ), $key );
 		}
+		foreach ( array( Meta::LINK, Meta::LINK_ID, Meta::LINK_EXPIRES_AT, Meta::LINK_SENT_AT, Meta::LINK_KEY ) as $key ) {
+			$this->assertContains( $key, Privacy::ERASABLE_META, 'the link ties the order to the shopper\'s AgeCheck record' );
+			$this->assertSame( '', Meta::get( $order, $key ), $key );
+		}
+		$this->assertArrayNotHasKey( Meta::LINK_KEY, $order->meta, 'the link key names the verification (vl:{vid}:...)' );
+		$this->assertSame( 'REUSED', Meta::get( $order, Meta::PASS_CLASS ), 'how it passed is release state, kept' );
 		$this->assertTrue( Meta::is_released( $order ), 'an erased order is never held again' );
 		$this->assertSame( 'yes', Meta::get( $order, Meta::REQUIRED ) );
 		$this->assertSame( 1, $order->meta_saves );

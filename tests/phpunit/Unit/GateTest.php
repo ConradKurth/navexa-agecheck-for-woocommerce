@@ -178,6 +178,8 @@ final class GateTest extends TestCase {
 		$this->assertSame( 'pending', Gate::verdict( array(), Client::KEY_FULFILMENT ) );
 		$this->assertSame( 'pending', Gate::verdict( array( 'status' => array() ), Client::KEY_FULFILMENT ) );
 		$this->assertSame( 'passed', Gate::verdict( $this->verification( 'acv_1', 'PASSED', array( 'passClass' => 'PASS_CLASS_DATA_VERIFIED' ) ), Client::KEY_FULFILMENT ), 'new clearing classes clear' );
+		$this->assertSame( 'passed', Gate::verdict( $this->verification( 'acv_1', 'PASSED', array( 'passClass' => 'PASS_CLASS_REUSED' ) ), Client::KEY_FULFILMENT ), 'a returning customer\'s reused pass clears (E12a)' );
+		$this->assertSame( 'passed', Gate::verdict( array( 'status' => 3, 'passClass' => 6, 'livemode' => true ), Client::KEY_FULFILMENT ), 'PASS_CLASS_REUSED by number' );
 		$this->assertSame( 'mode_mismatch', Gate::verdict( $this->verification( 'acv_1', 'PASSED', array( 'livemode' => false ) ), Client::KEY_FULFILMENT ) );
 	}
 

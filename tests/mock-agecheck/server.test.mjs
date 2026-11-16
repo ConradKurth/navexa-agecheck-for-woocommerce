@@ -530,17 +530,124 @@ test("ReportShipment records the first report and flags uncleared ones", async (
   assert.deepEqual(state.shipments, [{ orderExternalId: "wc:abc:1:100", shippedAt: "2026-11-14T00:00:00Z", livemode: true, flagged: true }])
 })
 
-test("SendVerificationLink is served only when configured (E8c)", async () => {
+test("SendVerificationLink: off by default, absent on request, then sent with an id and expiry, never the URL (E8c)", async () => {
   const { body } = await createOrderBound()
   const id = body.verification.id
-  const absent = await call("SendVerificationLink", { idempotencyKey: `vl:${id}`, verificationId: id })
+  const off = await call("SendVerificationLink", { idempotencyKey: `vl:${id}:1`, verificationId: id })
+  assert.equal(off.status, 400)
+  assert.deepEqual(await off.json(), { code: "failed_precondition", message: "agecheck: verification links are not enabled" })
+  await control("config", { links: "absent" })
+  const absent = await call("SendVerificationLink", { idempotencyKey: `vl:${id}:2`, verificationId: id })
   assert.equal(absent.status, 404)
-  await control("config", { links: "served" })
-  const sent = await (await call("SendVerificationLink", { idempotencyKey: `vl:${id}`, verificationId: id })).json()
+  assert.match(absent.headers.get("content-type"), /^text\/plain/)
+  await control("config", { links: "on" })
+  const sent = await (await call("SendVerificationLink", { idempotencyKey: `vl:${id}:3`, verificationId: id, returnUrl: "http://localhost:8888/?wc-api=x" })).json()
   assert.equal(sent.emailQueued, true)
-  assert.match(sent.linkId, /^acl_mock/)
+  assert.match(sent.linkId, /^acl_mock\d{6}$/)
+  assert.ok(Date.parse(sent.expiresAt) > Date.now() + 6.9 * 86400e3, "good for 7 days")
   assert.equal(sent.url, undefined, "never the URL")
+  const replay = await (await call("SendVerificationLink", { idempotencyKey: `vl:${id}:3`, verificationId: id, returnUrl: "http://localhost:8888/?wc-api=x" })).json()
+  assert.deepEqual(replay, sent, "a retry replays and sends no second email")
+  const state = await (await fetch(`${base}/__mock/verifications`)).json()
+  assert.equal(state.links.length, 1)
+  assert.equal(state.links[0].returnUrl, "http://localhost:8888/?wc-api=x")
+  assert.equal(JSON.stringify(state).includes("ada@example.com"), false, "the email is never reported")
+})
+
+test("SendVerificationLink refusals in the engine's order (E8c)", async () => {
+  await control("config", { links: "on" })
+  const send = async (verificationId, extra = {}) => (await call("SendVerificationLink", { idempotencyKey: `vl:${Math.random()}`, verificationId, ...extra })).json()
+  assert.equal((await send("acv_nope")).code, "not_found")
+  const { body } = await createOrderBound()
+  const id = body.verification.id
+  assert.equal((await send(id, { returnUrl: "https://elsewhere.example/r" })).code, "invalid_argument")
+  const noEmail = (await createOrderBound({ identity: { name: "Ada Lovelace" }, orderExternalId: "wc:abc:1:101" })).body.verification.id
+  assert.match((await send(noEmail)).message, /has no email/)
+  const checkout = await (
+    await call("CreateVerification", { idempotencyKey: "cv:none", intendedShipTo: SHIP_TO, documentNameCheck: "DOCUMENT_NAME_CHECK_NONE", identity: { email: "a@example.com" } })
+  ).json()
+  assert.match((await send(checkout.verification.id)).message, /waiting on the shopper, with the document name check/, "a NONE check is never emailed (Q7)")
+  await control("config", { org: { displayName: "" } })
+  assert.match((await send(id)).message, /display name/)
+  await control("config", { org: { displayName: "Mock Store" } })
+  for (let i = 0; i < 5; i++) assert.equal((await send(id)).emailQueued, true)
+  const limited = await call("SendVerificationLink", { idempotencyKey: "vl:sixth", verificationId: id })
+  assert.equal(limited.status, 429)
+  assert.match((await limited.json()).message, /too many verification links sent for this verification in the last 24 hours/)
+  const state = await (await fetch(`${base}/__mock/verifications`)).json()
+  const rows = state.links.filter((l) => l.verificationId === id)
+  assert.equal(rows.length, 5)
+  assert.deepEqual(rows.slice(0, 4).map((l) => l.revokedReason), ["superseded", "superseded", "superseded", "superseded"], "each send replaces the last")
   await control("verifications", { id, status: "passed" })
-  const late = await call("SendVerificationLink", { idempotencyKey: "vl:other", verificationId: id })
-  assert.equal((await late.json()).code, "failed_precondition")
+  const after = (await (await fetch(`${base}/__mock/verifications`)).json()).links.filter((l) => l.verificationId === id)
+  assert.equal(after[4].revokedReason, "decided", "a decision revokes the live link")
+  assert.match((await send(id)).message, /waiting on the shopper/)
+})
+
+test("SendVerificationLink in test mode emails only confirmed recipients (E8c)", async () => {
+  await control("config", { links: "on" })
+  const testKey = { key: FIXTURE_KEYS.testFulfilment.key }
+  const create = async (email, n) =>
+    (
+      await (
+        await call("CreateVerification", { idempotencyKey: `cv:t${n}`, identity: { name: "Ada Lovelace", email }, orderExternalId: `wc:abc:1:20${n}`, shipTo: SHIP_TO }, testKey)
+      ).json()
+    ).verification.id
+  const shopper = await create("shopper@example.com", 1)
+  const staff = await create("Staff@Example.com", 2)
+  await control("config", { org: { confirmedRecipients: ["staff@example.com"] } })
+  const a = await (await call("SendVerificationLink", { idempotencyKey: "vl:t1", verificationId: shopper }, testKey)).json()
+  const b = await (await call("SendVerificationLink", { idempotencyKey: "vl:t2", verificationId: staff }, testKey)).json()
+  assert.equal(a.emailQueued, undefined, "proto3 JSON omits false: link made, no email")
+  assert.match(a.linkId, /^acl_mock/)
+  assert.equal(b.emailQueued, true)
+})
+
+test("RevokeVerificationLinks withdraws the open links, any status (E8c)", async () => {
+  await control("config", { links: "on" })
+  const { body } = await createOrderBound()
+  const id = body.verification.id
+  const none = await (await call("RevokeVerificationLinks", { idempotencyKey: "rvl:0", verificationId: id })).json()
+  assert.deepEqual(none, {}, "0 omitted")
+  await call("SendVerificationLink", { idempotencyKey: "vl:a", verificationId: id })
+  const revoked = await (await call("RevokeVerificationLinks", { idempotencyKey: "rvl:1", verificationId: id })).json()
+  assert.deepEqual(revoked, { revokedCount: 1 })
+  const state = await (await fetch(`${base}/__mock/verifications`)).json()
+  assert.equal(state.links[0].revokedReason, "merchant")
+  assert.equal((await (await call("RevokeVerificationLinks", { idempotencyKey: "rvl:2", verificationId: "acv_nope" })).json()).code, "not_found")
+})
+
+test("per-store reuse: off by default; on, a returning customer passes as reused (E12a)", async () => {
+  const ref = "wpc1_" + "a".repeat(64)
+  const first = await (
+    await call("CreateVerification", { idempotencyKey: "cv:r1", identity: { name: "Ada Lovelace", email: "ada@example.com" }, orderExternalId: "wc:abc:1:300", shipTo: SHIP_TO, customerRef: ref })
+  ).json()
+  assert.equal(first.verification.status, "VERIFICATION_STATUS_NEEDS_DOC")
+  await control("verifications", { id: first.verification.id, status: "passed", passClass: "doc_only" })
+  const off = await (
+    await call("CreateVerification", { idempotencyKey: "cv:r2", identity: { name: "Ada Lovelace" }, orderExternalId: "wc:abc:1:301", shipTo: SHIP_TO, customerRef: ref })
+  ).json()
+  assert.equal(off.verification.status, "VERIFICATION_STATUS_NEEDS_DOC", "reuse off: a new check")
+  await control("config", { reuse: "on" })
+  const reused = await (
+    await call("CreateVerification", { idempotencyKey: "cv:r3", identity: { name: "Ada Lovelace" }, orderExternalId: "wc:abc:1:302", shipTo: SHIP_TO, customerRef: ref })
+  ).json()
+  assert.equal(reused.verification.status, "VERIFICATION_STATUS_PASSED")
+  assert.equal(reused.verification.passClass, "PASS_CLASS_REUSED")
+  assert.equal(reused.verification.hostedUrl, undefined)
+  const clear = await clearance("clr:r3", SHIP_TO, "wc:abc:1:302")
+  assert.equal(clear.decision, "CLEARANCE_DECISION_CLEARED", "a reused pass clears its order")
+  const stranger = await (
+    await call("CreateVerification", { idempotencyKey: "cv:r4", identity: { name: "Bob Smith" }, orderExternalId: "wc:abc:1:303", shipTo: SHIP_TO, customerRef: "wpc1_other" })
+  ).json()
+  assert.equal(stranger.verification.status, "VERIFICATION_STATUS_NEEDS_DOC")
+  await control("config", { org: { reuseWindowDays: 0 } })
+  const closed = await (
+    await call("CreateVerification", { idempotencyKey: "cv:r5", identity: { name: "Ada Lovelace" }, orderExternalId: "wc:abc:1:304", shipTo: SHIP_TO, customerRef: ref })
+  ).json()
+  assert.equal(closed.verification.status, "VERIFICATION_STATUS_NEEDS_DOC", "window 0: reuse off for the org")
+  const bad = await call("CreateVerification", { idempotencyKey: "cv:r6", identity: { name: "Ada Lovelace" }, orderExternalId: "wc:abc:1:305", shipTo: SHIP_TO, customerRef: "  " })
+  assert.match((await bad.json()).message, /^customer_ref:/)
+  const configBad = await fetch(`${base}/__mock/config`, { method: "POST", body: JSON.stringify({ reuse: "maybe" }) })
+  assert.equal(configBad.status, 400)
 })

@@ -252,12 +252,20 @@ final class Options {
 	 * else the WordPress site title. Never asks AgeCheck.
 	 */
 	public static function store_display_name(): string {
-		$profile = get_option( self::STORE_PROFILE, array() );
-		$name    = is_array( $profile ) && isset( $profile['display_name'] ) && is_string( $profile['display_name'] ) ? trim( $profile['display_name'] ) : '';
+		$name = self::reported_display_name();
 		if ( '' !== $name ) {
 			return $name;
 		}
 		return trim( wp_specialchars_decode( (string) get_bloginfo( 'name' ), ENT_QUOTES ) );
+	}
+
+	/**
+	 * The display name AgeCheck last reported for the store, '' when it
+	 * reported none (or has not answered yet). Never asks AgeCheck.
+	 */
+	public static function reported_display_name(): string {
+		$profile = get_option( self::STORE_PROFILE, array() );
+		return is_array( $profile ) && isset( $profile['display_name'] ) && is_string( $profile['display_name'] ) ? trim( $profile['display_name'] ) : '';
 	}
 
 	/**

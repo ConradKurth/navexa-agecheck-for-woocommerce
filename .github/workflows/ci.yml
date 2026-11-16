@@ -121,6 +121,13 @@ jobs:
         run: $WP_ENV run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp eval-file tests/wp-env/prepayment-orders.php
       - name: W4 hardening (express buttons, the hold fallback, Turnstile, privacy, i18n)
         run: $WP_ENV run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp eval-file tests/wp-env/w4.php
+      - name: Verification links and customer_ref on real orders (W3 PRs 12, 14)
+        run: $WP_ENV run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp eval-file tests/wp-env/w3b.php
+      - name: Signed-in start, reuse at checkout and Verify now over HTTP (W3 PRs 12, 14)
+        run: |
+          setup=$($WP_ENV run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp eval-file tests/wp-env/prepayment-setup.php | grep '^{')
+          node tests/wp-env/w3b.mjs --site http://localhost:8888 --mock http://localhost:8787 --product "$(echo "$setup" | jq -r .product)" \
+            --setup-cmd "$WP_ENV run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp eval-file tests/wp-env/w3b-setup.php"
       - name: Entry age gate over HTTP (W3)
         run: |
           node tests/e2e/gate-browser.mjs --http-only --site http://localhost:8888 --mock http://localhost:8787 \

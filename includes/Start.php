@@ -37,8 +37,10 @@ defined( 'ABSPATH' ) || exit;
  * return_url = the return page with popup=1, and the identity for the
  * engine's data match (identity()): the billing name and the billing address
  * as the residential address, only when both are filled in, the address is
- * a US one and the order ships there, never a DOB; then CreateHostedSession
- * for a fresh link. Only the start key is used.
+ * a US one and the order ships there, never a DOB; for a signed-in shopper
+ * also customer_ref (CustomerRef, E12a: a returning customer may come back
+ * PASSED with PASS_CLASS_REUSED at once, which clears like any pass); then
+ * CreateHostedSession for a fresh link. Only the start key is used.
  * Refresh calls GetVerification and mints the checkout guard on PASSED with a
  * clearing pass class. Any error answers unavailable.
  *
@@ -492,8 +494,15 @@ final class Start {
 	 * @throws ConnectError On an AgeCheck error.
 	 */
 	private static function create( Client $client, ShipTo $ship_to, string $sid, string $mac, int $n ): array {
+		$key      = Install::install_id() . ':' . $sid . ':' . $mac . ':' . $n;
+		$customer = CustomerRef::for_current_user();
+		if ( '' !== $customer ) {
+			// A guest who signs in mid-checkout keeps the sid: the key must
+			// change with the request, or AgeCheck refuses the replay.
+			$key .= ':c' . substr( $customer, strlen( CustomerRef::PREFIX ), 16 );
+		}
 		$request  = array(
-			'idempotencyKey'    => Install::install_id() . ':' . $sid . ':' . $mac . ':' . $n,
+			'idempotencyKey'    => $key,
 			'intendedShipTo'    => $ship_to->engine_address(),
 			'documentNameCheck' => self::DOCUMENT_NAME_CHECK_NONE,
 			'returnUrl'         => ReturnPage::url( true ),
@@ -501,6 +510,9 @@ final class Start {
 		$identity = self::identity( $ship_to );
 		if ( array() !== $identity ) {
 			$request['identity'] = $identity;
+		}
+		if ( '' !== $customer ) {
+			$request['customerRef'] = $customer;
 		}
 		$body = $client->call( 'CreateVerification', $request );
 		return isset( $body['verification'] ) && is_array( $body['verification'] ) ? $body['verification'] : array();

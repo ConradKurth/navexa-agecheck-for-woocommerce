@@ -148,7 +148,8 @@ $outcome = Release::run( $a->get_id(), Release::TRIGGER_HOLD );
 $a       = navexa_smoke_reload( $a );
 $vid_a   = $a->get_meta( Meta::VERIFICATION_ID );
 navexa_smoke_check( Release::PENDING === $outcome && 0 === strpos( $vid_a, 'acv_mock' ), 'order-bound verification created, order pending (' . $outcome . ')' );
-navexa_smoke_check( 0 === strpos( $a->get_meta( Meta::LINK ), 'unavailable:' ), 'link sender not available yet (E8c): order stays held' );
+navexa_smoke_check( 0 === strpos( $a->get_meta( Meta::LINK ), 'links_off:' ), 'verification links off at AgeCheck (production today): order stays held (' . $a->get_meta( Meta::LINK ) . ')' );
+navexa_smoke_check( \Navexa\AgeCheck\Links::STATE_LINKS_OFF === ( \Navexa\AgeCheck\Links::store_block()['reason'] ?? '' ), 'links off recorded once for the store' );
 navexa_smoke_check( Hold::STATUS === $a->get_status(), 'still held while the shopper has not passed' );
 $navexa_requests = navexa_smoke_get( '/__mock/requests' );
 $navexa_create   = null;
@@ -264,7 +265,9 @@ navexa_smoke_check( Hold::STATUS === $c->get_status() && 'processing' === $c->ge
 Release::run( $c->get_id(), Release::TRIGGER_HOLD );
 $c     = navexa_smoke_reload( $c );
 $vid_c = $c->get_meta( Meta::VERIFICATION_ID );
-navexa_smoke_check( $c->get_meta( Meta::NEXT_CHECK_AT ) > time(), 'an unasked shopper is not polled every sweep' );
+navexa_smoke_check( '' === (string) $c->get_meta( Meta::NEXT_CHECK_AT ), 'a shopper who was not emailed is still polled every sweep (Verify now)' );
+$c->update_meta_data( Meta::NEXT_CHECK_AT, time() + HOUR_IN_SECONDS );
+$c->save_meta_data();
 navexa_smoke_check( Release::NOT_DUE === Release::run( $c->get_id(), Release::TRIGGER_SWEEP ), 'sweep skips an order not due' );
 navexa_smoke_mock( '/__mock/verifications', array( 'id' => $vid_c, 'status' => 'passed', 'consumed' => true ) );
 $outcome = Release::run( $c->get_id(), Release::TRIGGER_WEBHOOK );
@@ -389,4 +392,5 @@ WP_CLI::log( 'info NAVEXA_AGECHECK_ALLOW_TEST_RELEASE=' . ( defined( 'NAVEXA_AGE
 
 // Clean up what later runs would trip over.
 as_unschedule_all_actions( '', array(), Release::GROUP );
+delete_option( \Navexa\AgeCheck\Links::OPTION_BLOCK );
 delete_option( Options::WEBHOOK_SECRET );

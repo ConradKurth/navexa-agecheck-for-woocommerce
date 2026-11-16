@@ -65,6 +65,10 @@ final class Privacy {
 		Meta::VERIFICATION_STATUS,
 		Meta::REASON,
 		Meta::LINK,
+		Meta::LINK_ID,
+		Meta::LINK_EXPIRES_AT,
+		Meta::LINK_SENT_AT,
+		Meta::LINK_KEY,
 		Meta::SHIP_TO_HASH,
 	);
 
@@ -95,7 +99,7 @@ final class Privacy {
 		$paragraphs = array(
 			'<p class="privacy-policy-tutorial">' . esc_html__( 'Navexa AgeCheck for WooCommerce checks the age of shoppers who order age-restricted products. The text below says what the plugin sends to Navexa AgeCheck and what it keeps in your store. Adjust it to your store\'s settings (for example, whether Cloudflare Turnstile is on).', 'navexa-agecheck-for-woocommerce' ) . '</p>',
 			'<p><strong class="privacy-policy-tutorial">' . esc_html__( 'Suggested text:', 'navexa-agecheck-for-woocommerce' ) . ' </strong>'
-				. esc_html__( 'We use Navexa AgeCheck to verify the age of customers who order age-restricted products. When you start an age check at checkout, we send Navexa AgeCheck the shipping address of the order you are about to place and, when you have entered them and the order ships to your US billing address, your billing name and billing address, for the age check. When such an order is placed, we send its shipping address and an order reference, and, when no age check was done at checkout, your billing name, billing address and email address. You then verify on Navexa\'s own page (verify.navexa.co), where you enter your date of birth and, when asked, agree to a data check or photograph an ID document and take a selfie; we never see or keep your date of birth or ID images. Navexa uses Didit for the ID, selfie and liveness checks and, when the shipping address is your billing address, to check your billing name, billing address and date of birth against US data sources such as financial and credit-bureau records.', 'navexa-agecheck-for-woocommerce' ) . '</p>',
+				. esc_html__( 'We use Navexa AgeCheck to verify the age of customers who order age-restricted products. When you start an age check at checkout, we send Navexa AgeCheck the shipping address of the order you are about to place and, when you have entered them and the order ships to your US billing address, your billing name and billing address, for the age check. When such an order is placed, we send its shipping address and an order reference, and, when no age check was done at checkout, your billing name, billing address and email address, and Navexa AgeCheck may email you a link to verify your age for that order. If you have an account with us, we also send a keyed reference to your account (not your name, email address or account number), so that a returning customer who passed an age check here recently may not have to verify again. You then verify on Navexa\'s own page (verify.navexa.co), where you enter your date of birth and, when asked, agree to a data check or photograph an ID document and take a selfie; we never see or keep your date of birth or ID images. Navexa uses Didit for the ID, selfie and liveness checks and, when the shipping address is your billing address, to check your billing name, billing address and date of birth against US data sources such as financial and credit-bureau records.', 'navexa-agecheck-for-woocommerce' ) . '</p>',
 			'<p>' . esc_html__( 'We keep, with your order, the AgeCheck verification reference, whether your age check passed or failed and when, and a one-way hash of the shipping address that was checked. While you check out, your shopping session holds the verification reference. To stop abuse, we count age check attempts per session and per IP address for one hour, stored only as keyed hashes. Navexa\'s privacy policy explains how Navexa handles your data: https://navexa.co/privacy', 'navexa-agecheck-for-woocommerce' ) . '</p>',
 		);
 		if ( Options::entry_gate_enabled() ) {
@@ -306,13 +310,15 @@ final class Privacy {
 			Meta::PREVIOUS_VERIFICATION_IDS => __( 'Earlier AgeCheck verifications', 'navexa-agecheck-for-woocommerce' ),
 			Meta::VERIFICATION_STATUS       => __( 'Verification status', 'navexa-agecheck-for-woocommerce' ),
 			Meta::STATUS                    => __( 'Age check result', 'navexa-agecheck-for-woocommerce' ),
+			Meta::PASS_CLASS                => __( 'How the age check passed', 'navexa-agecheck-for-woocommerce' ),
 			Meta::REASON                    => __( 'Reason', 'navexa-agecheck-for-woocommerce' ),
 			Meta::SHIP_TO_HASH              => __( 'Checked shipping address (hash)', 'navexa-agecheck-for-woocommerce' ),
 			Meta::BOUND_AT                  => __( 'Linked to the order', 'navexa-agecheck-for-woocommerce' ),
 			Meta::HELD_AT                   => __( 'Held for the age check', 'navexa-agecheck-for-woocommerce' ),
 			Meta::CLEARED_AT                => __( 'Cleared', 'navexa-agecheck-for-woocommerce' ),
+			Meta::LINK_SENT_AT              => __( 'Verification link emailed', 'navexa-agecheck-for-woocommerce' ),
 		);
-		$times  = array( Meta::BOUND_AT, Meta::HELD_AT, Meta::CLEARED_AT );
+		$times  = array( Meta::BOUND_AT, Meta::HELD_AT, Meta::CLEARED_AT, Meta::LINK_SENT_AT );
 		$items  = array(
 			array(
 				'name'  => __( 'Order', 'navexa-agecheck-for-woocommerce' ),

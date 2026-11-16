@@ -128,6 +128,8 @@ final class Plugin {
 		Shipment::register();
 		Subscriptions::register();
 		Checkout\OrderPay::register();
+		// "Verify now" on a held order's own pages, and AgeCheck's way back.
+		OrderVerify::register();
 		Privacy::register();
 		if ( is_admin() ) {
 			Admin\OrderPanel::register();

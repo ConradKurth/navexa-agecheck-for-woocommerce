@@ -53,7 +53,11 @@ final class Gate {
 	const REFUSE_PLACE_AGAIN = 'place_again';
 
 	/**
-	 * Pass classes that never clear an order.
+	 * Pass classes that never clear an order. Every other class admits:
+	 * DB_VERIFIED, DOC_ONLY, MERCHANT_OVERRIDE, DATA_VERIFIED and REUSED
+	 * (a returning customer's per-store reuse, E12a) clear by the proto, and
+	 * a class added later admits too, because the hold still waits for
+	 * GetClearance CLEARED before the order ships.
 	 */
 	const NON_CLEARING_PASS_CLASSES = array( 'PASS_CLASS_UNSPECIFIED', 'PASS_CLASS_DB_UNATTESTED' );
 

@@ -10,17 +10,40 @@
 // Follows the tax repo's proto/agecheck/v1/verification.proto at origin/main
 // (E3, E9 in tax v0.0.163; E4a, E10a in tax v0.0.164; E5 data_then_doc and
 // PASS_CLASS_DATA_VERIFIED in tax v0.0.167; AWAITING_IDENTITY is E4b's, served
-// only with config awaitingIdentity: "served"). Served RPCs:
+// only with config awaitingIdentity: "served"; E12a per-store reuse and E8c
+// verification links at tax d6dead63). Served RPCs:
 //   GetIntegrationInfo {livemode, scopes, originAllowed, minimumAge, displayName, organizationId}
 //   CreateVerification: identity optional; returnUrl (5), documentNameCheck (6),
 //     intendedShipTo (7) with the proto's rules (order-bound is always REQUIRED
 //     and needs identity.name; NONE needs intendedShipTo; unset is REQUIRED
 //     with a name and NONE without); a sent name that trims to nothing is
 //     invalid_argument, as the engine's Identity.ValidateFor; US-only
-//     ship-to (E3)
+//     ship-to (E3); customerRef (8): 1..255 characters, checked whatever
+//     reuse says
 //   GetVerification, AttachOrder (ship_to_changed against intendedShipTo),
 //   GetClearance, ReportShipment, ListVerifications, CreateHostedSession
-//   SendVerificationLink (engine PR E8c, not in the proto yet; only with config links: "served")
+//   SendVerificationLink (E8c), in the engine's order: config links "off"
+//     (the default, AGECHECK_LINKS off in production) is failed_precondition
+//     "agecheck: verification links are not enabled"; then not_found; then a
+//     verification not waiting on the shopper (needs_doc, doc_pending,
+//     awaiting_identity) or created without the ID name check; no org
+//     displayName; no identity.email (each failed_precondition with the
+//     engine's own text); 5 links per verification in 24 hours
+//     (resource_exhausted); a returnUrl off the allowed origins
+//     (invalid_argument). A send supersedes the verification's earlier
+//     links; emailQueued is true in live mode and, in test mode, only for an
+//     email in org.confirmedRecipients. links "absent" answers the plain 404
+//     of an engine without the RPC. A decided verification's links are
+//     revoked (decided).
+//   RevokeVerificationLinks (E8c): any status; {revokedCount} of the links
+//     still open, revoked (merchant)
+// Per-store reuse (E12a; config reuse "on", default "off" as in production):
+//   a create with a customerRef under a policy other than default passes at
+//   once as PASS_CLASS_REUSED on the newest earlier passed verification of
+//   the same ref and mode whose class is data_verified, doc_only or
+//   db_verified, decided within org.reuseWindowDays (30), and, for
+//   data_verified, bound to the same ship-to. Underage blocks are not
+//   modelled.
 // Mutating RPCs replay their answer per idempotency key (a different request
 // under the same key is invalid_argument), like the engine.
 // A new verification is decided by the org's pass policy (config org.passPolicy):
@@ -56,13 +79,15 @@
 // Control endpoints for tests (never part of the engine):
 //   GET  /__mock/health    {ok: true}
 //   POST /__mock/reset     restore the default state (any body)
-//   POST /__mock/config    merge {org? (passPolicy: data_then_doc|no_gov_db|default), integrationInfo?: "served"|"absent",
-//                          links?: "served"|"absent", awaitingIdentity?: "served"|"absent", dataConsent?: "required"|"off",
+//   POST /__mock/config    merge {org? (passPolicy: data_then_doc|no_gov_db|default, displayName, reuseWindowDays,
+//                          confirmedRecipients, allowedOrigins), integrationInfo?: "served"|"absent",
+//                          links?: "on"|"off"|"absent" ("served" = "on"), reuse?: "on"|"off",
+//                          awaitingIdentity?: "served"|"absent", dataConsent?: "required"|"off",
 //                          keys?, createOutcome?, hostedBase?}
 //   POST /__mock/faults    queue {rpc?: "*"|Rpc, status?, code?, message?, retryAfter?, delayMs?, times?}
 //   POST /__mock/verifications  update {id, status?, passClass?, consumed?}: decide a verification as the shopper would
 //   POST /__mock/decide    {id, status, passClass?}: the same, status required
-//   GET  /__mock/verifications  {verifications (no identity), shipments, links}
+//   GET  /__mock/verifications  {verifications (no identity, no email), shipments, links (with returnUrl, revokedReason)}
 //   GET  /__mock/requests  recorded calls: {rpc, key (fixture name or null), headers, body}; never the key itself
 //
 // Run: node tests/mock-agecheck/server.mjs [--port 8787] [--host 127.0.0.1]
@@ -135,7 +160,16 @@ const PASS_CLASS = {
   doc_only: "PASS_CLASS_DOC_ONLY",
   merchant_override: "PASS_CLASS_MERCHANT_OVERRIDE",
   data_verified: "PASS_CLASS_DATA_VERIFIED",
+  reused: "PASS_CLASS_REUSED",
 }
+
+/** Pass classes a reuse may rest on (domain.ReuseSourceClasses). */
+const REUSE_SOURCE_CLASSES = ["data_verified", "doc_only", "db_verified"]
+
+/** Verification link lifetime and send budget (domain.LinkTTL, MaxLinkSendsPerDay, LinkSendWindow). */
+const LINK_TTL_MS = 7 * 86400e3
+const MAX_LINK_SENDS = 5
+const LINK_SEND_WINDOW_MS = 86400e3
 
 /** Pass policies the mock models (org.passPolicy). */
 const PASS_POLICIES = ["data_then_doc", "no_gov_db", "default"]
@@ -155,9 +189,16 @@ function defaultState() {
       passPolicy: "data_then_doc",
       // wp-env's development and tests sites.
       allowedOrigins: ["http://localhost:8888", "http://localhost:8889"],
+      // settings.reuse_window_days (E12a), read only while reuse is "on".
+      reuseWindowDays: 30,
+      // Confirmed notification recipients: test mode emails a link only to these.
+      confirmedRecipients: [],
     },
     integrationInfo: "served",
-    links: "absent",
+    // AGECHECK_LINKS: "on", "off" (production today) or "absent" (an engine without the RPC).
+    links: "off",
+    // AGECHECK_REUSE: "on" or "off" (production today).
+    reuse: "off",
     // E4b's AWAITING_IDENTITY: "served" sends a data-eligible verification
     // without DOB or consent there; "absent" (main today) sends it to NEEDS_DOC.
     awaitingIdentity: "absent",
@@ -174,7 +215,9 @@ function defaultState() {
     verifications: new Map(),
     idempotency: new Map(),
     shipments: [],
-    linksSent: [],
+    linkRows: [],
+    // identity.email per verification id (lower case), never reported.
+    emails: new Map(),
     nextId: 1,
   }
 }
@@ -444,6 +487,9 @@ function createProblem(state, key, request) {
     if (effective === "DOCUMENT_NAME_CHECK_NONE" && request.intendedShipTo == null) return "intended_ship_to: is required with document_name_check NONE"
   }
   if (request.returnUrl != null && !returnUrlAllowed(state, request.returnUrl)) return "return_url: must be an absolute URL on one of the organization's allowed origins"
+  if (request.customerRef != null && (typeof request.customerRef !== "string" || request.customerRef.trim() === "" || [...request.customerRef].length > 255)) {
+    return "customer_ref: must be 1 to 255 characters of valid UTF-8"
+  }
   if (state.org.passPolicy === "default") {
     // The legacy policy runs the database check on every create: it needs the whole identity.
     if (name.trim() === "") return "identity.name: is required"
@@ -476,6 +522,45 @@ function decideByPolicy(state, identity, shipTo) {
   }
 }
 
+/** The newest verification a create with customerRef may pass on (E12a), or null. */
+function reuseSource(state, key, customerRef, shipTo) {
+  if (state.reuse !== "on" || typeof customerRef !== "string" || state.org.passPolicy === "default") return null
+  const days = Number(state.org.reuseWindowDays ?? 0)
+  if (!(days > 0)) return null
+  const since = Date.now() - days * 86400e3
+  const target = shipTo ? shipToKey(shipTo) : null
+  const sources = [...state.verifications.values()].filter(
+    (v) =>
+      v.livemode === key.livemode &&
+      v.customerRef === customerRef &&
+      v.status === "passed" &&
+      REUSE_SOURCE_CLASSES.includes(v.passClass) &&
+      Date.parse(v.decidedAt ?? "") >= since &&
+      (v.passClass !== "data_verified" || (target !== null && (v.shipToKey ?? v.intendedShipToKey) === target)),
+  )
+  return sources.length ? sources[sources.length - 1] : null
+}
+
+/** The document name check a verification was created with (domain.ResolveNameCheck). */
+function effectiveNameCheck(request) {
+  const sent = request.documentNameCheck ?? "DOCUMENT_NAME_CHECK_UNSPECIFIED"
+  if (typeof request.orderExternalId === "string" && request.orderExternalId !== "") return "DOCUMENT_NAME_CHECK_REQUIRED"
+  if (sent !== "DOCUMENT_NAME_CHECK_UNSPECIFIED") return sent
+  return typeof request.identity?.name === "string" && request.identity.name !== "" ? "DOCUMENT_NAME_CHECK_REQUIRED" : "DOCUMENT_NAME_CHECK_NONE"
+}
+
+/** Revokes v's links not revoked yet, with reason; answers how many were still open. */
+function revokeLinks(state, v, reason) {
+  let n = 0
+  for (const link of state.linkRows) {
+    if (link.verificationId !== v.id || link.revokedAt) continue
+    link.revokedAt = new Date().toISOString()
+    link.revokedReason = reason
+    if (Date.parse(link.expiresAt) > Date.now()) n++
+  }
+  return n
+}
+
 /** RPC handlers: (state, keyEntry, request, ctx) => [code?, responseOrMessage], or null when not served. */
 const RPCS = {
   CreateVerification(state, key, request, ctx) {
@@ -498,8 +583,12 @@ const RPCS = {
           let status = state.createOutcome
           let passClass = status === "passed" ? "doc_only" : undefined
           let dataMatch = "none"
-          if (status === "needs_doc") [status, passClass, dataMatch] = decideByPolicy(state, identity, shipTo)
-          if (status === "needs_doc") {
+          // E12a: tryReuse runs before any check; a DOB under age still fails first.
+          const minor = typeof identity.dob === "string" && identity.dob !== "" && underAge(identity.dob, state.org.minimumAge)
+          const source = status === "needs_doc" && !minor ? reuseSource(state, key, request.customerRef, shipTo) : null
+          if (source) [status, passClass] = ["passed", "reused"]
+          else if (status === "needs_doc") [status, passClass, dataMatch] = decideByPolicy(state, identity, shipTo)
+          if (status === "needs_doc" && !source) {
             if (/docpass$/i.test(name)) [status, passClass] = ["passed", "doc_only"]
             else if (/doc(decline|underage)$/i.test(name)) [status, passClass] = ["failed", undefined]
             else if (/dataunattested$/i.test(name)) [status, passClass] = ["passed", "db_unattested"]
@@ -514,6 +603,9 @@ const RPCS = {
             shipToKey: hasOrder ? shipToKey(request.shipTo) : null,
             intendedShipToKey: request.intendedShipTo ? shipToKey(request.intendedShipTo) : null,
             hasEmail: typeof identity.email === "string" && identity.email !== "",
+            customerRef: typeof request.customerRef === "string" ? request.customerRef : undefined,
+            reusedFrom: source ? source.id : undefined,
+            nameCheck: effectiveNameCheck(request),
             dataMatch,
             // The test-mode data match's answer for a later hosted DOB step; never the name itself.
             dataAnswer: dataMatch === "awaiting" ? dataAnswer(name) : undefined,
@@ -524,6 +616,7 @@ const RPCS = {
             decidedAt: status === "passed" || status === "failed" ? now : undefined,
           }
           state.verifications.set(v.id, v)
+          if (v.hasEmail) state.emails.set(v.id, identity.email.toLowerCase())
           return answer(v)
         },
         // A replay answers the verification as it is now, with a freshly minted link while it waits on the shopper.
@@ -615,7 +708,7 @@ const RPCS = {
     if (denied) return denied
     const v = findVerification(state, key, request.verificationId)
     if (!v) return ["not_found", "agecheck: verification not found"]
-    if (!HOSTED_STATES.includes(v.status)) return ["failed_precondition", "the verification is not waiting on the shopper"]
+    if (!HOSTED_STATES.includes(v.status)) return ["failed_precondition", "agecheck: a hosted session needs a verification in needs_doc or doc_pending"]
     const returnUrl = request.returnUrl ?? ""
     if (returnUrl !== "" && !returnUrlAllowed(state, returnUrl)) return ["invalid_argument", "return_url: must be an absolute URL on one of the organization's allowed origins"]
     return [
@@ -628,18 +721,47 @@ const RPCS = {
   },
 
   SendVerificationLink(state, key, request) {
-    if (state.links !== "served") return null
+    if (state.links === "absent") return null
     return (
       requireScope(key, "agecheck:verify") ??
       idempotent(state, key, request, "SendVerificationLink", () => {
+        if (state.links !== "on") return ["failed_precondition", "agecheck: verification links are not enabled"]
         const v = findVerification(state, key, request.verificationId)
         if (!v) return ["not_found", "agecheck: verification not found"]
-        if (!["created", ...HOSTED_STATES].includes(v.status)) return ["failed_precondition", "the verification takes no link in its state"]
-        if (!v.hasEmail) return ["failed_precondition", "the verification has no email"]
-        if (!state.org.displayName) return ["failed_precondition", "set a display name first"]
-        const linkId = `acl_mock${String(state.linksSent.length + 1).padStart(6, "0")}`
-        state.linksSent.push({ linkId, verificationId: v.id })
-        return [null, { linkId, expiresAt: new Date(Date.now() + 7 * 86400e3).toISOString(), emailQueued: true }]
+        if (!HOSTED_STATES.includes(v.status) || v.nameCheck !== "DOCUMENT_NAME_CHECK_REQUIRED") {
+          return ["failed_precondition", "agecheck: a verification link needs a verification waiting on the shopper, with the document name check"]
+        }
+        if (!String(state.org.displayName ?? "").trim()) return ["failed_precondition", "agecheck: set the store's display name in the AgeCheck settings before sending verification links"]
+        const email = state.emails.get(v.id)
+        if (!email) return ["failed_precondition", "agecheck: the verification has no email to send the link to (identity.email)"]
+        const recent = state.linkRows.filter((l) => l.verificationId === v.id && Date.parse(l.createdAt) > Date.now() - LINK_SEND_WINDOW_MS)
+        if (recent.length >= MAX_LINK_SENDS) return ["resource_exhausted", "agecheck: too many verification links sent for this verification in the last 24 hours; retry later"]
+        const returnUrl = request.returnUrl ?? ""
+        if (returnUrl !== "" && !returnUrlAllowed(state, returnUrl)) return ["invalid_argument", "return_url: must be an absolute URL on one of the organization's allowed origins"]
+        revokeLinks(state, v, "superseded")
+        const emailQueued = key.livemode || (state.org.confirmedRecipients ?? []).some((r) => String(r).toLowerCase() === email)
+        const now = Date.now()
+        const link = {
+          linkId: `acl_mock${String(state.linkRows.length + 1).padStart(6, "0")}`,
+          verificationId: v.id,
+          createdAt: new Date(now).toISOString(),
+          expiresAt: new Date(now + LINK_TTL_MS).toISOString(),
+          returnUrl,
+          emailQueued,
+        }
+        state.linkRows.push(link)
+        return [null, omitZero({ linkId: link.linkId, expiresAt: link.expiresAt, emailQueued })]
+      })
+    )
+  },
+
+  RevokeVerificationLinks(state, key, request) {
+    return (
+      requireScope(key, "agecheck:verify") ??
+      idempotent(state, key, request, "RevokeVerificationLinks", () => {
+        const v = findVerification(state, key, request.verificationId)
+        if (!v) return ["not_found", "agecheck: verification not found"]
+        return [null, omitZero({ revokedCount: revokeLinks(state, v, "merchant") })]
       })
     )
   },
@@ -663,11 +785,12 @@ const RPCS = {
   },
 }
 
-/** Moves a verification as the shopper (or a reviewer) would. */
-function decide(v, status, passClass) {
+/** Moves a verification as the shopper (or a reviewer) would; a decision revokes its links (E8a). */
+function decide(state, v, status, passClass) {
   v.status = status
   v.passClass = status === "passed" ? (passClass ? shortName(passClass, "PASS_CLASS_") : v.passClass || "doc_only") : undefined
   v.decidedAt = status === "passed" || status === "failed" ? new Date().toISOString() : undefined
+  if (v.decidedAt) revokeLinks(state, v, "decided")
 }
 
 function escapeHTML(text) {
@@ -710,17 +833,17 @@ async function handleHosted(state, req, res, url) {
     const awaiting = v.status === "awaiting_identity"
     if (awaiting) {
       // E4b's consent + DOB step: the data match runs once; "Use my ID instead" goes to the ID check.
-      if (decision === "use_id") decide(v, "needs_doc")
+      if (decision === "use_id") decide(state, v, "needs_doc")
       else if (decision === "identity") {
         const dob = form.get("dob") ?? ""
         if (form.get("consent") !== "yes") problem = "Agree to the data check, or use your ID instead."
         else if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(dob)) problem = "Enter your date of birth."
-        else if (underAge(dob, state.org.minimumAge)) decide(v, "failed")
-        else if (v.dataAnswer === "match") decide(v, "passed", "data_verified")
-        else decide(v, "needs_doc")
+        else if (underAge(dob, state.org.minimumAge)) decide(state, v, "failed")
+        else if (v.dataAnswer === "match") decide(state, v, "passed", "data_verified")
+        else decide(state, v, "needs_doc")
       }
-    } else if (decision === "pass") decide(v, "passed", "doc_only")
-    else if (decision === "fail") decide(v, "failed")
+    } else if (decision === "pass") decide(state, v, "passed", "doc_only")
+    else if (decision === "fail") decide(state, v, "failed")
     if (claims.ru && (!awaiting || v.status === "passed" || v.status === "failed")) {
       res.writeHead(303, { Location: claims.ru })
       return res.end()
@@ -761,7 +884,7 @@ export function createMockAgeCheck() {
     if (req.method === "GET" && url.pathname === "/__mock/health") return sendJSON(res, 200, { ok: true })
     if (req.method === "GET" && url.pathname === "/__mock/requests") return sendJSON(res, 200, state.requests)
     if (req.method === "GET" && url.pathname === "/__mock/verifications") {
-      return sendJSON(res, 200, { verifications: [...state.verifications.values()], shipments: state.shipments, links: state.linksSent })
+      return sendJSON(res, 200, { verifications: [...state.verifications.values()], shipments: state.shipments, links: state.linkRows })
     }
     if (req.method !== "POST") return sendNotFound(res)
     const text = await readBody(req)
@@ -776,7 +899,10 @@ export function createMockAgeCheck() {
         if (body.org?.passPolicy !== undefined && !PASS_POLICIES.includes(body.org.passPolicy)) return sendJSON(res, 400, { error: "unknown pass policy" })
         if (body.org) state.org = { ...state.org, ...body.org }
         if (body.integrationInfo) state.integrationInfo = body.integrationInfo
-        if (body.links) state.links = body.links
+        if (body.links !== undefined && !["on", "served", "off", "absent"].includes(body.links)) return sendJSON(res, 400, { error: "links: on, off or absent" })
+        if (body.reuse !== undefined && !["on", "off"].includes(body.reuse)) return sendJSON(res, 400, { error: "reuse: on or off" })
+        if (body.links) state.links = body.links === "served" ? "on" : body.links
+        if (body.reuse) state.reuse = body.reuse
         if (body.awaitingIdentity) state.awaitingIdentity = body.awaitingIdentity
         if (body.dataConsent) state.dataConsent = body.dataConsent
         if (body.keys) state.keys = { ...state.keys, ...body.keys }
@@ -795,7 +921,7 @@ export function createMockAgeCheck() {
           const status = shortName(body.status, "VERIFICATION_STATUS_")
           if (!STATUS[status]) return sendJSON(res, 400, { error: "unknown status" })
           if (body.passClass !== undefined && !PASS_CLASS[shortName(body.passClass, "PASS_CLASS_")]) return sendJSON(res, 400, { error: "unknown pass class" })
-          decide(v, status, body.passClass)
+          decide(state, v, status, body.passClass)
         }
         if (body.consumed !== undefined) v.consumed = Boolean(body.consumed)
         return sendJSON(res, 200, { ok: true, verification: v })

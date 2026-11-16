@@ -11,8 +11,9 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * One release run for one order, under a per-order lock (Lock): bind the
- * order if it is not bound yet (Binding), ask the shopper to verify when the
- * verification waits on them (a LinkSender), then GetClearance.
+ * order if it is not bound yet (Binding), have AgeCheck email the shopper a
+ * link when the verification waits on them (Links; a failure there never
+ * stops the GetClearance that follows), then GetClearance.
  *
  * GetClearance consumes the clearance and AgeCheck replays every answer
  * under its idempotency key for 24 hours. The key is therefore stored on the
@@ -31,7 +32,9 @@ defined( 'ABSPATH' ) || exit;
  * is never spent on an order that will not ship.
  *
  * Runs come from Action Scheduler (on entering the hold, from the webhook,
- * the sweep and retries) and from the admin "check now" order action.
+ * the sweep, retries and the shopper's return from AgeCheck's page), from the
+ * admin "check now" order action, and from the shopper's "Verify now" on an
+ * order that has no verification yet (OrderVerify).
  * A retryable failure reschedules with backoff and Retry-After; a refusal
  * (bad key, missing scope, paused install) is recorded on the order and left
  * to the sweep, which asks again every six hours.
@@ -46,6 +49,7 @@ final class Release {
 	const TRIGGER_SWEEP   = 'sweep';
 	const TRIGGER_RETRY   = 'retry';
 	const TRIGGER_ADMIN   = 'admin';
+	const TRIGGER_SHOPPER = 'shopper';
 
 	const RELEASED  = 'released';
 	const CLEARED   = 'cleared';
@@ -186,7 +190,7 @@ final class Release {
 	 * @throws ConnectError A failure; is_retryable() says whether to retry.
 	 */
 	public static function run( int $order_id, string $trigger, ?Client $client = null ): string {
-		$lock  = 'navexa_agecheck_lock_' . $order_id;
+		$lock  = self::lock_name( $order_id );
 		$token = Lock::acquire( $lock, self::LOCK_TTL );
 		if ( '' === $token ) {
 			return self::LOCKED;
@@ -208,6 +212,16 @@ final class Release {
 		} finally {
 			Lock::release( $lock, $token );
 		}
+	}
+
+	/**
+	 * The per-order lock's name (Lock), shared by everything that changes the
+	 * order's AgeCheck state from outside a run (Links' staff actions).
+	 *
+	 * @param int $order_id Order id.
+	 */
+	public static function lock_name( int $order_id ): string {
+		return 'navexa_agecheck_lock_' . $order_id;
 	}
 
 	/**
@@ -284,8 +298,16 @@ final class Release {
 		}
 		$order->save_meta_data();
 
-		if ( in_array( Meta::get( $order, Meta::VERIFICATION_STATUS ), Binding::AWAITING_SHOPPER, true ) ) {
-			Binding::send_link( $order, $client, Binding::link_sender() );
+		$link_error = null;
+		if ( in_array( Meta::get( $order, Meta::VERIFICATION_STATUS ), Links::HOSTED_STATES, true ) ) {
+			try {
+				Links::send( $order, $client, $info );
+			} catch ( ConnectError $e ) {
+				// The emailed link is a side path: it never keeps GetClearance
+				// from answering (the shopper may have passed from the order
+				// page). Its key stays on the order for the replay.
+				$link_error = $e;
+			}
 			$order->save_meta_data();
 		}
 
@@ -293,9 +315,16 @@ final class Release {
 			Meta::set( $order, Meta::REASON, 'test_mode' );
 			Meta::set( $order, Meta::NEXT_CHECK_AT, time() + self::TEST_RECHECK );
 			$order->save_meta_data();
-			return self::TEST_MODE;
+			$outcome = self::TEST_MODE;
+		} else {
+			$outcome = self::clear( $order, $client, $info );
 		}
-		return self::clear( $order, $client, $info );
+		if ( null !== $link_error && in_array( $outcome, array( self::PENDING, self::TEST_MODE ), true ) ) {
+			// Still waiting on the shopper: the link's failure counts as the
+			// run's (a retry for a retryable one, staff review otherwise).
+			throw $link_error;
+		}
+		return $outcome;
 	}
 
 	/**
@@ -354,10 +383,10 @@ final class Release {
 					return self::finish_review( $order, 'unattested' );
 				}
 				Meta::set( $order, Meta::REASON, '' === $reason ? 'pending' : $reason );
-				// A shopper who was never sent a link (E8c not available) cannot
-				// pass soon: ask every six hours; a webhook still releases at once.
-				$unasked = LinkSender::RESULT_UNAVAILABLE . ':' . Meta::get( $order, Meta::VERIFICATION_ID ) === Meta::get( $order, Meta::LINK );
-				Meta::set( $order, Meta::NEXT_CHECK_AT, $unasked ? time() + self::REVIEW_RECHECK : '' );
+				// Polled every sweep, emailed or not: a shopper who was not
+				// emailed a link can still pass from the order page (Verify now),
+				// and AgeCheck's page only links back to the store.
+				Meta::set( $order, Meta::NEXT_CHECK_AT, '' );
 				$order->save_meta_data();
 				return self::PENDING;
 			case 'DENIED':
@@ -386,8 +415,7 @@ final class Release {
 	private static function not_verified( \WC_Order $order, Client $client, IntegrationInfo $info ): string {
 		$answer       = $client->call( 'GetVerification', array( 'id' => Meta::get( $order, Meta::VERIFICATION_ID ) ) );
 		$verification = isset( $answer['verification'] ) && is_array( $answer['verification'] ) ? $answer['verification'] : array();
-		$status       = Binding::status_name( $verification );
-		Meta::set( $order, Meta::VERIFICATION_STATUS, $status );
+		$status       = Binding::record_verification( $order, $verification );
 		if ( 'failed' === $status ) {
 			return self::deny( $order, 'not_verified', $info );
 		}

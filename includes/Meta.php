@@ -114,10 +114,38 @@ final class Meta {
 	const CREATE_ATTEMPT = '_navexa_agecheck_create_attempt';
 
 	/**
-	 * Verification-link email state: LinkSender::RESULT_* plus ':' and the
+	 * The verification's pass class once it passed (DOC_ONLY, REUSED, ...,
+	 * without the PASS_CLASS_ prefix), for the admin panel only.
+	 */
+	const PASS_CLASS = '_navexa_agecheck_pass_class';
+
+	/**
+	 * Verification-link email state: a Links::STATE_* plus ':' and the
 	 * verification id it was for.
 	 */
 	const LINK = '_navexa_agecheck_link';
+
+	/**
+	 * The emailed link's id (acl_...), from SendVerificationLink.
+	 */
+	const LINK_ID = '_navexa_agecheck_link_id';
+
+	/**
+	 * Unix time the emailed link stops opening AgeCheck's page (7 days after the send).
+	 */
+	const LINK_EXPIRES_AT = '_navexa_agecheck_link_expires_at';
+
+	/**
+	 * Unix time of the last SendVerificationLink answer that sent a link.
+	 */
+	const LINK_SENT_AT = '_navexa_agecheck_link_sent_at';
+
+	/**
+	 * SendVerificationLink idempotency key, stored before the call and reused
+	 * until an answer is recorded (a retry after a lost answer sends no
+	 * second email).
+	 */
+	const LINK_KEY = '_navexa_agecheck_link_key';
 
 	/**
 	 * Denied-order refund state: REFUND_*.

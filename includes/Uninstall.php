@@ -42,6 +42,7 @@ final class Uninstall {
 	const AS_GROUP        = 'navexa-agecheck';
 	const CRON_HOOK       = 'navexa_agecheck_sweep_cron';
 	const USER_META       = 'navexa_agecheck_dismissed_counts';
+	const USER_META_LINKS = 'navexa_agecheck_dismissed_links';
 	const HOLD_STATUS     = 'wc-agecheck-hold';
 	const HELD_BATCH      = 100;
 	const HELD_MAX_ORDERS = 5000;
@@ -67,6 +68,7 @@ final class Uninstall {
 		}
 		// User meta is network-wide.
 		delete_metadata( 'user', 0, self::USER_META, '', true );
+		delete_metadata( 'user', 0, self::USER_META_LINKS, '', true );
 	}
 
 	/**

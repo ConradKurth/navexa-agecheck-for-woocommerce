@@ -7,9 +7,10 @@
 
 namespace Navexa\AgeCheck\Admin;
 
+use Navexa\AgeCheck\Client;
 use Navexa\AgeCheck\ConnectError;
 use Navexa\AgeCheck\Hold;
-use Navexa\AgeCheck\LinkSender;
+use Navexa\AgeCheck\Links;
 use Navexa\AgeCheck\Meta;
 use Navexa\AgeCheck\Mode;
 use Navexa\AgeCheck\Release;
@@ -19,20 +20,31 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * A side panel on the order edit screen (HPOS and posts-table) showing the
- * order's AgeCheck state, and two WooCommerce order actions:
+ * order's AgeCheck state, and these WooCommerce order actions:
  *
  * - "AgeCheck: check now" runs a release run at once.
+ * - "AgeCheck: resend verification email" (a held order whose own
+ *   order-bound check waits on the shopper) has AgeCheck email a new link
+ *   (Links::resend()); AgeCheck sends at most 5 per verification in 24
+ *   hours, and says so when that is used up.
+ * - "AgeCheck: withdraw verification link" (an emailed link that may still
+ *   be open) has AgeCheck stop it (Links::withdraw(),
+ *   RevokeVerificationLinks).
  * - "AgeCheck: release without age check" (held orders only) is the logged
  *   override (owner decision Q11a): it needs manage_woocommerce, a reason
  *   typed into the panel and a confirmation tick, and records who, when and
- *   why on the order. Order actions are saved with the order form, so
- *   WooCommerce has already checked its nonce and edit capability; the
- *   handlers check them again.
+ *   why on the order.
+ *
+ * Order actions are saved with the order form, so WooCommerce has already
+ * checked its nonce and edit capability; every handler checks the nonce and
+ * manage_woocommerce again.
  */
 final class OrderPanel {
 
 	const ACTION_CHECK    = 'navexa_agecheck_check';
 	const ACTION_OVERRIDE = 'navexa_agecheck_override';
+	const ACTION_RESEND   = 'navexa_agecheck_resend_link';
+	const ACTION_WITHDRAW = 'navexa_agecheck_withdraw_link';
 	const FIELD_REASON    = 'navexa_agecheck_override_reason';
 	const FIELD_CONFIRM   = 'navexa_agecheck_override_confirm';
 
@@ -44,6 +56,8 @@ final class OrderPanel {
 		add_filter( 'woocommerce_order_actions', array( self::class, 'order_actions' ), 10, 2 );
 		add_action( 'woocommerce_order_action_' . self::ACTION_CHECK, array( self::class, 'action_check' ), 10, 1 );
 		add_action( 'woocommerce_order_action_' . self::ACTION_OVERRIDE, array( self::class, 'action_override' ), 10, 1 );
+		add_action( 'woocommerce_order_action_' . self::ACTION_RESEND, array( self::class, 'action_resend' ), 10, 1 );
+		add_action( 'woocommerce_order_action_' . self::ACTION_WITHDRAW, array( self::class, 'action_withdraw' ), 10, 1 );
 	}
 
 	/**
@@ -115,14 +129,13 @@ final class OrderPanel {
 			$status = Meta::get( $order, Meta::VERIFICATION_STATUS );
 			$rows[ __( 'Verification', 'navexa-agecheck-for-woocommerce' ) ] = '' === $status ? $vid : $vid . ' (' . str_replace( '_', ' ', $status ) . ')';
 		}
-		$link = explode( ':', Meta::get( $order, Meta::LINK ), 2 );
-		if ( '' !== $link[0] ) {
-			$texts = array(
-				LinkSender::RESULT_SENT        => __( 'Emailed to the shopper.', 'navexa-agecheck-for-woocommerce' ),
-				LinkSender::RESULT_UNAVAILABLE => __( 'Not sent: verification emails are not available yet.', 'navexa-agecheck-for-woocommerce' ),
-				LinkSender::RESULT_REFUSED     => __( 'Could not be emailed (check the billing email).', 'navexa-agecheck-for-woocommerce' ),
-			);
-			$rows[ __( 'Verification link', 'navexa-agecheck-for-woocommerce' ) ] = isset( $texts[ $link[0] ] ) ? $texts[ $link[0] ] : $link[0];
+		$pass = self::pass_text( Meta::get( $order, Meta::PASS_CLASS ) );
+		if ( '' !== $pass && 'passed' === Meta::get( $order, Meta::VERIFICATION_STATUS ) ) {
+			$rows[ __( 'Passed by', 'navexa-agecheck-for-woocommerce' ) ] = $pass;
+		}
+		$link = Links::describe( $order );
+		if ( '' !== $link ) {
+			$rows[ __( 'Verification link', 'navexa-agecheck-for-woocommerce' ) ] = $link;
 		}
 		$refund = Meta::get( $order, Meta::REFUND );
 		if ( '' !== $refund ) {
@@ -163,6 +176,12 @@ final class OrderPanel {
 		if ( Hold::STATUS === $order->get_status( 'edit' ) ) {
 			$actions[ self::ACTION_CHECK ]    = __( 'AgeCheck: check now', 'navexa-agecheck-for-woocommerce' );
 			$actions[ self::ACTION_OVERRIDE ] = __( 'AgeCheck: release without age check', 'navexa-agecheck-for-woocommerce' );
+		}
+		if ( Links::can_resend( $order ) ) {
+			$actions[ self::ACTION_RESEND ] = __( 'AgeCheck: resend verification email', 'navexa-agecheck-for-woocommerce' );
+		}
+		if ( Links::can_withdraw( $order ) ) {
+			$actions[ self::ACTION_WITHDRAW ] = __( 'AgeCheck: withdraw verification link', 'navexa-agecheck-for-woocommerce' );
 		}
 		return $actions;
 	}
@@ -217,6 +236,64 @@ final class OrderPanel {
 	}
 
 	/**
+	 * "Resend verification email".
+	 *
+	 * @param mixed $order Order.
+	 */
+	public static function action_resend( $order ): void {
+		if ( ! $order instanceof \WC_Order || ! current_user_can( 'manage_woocommerce' ) || ! self::nonce_ok() ) {
+			return;
+		}
+		try {
+			$result = Links::resend( $order, Client::for_key( Client::KEY_FULFILMENT ) );
+		} catch ( ConnectError $e ) {
+			Notices::flash(
+				$e->is_retryable() && 'resource_exhausted' === $e->connect_code()
+					? __( 'AgeCheck is busy right now, so no email was sent. Try again in a few minutes.', 'navexa-agecheck-for-woocommerce' )
+					: __( 'AgeCheck could not be reached, so no email was sent. Try again in a few minutes.', 'navexa-agecheck-for-woocommerce' )
+			);
+			return;
+		}
+		$texts = array(
+			Links::STATE_SENT            => __( 'AgeCheck emailed the shopper a new verification link. Earlier links no longer work.', 'navexa-agecheck-for-woocommerce' ),
+			Links::STATE_NOT_QUEUED      => __( 'AgeCheck made a new verification link but emailed nobody: test mode emails only your confirmed AgeCheck notification recipients.', 'navexa-agecheck-for-woocommerce' ),
+			Links::LIMITED               => __( 'AgeCheck has already emailed this shopper 5 verification links in the last 24 hours, so no email was sent. Try again later.', 'navexa-agecheck-for-woocommerce' ),
+			Links::LOCKED                => __( 'AgeCheck is already checking this order. Try again in a minute.', 'navexa-agecheck-for-woocommerce' ),
+			Links::INELIGIBLE            => __( 'AgeCheck: this order\'s age check cannot be emailed (it is not waiting on the shopper, or it was started at checkout).', 'navexa-agecheck-for-woocommerce' ),
+			Links::STATE_LINKS_OFF       => __( 'AgeCheck is not sending verification emails yet, so no email was sent.', 'navexa-agecheck-for-woocommerce' ),
+			Links::STATE_NO_DISPLAY_NAME => __( 'AgeCheck cannot email verification links until you set your store name in the AgeCheck dashboard.', 'navexa-agecheck-for-woocommerce' ),
+			Links::STATE_DISABLED        => __( 'Verification emails are turned off on this site (NAVEXA_AGECHECK_EMAIL_LINKS), so no email was sent.', 'navexa-agecheck-for-woocommerce' ),
+		);
+		Notices::flash( isset( $texts[ $result ] ) ? $texts[ $result ] : __( 'AgeCheck did not email the shopper. See the AgeCheck panel and the order notes for why.', 'navexa-agecheck-for-woocommerce' ) );
+	}
+
+	/**
+	 * "Withdraw verification link".
+	 *
+	 * @param mixed $order Order.
+	 */
+	public static function action_withdraw( $order ): void {
+		if ( ! $order instanceof \WC_Order || ! current_user_can( 'manage_woocommerce' ) || ! self::nonce_ok() ) {
+			return;
+		}
+		try {
+			$result = Links::withdraw( $order, Client::for_key( Client::KEY_FULFILMENT ) );
+		} catch ( ConnectError $e ) {
+			Notices::flash( __( 'AgeCheck could not be reached, so the link was not withdrawn. Try again in a few minutes.', 'navexa-agecheck-for-woocommerce' ) );
+			return;
+		}
+		if ( Links::LOCKED === $result ) {
+			Notices::flash( __( 'AgeCheck is already checking this order. Try again in a minute.', 'navexa-agecheck-for-woocommerce' ) );
+			return;
+		}
+		if ( Links::INELIGIBLE === $result ) {
+			Notices::flash( __( 'AgeCheck: this order has no emailed verification link to withdraw.', 'navexa-agecheck-for-woocommerce' ) );
+			return;
+		}
+		Notices::flash( __( 'AgeCheck withdrew the emailed verification link. The shopper can no longer use it.', 'navexa-agecheck-for-woocommerce' ) );
+	}
+
+	/**
 	 * Whether the order form's nonce is valid.
 	 */
 	private static function nonce_ok(): bool {
@@ -241,6 +318,30 @@ final class OrderPanel {
 				return __( 'Awaiting the shopper\'s age check.', 'navexa-agecheck-for-woocommerce' );
 			default:
 				return __( 'Required. Checked when the order is paid.', 'navexa-agecheck-for-woocommerce' );
+		}
+	}
+
+	/**
+	 * How a verification passed, in words ('' for none or an unknown class).
+	 *
+	 * @param string $pass_class Pass class without its PASS_CLASS_ prefix.
+	 */
+	private static function pass_text( string $pass_class ): string {
+		switch ( $pass_class ) {
+			case 'REUSED':
+				return __( 'Returning customer (reused verification)', 'navexa-agecheck-for-woocommerce' );
+			case 'DOC_ONLY':
+				return __( 'ID check', 'navexa-agecheck-for-woocommerce' );
+			case 'DATA_VERIFIED':
+				return __( 'Data check', 'navexa-agecheck-for-woocommerce' );
+			case 'DB_VERIFIED':
+				return __( 'Government-source database check', 'navexa-agecheck-for-woocommerce' );
+			case 'DB_UNATTESTED':
+				return __( 'Database check that cannot clear orders', 'navexa-agecheck-for-woocommerce' );
+			case 'MERCHANT_OVERRIDE':
+				return __( 'Override in the AgeCheck dashboard', 'navexa-agecheck-for-woocommerce' );
+			default:
+				return '';
 		}
 	}
 

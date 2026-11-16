@@ -8,8 +8,10 @@
 namespace Navexa\AgeCheck\Admin;
 
 use Navexa\AgeCheck\Hold;
+use Navexa\AgeCheck\Links;
 use Navexa\AgeCheck\Meta;
 use Navexa\AgeCheck\OrderQuery;
+use Navexa\AgeCheck\Options;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -19,6 +21,13 @@ defined( 'ABSPATH' ) || exit;
  * - A dismissible notice on WooCommerce screens counting denied orders that
  *   need a refund and orders held for more than 30 days. Dismissing hides it
  *   until the counts change.
+ * - A notice on the same screens while AgeCheck refuses to email
+ *   verification links for the whole store (Links::store_block(): AgeCheck
+ *   not sending them yet, which is one switch for every store, no store
+ *   display name, or no link emails at all), for a week after the last
+ *   refusal; it goes once a link is sent, and the display-name one as soon
+ *   as AgeCheck reports a name (Options::STORE_PROFILE). Dismissing it hides
+ *   it until the reason changes.
  */
 final class Notices {
 
@@ -26,6 +35,7 @@ final class Notices {
 	const FLASH_PREFIX     = 'navexa_agecheck_flash_';
 	const DISMISS_ACTION   = 'navexa_agecheck_dismiss_notice';
 	const USER_META        = 'navexa_agecheck_dismissed_counts';
+	const USER_META_LINKS  = 'navexa_agecheck_dismissed_links';
 
 	/**
 	 * Largest count the notice queries for.
@@ -85,6 +95,18 @@ final class Notices {
 		if ( 'dashboard' !== $id && false === strpos( $id, 'woocommerce' ) && false === strpos( $id, 'shop_order' ) ) {
 			return;
 		}
+		$links = self::links_text();
+		$block = Links::store_block();
+		if ( '' !== $links && array() !== $block && get_user_meta( $user, self::USER_META_LINKS, true ) !== $block['reason'] ) {
+			$dismiss = wp_nonce_url( admin_url( 'admin-post.php?action=' . self::DISMISS_ACTION . '&links=' . rawurlencode( $block['reason'] ) ), self::DISMISS_ACTION );
+			printf(
+				'<div class="notice notice-warning"><p><strong>%1$s</strong></p><p>%2$s</p><p><a href="%3$s">%4$s</a></p></div>',
+				esc_html__( 'Navexa AgeCheck', 'navexa-agecheck-for-woocommerce' ),
+				esc_html( $links ),
+				esc_url( $dismiss ),
+				esc_html__( 'Dismiss until this changes', 'navexa-agecheck-for-woocommerce' )
+			);
+		}
 		$counts = self::counts();
 		if ( 0 === $counts['denied'] && 0 === $counts['stale'] ) {
 			return;
@@ -125,7 +147,31 @@ final class Notices {
 	}
 
 	/**
-	 * Dismisses the counts notice for the current user.
+	 * The store-wide link refusal in words, while it is recent; else ''.
+	 *
+	 * @param int|null $now Unix time; null for time().
+	 */
+	public static function links_text( ?int $now = null ): string {
+		$block = Links::store_block();
+		$now   = null === $now ? time() : $now;
+		if ( array() === $block || $now - $block['at'] > Links::NOTICE_TTL ) {
+			return '';
+		}
+		switch ( $block['reason'] ) {
+			case Links::STATE_LINKS_OFF:
+				return __( 'AgeCheck is not sending verification emails yet, so shoppers of held orders are not emailed a link to verify. Their orders stay held until they verify from their order page (Verify now) or you release them after checking their age yourself. Nothing needs changing on your side: the plugin uses the emails once AgeCheck turns them on.', 'navexa-agecheck-for-woocommerce' );
+			case Links::STATE_NO_DISPLAY_NAME:
+				if ( '' !== Options::reported_display_name() ) {
+					return ''; // Set since: the next check of each held order sends its email.
+				}
+				return __( 'AgeCheck cannot email shoppers a link to verify until you set your store name in the AgeCheck dashboard (AgeCheck settings, store display name). Held orders stay held until then; once AgeCheck reports the name (within an hour), each held order\'s email goes out at its next check, or at once with the order action "AgeCheck: check now".', 'navexa-agecheck-for-woocommerce' );
+			default:
+				return __( 'AgeCheck does not offer verification emails yet, so shoppers of held orders are not emailed a link. Their orders stay held until they verify from their order page or you release them after checking their age yourself.', 'navexa-agecheck-for-woocommerce' );
+		}
+	}
+
+	/**
+	 * Dismisses the counts notice or the link notice for the current user.
 	 */
 	public static function handle_dismiss(): void {
 		if ( ! current_user_can( 'manage_woocommerce' ) ) {
@@ -135,6 +181,10 @@ final class Notices {
 		$counts = isset( $_GET['counts'] ) ? sanitize_text_field( wp_unslash( $_GET['counts'] ) ) : '';
 		if ( 1 === preg_match( '/^\d{1,4}:\d{1,4}$/', $counts ) ) {
 			update_user_meta( get_current_user_id(), self::USER_META, $counts );
+		}
+		$links = isset( $_GET['links'] ) ? sanitize_key( wp_unslash( $_GET['links'] ) ) : '';
+		if ( in_array( $links, Links::BLOCKING_STATES, true ) ) {
+			update_user_meta( get_current_user_id(), self::USER_META_LINKS, $links );
 		}
 		wp_safe_redirect( wp_get_referer() ? wp_get_referer() : admin_url() );
 		exit;

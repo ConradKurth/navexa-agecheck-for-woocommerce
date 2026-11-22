@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-11-16T06:48:55+00:00\n"
+"POT-Creation-Date: 2026-11-22T20:08:06+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: navexa-agecheck-for-woocommerce\n"
@@ -590,36 +590,36 @@ msgstr ""
 msgid "Confirm this site"
 msgstr ""
 
-#: includes/LinkRevoke.php:309
+#: includes/LinkRevoke.php:600
 msgid "The order will not ship: AgeCheck is being asked to withdraw its emailed verification link."
 msgstr ""
 
 #. translators: %s: an error code, e.g. unavailable.
-#: includes/LinkRevoke.php:313
+#: includes/LinkRevoke.php:604
 #, php-format
 msgid "AgeCheck could not withdraw the emailed verification link (%s). See the order notes."
 msgstr ""
 
 #. translators: %d: number of links that could still be opened.
-#: includes/LinkRevoke.php:360
+#: includes/LinkRevoke.php:651
 #, php-format
 msgid "AgeCheck: the order will not ship, so AgeCheck withdrew its emailed verification link (%d was still open). The shopper can no longer use it."
 msgid_plural "AgeCheck: the order will not ship, so AgeCheck withdrew its emailed verification links (%d were still open). The shopper can no longer use them."
 msgstr[0] ""
 msgstr[1] ""
 
-#: includes/LinkRevoke.php:363
+#: includes/LinkRevoke.php:654
 msgid "AgeCheck: the order will not ship, so AgeCheck was asked to withdraw its emailed verification links. None was still open."
 msgstr ""
 
 #. translators: %s: an error code, e.g. unavailable or no_api_key.
-#: includes/LinkRevoke.php:386
+#: includes/LinkRevoke.php:677
 #, php-format
 msgid "AgeCheck: the order will not ship, but AgeCheck could not withdraw its emailed verification link (%s). A link already emailed keeps opening AgeCheck's page until it expires. If Order actions offer \"AgeCheck: withdraw verification link\", choose it to try again."
 msgstr ""
 
 #. translators: %d: number of links that could still be opened.
-#: includes/Links.php:273
+#: includes/Links.php:281
 #, php-format
 msgid "AgeCheck: withdrew the emailed verification link (%d was still open). The shopper can no longer use it."
 msgid_plural "AgeCheck: withdrew the emailed verification links (%d were still open). The shopper can no longer use them."
@@ -627,126 +627,126 @@ msgstr[0] ""
 msgstr[1] ""
 
 #. translators: %s: date and time.
-#: includes/Links.php:378
+#: includes/Links.php:386
 #, php-format
 msgid "Emailed to the shopper; the link expired on %s. Resend it from Order actions."
 msgstr ""
 
 #. translators: 1: date and time sent, 2: date and time the link expires.
-#: includes/Links.php:382
+#: includes/Links.php:390
 #, php-format
 msgid "Emailed to the shopper on %1$s; the link works until %2$s."
 msgstr ""
 
-#: includes/Links.php:384
+#: includes/Links.php:392
 msgid "Emailed to the shopper."
 msgstr ""
 
-#: includes/Links.php:386
+#: includes/Links.php:394
 msgid "Test mode: AgeCheck made a link but emailed nobody (test mode emails only your confirmed AgeCheck notification recipients)."
 msgstr ""
 
-#: includes/Links.php:388
+#: includes/Links.php:396
 msgid "Not sent: AgeCheck is not sending verification emails yet."
 msgstr ""
 
-#: includes/Links.php:390
+#: includes/Links.php:398
 msgid "Not sent: set your store name in the AgeCheck dashboard. It is sent on a later check."
 msgstr ""
 
-#: includes/Links.php:392
+#: includes/Links.php:400
 msgid "Not sent: AgeCheck does not offer verification emails yet."
 msgstr ""
 
-#: includes/Links.php:394
+#: includes/Links.php:402
 msgid "Not sent: verification emails are turned off on this site (NAVEXA_AGECHECK_EMAIL_LINKS)."
 msgstr ""
 
-#: includes/Links.php:396
+#: includes/Links.php:404
 msgid "Not sent: the age check was started without a valid billing email."
 msgstr ""
 
-#: includes/Links.php:398
+#: includes/Links.php:406
 msgid "Not sent: this age check cannot be emailed (it is not waiting on the shopper)."
 msgstr ""
 
-#: includes/Links.php:400
+#: includes/Links.php:408
 msgid "Not sent: AgeCheck refused (see the order notes)."
 msgstr ""
 
-#: includes/Links.php:402
+#: includes/Links.php:410
 msgid "Withdrawn by staff: the emailed link no longer works."
 msgstr ""
 
-#: includes/Links.php:404
+#: includes/Links.php:412
 msgid "Withdrawn because the order will not ship (cancelled, refunded in full, failed or trashed): the emailed link no longer works."
 msgstr ""
 
-#: includes/Links.php:406
+#: includes/Links.php:414
 msgid "Not sent: a check the shopper started at checkout is never emailed."
 msgstr ""
 
 #. translators: %s: why AgeCheck sent no new link (a state code such as links_off or refused).
-#: includes/Links.php:456
+#: includes/Links.php:464
 #, php-format
 msgid "AgeCheck sent no new verification link (%s). The link emailed earlier still works until it expires; withdraw it from Order actions if this order will not ship."
 msgstr ""
 
-#: includes/Links.php:524
+#: includes/Links.php:532
 msgid "about 7 days"
 msgstr ""
 
 #. translators: 1: link id (acl_...), 2: date the link expires.
-#: includes/Links.php:528
+#: includes/Links.php:536
 #, php-format
 msgid "AgeCheck: emailed the shopper a new verification link (%1$s, good until %2$s) at a staff member's request. Earlier links no longer work. The order stays held until they pass."
 msgstr ""
 
 #. translators: 1: link id (acl_...), 2: date the link expires.
-#: includes/Links.php:530
+#: includes/Links.php:538
 #, php-format
 msgid "AgeCheck: emailed the shopper a link to verify their age (%1$s, good until %2$s). The order stays held until they pass."
 msgstr ""
 
-#: includes/Links.php:532
+#: includes/Links.php:540
 msgid "AgeCheck (test mode): made a verification link but emailed nobody, because test mode emails only your confirmed AgeCheck notification recipients. The order stays held."
 msgstr ""
 
-#: includes/Links.php:534
+#: includes/Links.php:542
 msgid "AgeCheck: AgeCheck is not sending verification emails yet, so the shopper was not emailed a link. The order stays held until the shopper verifies from their order page, or until you release it after checking their age yourself."
 msgstr ""
 
-#: includes/Links.php:536
+#: includes/Links.php:544
 msgid "AgeCheck: no verification email was sent because your store has no name in AgeCheck. Set your store name in the AgeCheck dashboard; the email goes out on a later check. The order stays held."
 msgstr ""
 
-#: includes/Links.php:538
+#: includes/Links.php:546
 msgid "AgeCheck: verification emails are not available from AgeCheck yet, so the shopper has not been emailed. The order stays held. Release it without an age check only if you have checked the buyer's age yourself."
 msgstr ""
 
-#: includes/Links.php:540
+#: includes/Links.php:548
 msgid "AgeCheck: verification emails are turned off on this site (NAVEXA_AGECHECK_EMAIL_LINKS), so the shopper was not emailed. The order stays held."
 msgstr ""
 
-#: includes/Links.php:542
+#: includes/Links.php:550
 msgid "AgeCheck: could not email the shopper a verification link, because the order had no valid billing email when its age check started. The order stays held; the shopper can verify from their order page."
 msgstr ""
 
-#: includes/Links.php:544
+#: includes/Links.php:552
 msgid "AgeCheck: this age check cannot be emailed (it is no longer waiting on the shopper). The order stays held."
 msgstr ""
 
-#: includes/Links.php:546
+#: includes/Links.php:554
 msgid "AgeCheck: the shopper has not finished the age check linked to this order (usually one started at checkout). AgeCheck emails links only for checks that match the ID to the billing name, so none was sent. The order stays held until the shopper finishes it. Release it without an age check only if you have checked the buyer's age yourself."
 msgstr ""
 
-#: includes/Links.php:548
+#: includes/Links.php:556
 msgid "AgeCheck refused to email the shopper a verification link (check billing and live access in the Navexa dashboard). The order stays held."
 msgstr ""
 
 #. translators: %s: an AgeCheck order note.
-#: includes/Meta.php:293
-#: includes/Release.php:452
+#: includes/Meta.php:294
+#: includes/Release.php:491
 #, php-format
 msgid "TEST %s"
 msgstr ""
@@ -938,116 +938,124 @@ msgstr ""
 msgid "AgeCheck: releasing an order that was already cleared."
 msgstr ""
 
-#: includes/Release.php:448
+#: includes/Release.php:363
+msgid "AgeCheck: the shopper's age check passed. Test keys never release orders: to try the rest of the flow, release it with \"AgeCheck: release without age check\"."
+msgstr ""
+
+#: includes/Release.php:365
+msgid "AgeCheck: the shopper's age check failed. Test keys never deny or refund orders: cancel it yourself."
+msgstr ""
+
+#: includes/Release.php:487
 msgid "AgeCheck: age check passed (confirmed on a repeated clearance answer). Order released."
 msgstr ""
 
-#: includes/Release.php:449
+#: includes/Release.php:488
 msgid "AgeCheck: age check passed. Order released."
 msgstr ""
 
 #. translators: %s: a sentence saying why.
-#: includes/Release.php:486
+#: includes/Release.php:525
 #, php-format
 msgid "AgeCheck: the order stays held. %s"
 msgstr ""
 
-#: includes/Release.php:562
+#: includes/Release.php:601
 msgid "AgeCheck: this order has waited more than 30 days for its age check. Contact the shopper, or cancel and refund it."
 msgstr ""
 
-#: includes/Release.php:589
+#: includes/Release.php:628
 msgid "Waiting for the shopper to verify their age."
 msgstr ""
 
-#: includes/Release.php:590
+#: includes/Release.php:629
 msgid "Subscription renewal: AgeCheck cannot reuse the earlier age check yet, so review the order and release it yourself."
 msgstr ""
 
-#: includes/Release.php:591
+#: includes/Release.php:630
 msgid "AgeCheck is not set up: add the fulfilment key in WooCommerce > Settings > AgeCheck, or confirm this site."
 msgstr ""
 
-#: includes/Release.php:592
+#: includes/Release.php:631
 msgid "Test keys never release orders automatically."
 msgstr ""
 
-#: includes/Release.php:593
+#: includes/Release.php:632
 msgid "The order has no complete shipping address."
 msgstr ""
 
-#: includes/Release.php:594
+#: includes/Release.php:633
 msgid "The order has no billing name to check the ID against."
 msgstr ""
 
-#: includes/Release.php:595
+#: includes/Release.php:634
 msgid "AgeCheck refused the shipping address."
 msgstr ""
 
-#: includes/Release.php:596
+#: includes/Release.php:635
 msgid "AgeCheck does not know the shopper's verification (were the keys changed, or switched between live and test?)."
 msgstr ""
 
-#: includes/Release.php:597
+#: includes/Release.php:636
 msgid "AgeCheck has this order linked to another verification."
 msgstr ""
 
-#: includes/Release.php:598
+#: includes/Release.php:637
 msgid "AgeCheck refused to start an age check for this order. It will try again later."
 msgstr ""
 
-#: includes/Release.php:599
+#: includes/Release.php:638
 msgid "AgeCheck cannot start age checks for this store right now (check billing and live access in the Navexa dashboard)."
 msgstr ""
 
-#: includes/Release.php:600
+#: includes/Release.php:639
 msgid "AgeCheck refused the clearance request (did the shipping address change?)."
 msgstr ""
 
-#: includes/Release.php:601
+#: includes/Release.php:640
 msgid "AgeCheck answered in the other mode (live versus test) than this store's key."
 msgstr ""
 
-#: includes/Release.php:602
+#: includes/Release.php:641
 msgid "The shopper passed a check that cannot clear orders. Ask them to verify with their ID."
 msgstr ""
 
-#: includes/Release.php:603
+#: includes/Release.php:642
 msgid "The shipping address differs from the one the age check covers. Restore it, then check again."
 msgstr ""
 
-#: includes/Release.php:604
+#: includes/Release.php:643
 msgid "AgeCheck has no verification for this order."
 msgstr ""
 
-#: includes/Release.php:605
+#: includes/Release.php:644
 msgid "The order is not linked to an age check."
 msgstr ""
 
-#: includes/Release.php:606
+#: includes/Release.php:645
 msgid "AgeCheck gave an answer this plugin does not know. Update the plugin."
 msgstr ""
 
-#: includes/Release.php:607
+#: includes/Release.php:646
 msgid "The shopper verified for a different shipping address."
 msgstr ""
 
-#: includes/Release.php:608
+#: includes/Release.php:647
 msgid "The shopper's verification is already used by another order."
 msgstr ""
 
-#: includes/Release.php:609
+#: includes/Release.php:648
 msgid "The shopper's age check expired before the order was released."
 msgstr ""
 
 #. translators: %s: an error code, e.g. permission_denied.
-#: includes/Release.php:616
+#: includes/Release.php:655
 #, php-format
 msgid "AgeCheck refused the request (%s). Check the fulfilment key and its scopes in the Navexa dashboard."
 msgstr ""
 
 #. translators: %s: a reason code.
-#: includes/Release.php:619
+#: includes/Release.php:658
 #, php-format
 msgid "Reason: %s."
 msgstr ""
@@ -1566,7 +1574,7 @@ msgstr ""
 msgid "The security check did not pass. Complete it, then select Verify age again."
 msgstr ""
 
-#: includes/Sweep.php:81
+#: includes/Sweep.php:83
 msgid "Every 15 minutes (AgeCheck)"
 msgstr ""
 

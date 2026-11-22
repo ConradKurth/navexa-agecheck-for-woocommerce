@@ -312,6 +312,7 @@ final class Release {
 		}
 
 		if ( ! Mode::may_auto_release( $info ) ) {
+			self::record_test_verification( $order, $client );
 			Meta::set( $order, Meta::REASON, 'test_mode' );
 			Meta::set( $order, Meta::NEXT_CHECK_AT, time() + self::TEST_RECHECK );
 			$order->save_meta_data();
@@ -325,6 +326,44 @@ final class Release {
 			throw $link_error;
 		}
 		return $outcome;
+	}
+
+	/**
+	 * With a test key nothing asks GetClearance, so nothing else would update
+	 * the order's verification: GetVerification (a read, which spends
+	 * nothing) records its status and pass class for the panel, and a note
+	 * says when the shopper's check has passed or failed. It never releases or
+	 * denies. Panel-only: a failure is logged and the run goes on.
+	 *
+	 * @param \WC_Order $order  Order.
+	 * @param Client    $client Fulfilment-key client.
+	 */
+	private static function record_test_verification( \WC_Order $order, Client $client ): void {
+		$vid = Meta::get( $order, Meta::VERIFICATION_ID );
+		if ( '' === $vid ) {
+			return;
+		}
+		$before = Meta::get( $order, Meta::VERIFICATION_STATUS );
+		try {
+			$answer = $client->call( 'GetVerification', array( 'id' => $vid ) );
+		} catch ( ConnectError $e ) {
+			Client::log( 'warning', sprintf( 'agecheck release order=%d vid=%s test verification read failed code=%s', $order->get_id(), $vid, $e->connect_code() ) );
+			return;
+		}
+		$verification = isset( $answer['verification'] ) && is_array( $answer['verification'] ) ? $answer['verification'] : array();
+		if ( array() === $verification ) {
+			return;
+		}
+		$status = Binding::record_verification( $order, $verification );
+		$order->save_meta_data();
+		if ( $status === $before ) {
+			return;
+		}
+		if ( 'passed' === $status ) {
+			Meta::note( $order, __( 'AgeCheck: the shopper\'s age check passed. Test keys never release orders: to try the rest of the flow, release it with "AgeCheck: release without age check".', 'navexa-agecheck-for-woocommerce' ) );
+		} elseif ( 'failed' === $status ) {
+			Meta::note( $order, __( 'AgeCheck: the shopper\'s age check failed. Test keys never deny or refund orders: cancel it yourself.', 'navexa-agecheck-for-woocommerce' ) );
+		}
 	}
 
 	/**

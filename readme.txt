@@ -5,7 +5,7 @@ Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 7.4
 Requires Plugins: woocommerce
-Stable tag: 0.1.0
+Stable tag: 1.0.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -125,7 +125,7 @@ Its settings, keys, scheduled jobs, rate-limit table and cached data. Each order
 1. WooCommerce > Settings > AgeCheck: API keys, checkout mode and connection status.
 2. The Verify age button on the block checkout.
 3. The Verify age button on the classic checkout.
-4. An order awaiting its age check, with the AgeCheck order panel.
+4. The AgeCheck panel on an order: the check's result, why the order is held, the verification, the emailed link and what to do next.
 
 == External services ==
 
@@ -170,7 +170,7 @@ The plugin sends no telemetry.
 
 == Changelog ==
 
-= 0.1.0 =
+= 1.0.0 =
 * Scaffold: settings tab, API client, live/test mode detection, copied-site detection.
 * Order holds: "Awaiting age check" status, release when AgeCheck clears the order, webhook receiver, 15-minute check of held orders, refund handling for failed checks, local pickup exemption, product and category rules, order panel and Orders filters.
 * Pre-payment age check: Verify age button on classic and block checkout, checkout enforcement, US-only ship-to (US territories and APO/FPO included), rate limits, return page.
@@ -184,9 +184,10 @@ The plugin sends no telemetry.
 * Verification emails for held orders (pay for order, "After payment" mode): AgeCheck emails the shopper a 7-day link; resend and withdraw from Order actions; the order panel shows the email's state; a notice says when AgeCheck is not sending the emails yet or the store name is missing. The NAVEXA_AGECHECK_EMAIL_LINKS constant set to false turns them off on a site.
 * "Verify now" on the order-received page and My account's order page for a held order.
 * Returning customers: a keyed account reference on every signed-in customer's age check, for AgeCheck's returning-customer check (reused passes clear like any pass).
+* Test keys: held orders show the shopper's latest check result and a note when it passes or fails (test keys never release or refund orders).
 * Verification links of orders that will not ship (cancelled, refunded in full, failed, trashed or deleted) are withdrawn automatically in the background, with the result noted on the order (in the WooCommerce log for a deleted one).
 
 == Upgrade Notice ==
 
-= 0.1.0 =
+= 1.0.0 =
 First release.

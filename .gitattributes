@@ -20,3 +20,4 @@
 /README.md export-ignore
 /webpack.config.cjs export-ignore
 /tsconfig.json export-ignore
+/.wordpress-org export-ignore

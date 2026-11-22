@@ -741,9 +741,12 @@ namespace Navexa\AgeCheck\Tests {
 			}
 			$i = 0;
 			return preg_replace_callback(
-				'/%[sd]/',
+				'/%[sdi]/',
 				static function ( $m ) use ( &$i, $args ) {
 					$value = $args[ $i++ ];
+					if ( '%i' === $m[0] ) {
+						return '`' . str_replace( '`', '``', (string) $value ) . '`';
+					}
 					return '%d' === $m[0] ? (string) (int) $value : "'" . addslashes( (string) $value ) . "'";
 				},
 				$query

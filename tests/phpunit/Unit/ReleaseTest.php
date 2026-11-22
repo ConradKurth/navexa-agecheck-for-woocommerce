@@ -591,6 +591,9 @@ final class ReleaseTest extends TestCase {
 		$this->assertStringContainsString( 'shipping address differs', Release::reason_text( 'ship_to_mismatch' ) );
 		$this->assertStringContainsString( '(unauthenticated)', Release::reason_text( 'release_error_unauthenticated' ) );
 		$this->assertSame( 'Reason: brand_new.', Release::reason_text( 'brand_new' ) );
+		foreach ( array( 'not_verified', 'not_us', 'denied', 'override' ) as $code ) {
+			$this->assertStringNotContainsString( 'Reason:', Release::reason_text( $code ), $code . ' has staff text' );
+		}
 	}
 
 	private function held_bound_order(): \WC_Order {

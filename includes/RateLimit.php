@@ -195,17 +195,18 @@ final class RateLimit {
 		$key   = hash_hmac( 'sha256', $bucket . '|' . $subject . '|' . $window . '|' . $start, $hmac_key );
 		$table = self::table();
 
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- the plugin's own counter table; caching would break the count.
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- the plugin's own counter table; caching would break the count.
 		$written = $wpdb->query(
 			$wpdb->prepare(
-				"INSERT INTO {$table} (bucket_key, hits, expires_at) VALUES (%s, 1, %d) ON DUPLICATE KEY UPDATE hits = hits + 1",
+				'INSERT INTO %i (bucket_key, hits, expires_at) VALUES (%s, 1, %d) ON DUPLICATE KEY UPDATE hits = hits + 1',
+				$table,
 				$key,
 				$start + $window
 			)
 		);
-		$hits    = false === $written ? null : $wpdb->get_var( $wpdb->prepare( "SELECT hits FROM {$table} WHERE bucket_key = %s", $key ) );
+		$hits    = false === $written ? null : $wpdb->get_var( $wpdb->prepare( 'SELECT hits FROM %i WHERE bucket_key = %s', $table, $key ) );
 		if ( 0 === wp_rand( 0, self::PRUNE_ONE_IN - 1 ) ) {
-			$wpdb->query( $wpdb->prepare( "DELETE FROM {$table} WHERE expires_at < %d LIMIT 1000", $now ) );
+			$wpdb->query( $wpdb->prepare( 'DELETE FROM %i WHERE expires_at < %d LIMIT 1000', $table, $now ) );
 		}
 		// phpcs:enable
 

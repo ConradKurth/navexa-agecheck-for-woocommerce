@@ -1,9 +1,9 @@
 <?php
 /**
  * Plugin Name:          Navexa AgeCheck for WooCommerce
- * Plugin URI:           https://navexa.co
+ * Plugin URI:           https://navexa.co/agecheck
  * Description:          Age verification for age-restricted WooCommerce orders, powered by Navexa AgeCheck. Verifies orders shipping to US addresses only.
- * Version:              1.0.0
+ * Version:              1.0.1
  * Requires at least:    6.7
  * Requires PHP:         7.4
  * Requires Plugins:     woocommerce
@@ -25,7 +25,7 @@ if ( defined( 'NAVEXA_AGECHECK_VERSION' ) ) {
 	return; // A second copy of the plugin is active; the first one wins.
 }
 
-define( 'NAVEXA_AGECHECK_VERSION', '1.0.0' );
+define( 'NAVEXA_AGECHECK_VERSION', '1.0.1' );
 define( 'NAVEXA_AGECHECK_FILE', __FILE__ );
 
 /*

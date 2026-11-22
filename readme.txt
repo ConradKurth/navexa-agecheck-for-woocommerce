@@ -5,7 +5,7 @@ Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 7.4
 Requires Plugins: woocommerce
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -170,6 +170,9 @@ The plugin sends no telemetry.
 
 == Changelog ==
 
+= 1.0.1 =
+* The plugin's home page is the Navexa AgeCheck page (https://navexa.co/agecheck).
+
 = 1.0.0 =
 * Scaffold: settings tab, API client, live/test mode detection, copied-site detection.
 * Order holds: "Awaiting age check" status, release when AgeCheck clears the order, webhook receiver, 15-minute check of held orders, refund handling for failed checks, local pickup exemption, product and category rules, order panel and Orders filters.
@@ -188,6 +191,9 @@ The plugin sends no telemetry.
 * Verification links of orders that will not ship (cancelled, refunded in full, failed, trashed or deleted) are withdrawn automatically in the background, with the result noted on the order (in the WooCommerce log for a deleted one).
 
 == Upgrade Notice ==
+
+= 1.0.1 =
+Plugin home page link only.
 
 = 1.0.0 =
 First release.

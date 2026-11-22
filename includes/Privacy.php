@@ -108,6 +108,7 @@ final class Privacy {
 			$paragraphs[] = '<p>' . esc_html__( 'When you enter the store, we ask you to confirm that you are old enough. Your answer is remembered only in your own browser (local storage), so that we do not ask again for a while; it is not sent to us or to Navexa, and it is not an age verification.', 'navexa-agecheck-for-woocommerce' ) . '</p>';
 		}
 		if ( Options::turnstile_enabled() ) {
+			// phpcs:ignore PluginCheck.CodeAnalysis.Offloading.OffloadedContent -- privacy policy text that names Cloudflare's domain; nothing is loaded here.
 			$paragraphs[] = '<p>' . esc_html__( 'Before an age check starts, the checkout page runs a Cloudflare Turnstile security check, which loads a script from Cloudflare (challenges.cloudflare.com) and sends Cloudflare information about your browser; we send Cloudflare the check\'s result token and your IP address to confirm it. Cloudflare\'s Turnstile privacy addendum: https://www.cloudflare.com/turnstile-privacy-policy/', 'navexa-agecheck-for-woocommerce' ) . '</p>';
 		}
 		return implode( "\n", $paragraphs );

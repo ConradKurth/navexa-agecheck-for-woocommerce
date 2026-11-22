@@ -626,6 +626,10 @@ final class Release {
 	public static function reason_text( string $reason ): string {
 		$texts = array(
 			'pending'                      => __( 'Waiting for the shopper to verify their age.', 'navexa-agecheck-for-woocommerce' ),
+			'not_verified'                 => __( 'The shopper did not pass the age check.', 'navexa-agecheck-for-woocommerce' ),
+			'not_us'                       => __( 'The order ships outside the US. AgeCheck verifies US addresses only (including US territories and APO/FPO).', 'navexa-agecheck-for-woocommerce' ),
+			'denied'                       => __( 'AgeCheck refused to clear the order.', 'navexa-agecheck-for-woocommerce' ),
+			'override'                     => __( 'Released by staff without an age check.', 'navexa-agecheck-for-woocommerce' ),
 			'subscription_renewal'         => __( 'Subscription renewal: AgeCheck cannot reuse the earlier age check yet, so review the order and release it yourself.', 'navexa-agecheck-for-woocommerce' ),
 			'not_configured'               => __( 'AgeCheck is not set up: add the fulfilment key in WooCommerce > Settings > AgeCheck, or confirm this site.', 'navexa-agecheck-for-woocommerce' ),
 			'test_mode'                    => __( 'Test keys never release orders automatically.', 'navexa-agecheck-for-woocommerce' ),

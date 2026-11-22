@@ -2,14 +2,14 @@
 # This file is distributed under the GPL-2.0-or-later.
 msgid ""
 msgstr ""
-"Project-Id-Version: Navexa AgeCheck for WooCommerce 0.1.0\n"
+"Project-Id-Version: Navexa AgeCheck for WooCommerce 1.0.0\n"
 "Report-Msgid-Bugs-To: https://github.com/ConradKurth/navexa-agecheck-for-woocommerce/issues\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-11-22T20:08:06+00:00\n"
+"POT-Creation-Date: 2026-11-22T21:13:44+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: navexa-agecheck-for-woocommerce\n"
@@ -285,6 +285,7 @@ msgid "Failed. Do not ship this order."
 msgstr ""
 
 #: includes/Admin/OrderPanel.php:321
+#: includes/Release.php:632
 msgid "Released by staff without an age check."
 msgstr ""
 
@@ -831,106 +832,106 @@ msgstr ""
 msgid "When you enter the store, we ask you to confirm that you are old enough. Your answer is remembered only in your own browser (local storage), so that we do not ask again for a while; it is not sent to us or to Navexa, and it is not an age verification."
 msgstr ""
 
-#: includes/Privacy.php:111
+#: includes/Privacy.php:112
 msgid "Before an age check starts, the checkout page runs a Cloudflare Turnstile security check, which loads a script from Cloudflare (challenges.cloudflare.com) and sends Cloudflare information about your browser; we send Cloudflare the check's result token and your IP address to confirm it. Cloudflare's Turnstile privacy addendum: https://www.cloudflare.com/turnstile-privacy-policy/"
 msgstr ""
 
-#: includes/Privacy.php:127
-#: includes/Privacy.php:144
+#: includes/Privacy.php:128
+#: includes/Privacy.php:145
 msgid "Navexa AgeCheck age checks"
 msgstr ""
 
-#: includes/Privacy.php:167
+#: includes/Privacy.php:168
 msgid "Age checks"
 msgstr ""
 
-#: includes/Privacy.php:168
+#: includes/Privacy.php:169
 msgid "Navexa AgeCheck age checks linked to your orders."
 msgstr ""
 
 #. translators: %s: an order number.
-#: includes/Privacy.php:206
+#: includes/Privacy.php:207
 #, php-format
 msgid "Removed the age check details from order %s."
 msgstr ""
 
-#: includes/Privacy.php:213
+#: includes/Privacy.php:214
 msgid "Navexa AgeCheck keeps its own record of each age check. To have it deleted, contact Navexa at privacy@navexa.co."
 msgstr ""
 
-#: includes/Privacy.php:254
+#: includes/Privacy.php:255
 msgid "AgeCheck: the age check details were erased on a personal data erasure request. The release state is kept."
 msgstr ""
 
 #. translators: %s: an order number.
-#: includes/Privacy.php:271
+#: includes/Privacy.php:272
 #, php-format
 msgid "Kept the age check details of order %s: WooCommerce is set to keep order data on erasure requests (WooCommerce > Settings > Accounts & Privacy)."
 msgstr ""
 
 #. translators: %s: an order number.
-#: includes/Privacy.php:289
+#: includes/Privacy.php:290
 #, php-format
 msgid "Kept the age check details of order %s: the order is still waiting for its age check or a refund."
 msgstr ""
 
 #. translators: %s: an order number.
-#: includes/Privacy.php:296
+#: includes/Privacy.php:297
 #, php-format
 msgid "Kept the age check details of order %s: AgeCheck is still withdrawing its emailed verification link."
 msgstr ""
 
 #. translators: %s: an order number.
-#: includes/Privacy.php:303
+#: includes/Privacy.php:304
 #, php-format
 msgid "Kept the age check details of order %s: the order can still ship, and its shipping address stays tied to its age check until it is completed, cancelled, refunded or failed."
 msgstr ""
 
-#: includes/Privacy.php:318
+#: includes/Privacy.php:319
 msgid "AgeCheck verification"
 msgstr ""
 
-#: includes/Privacy.php:319
+#: includes/Privacy.php:320
 msgid "Earlier AgeCheck verifications"
 msgstr ""
 
-#: includes/Privacy.php:320
+#: includes/Privacy.php:321
 msgid "Verification status"
 msgstr ""
 
-#: includes/Privacy.php:321
+#: includes/Privacy.php:322
 msgid "Age check result"
 msgstr ""
 
-#: includes/Privacy.php:322
+#: includes/Privacy.php:323
 msgid "How the age check passed"
 msgstr ""
 
-#: includes/Privacy.php:323
+#: includes/Privacy.php:324
 msgid "Reason"
 msgstr ""
 
-#: includes/Privacy.php:324
+#: includes/Privacy.php:325
 msgid "Checked shipping address (hash)"
 msgstr ""
 
-#: includes/Privacy.php:325
+#: includes/Privacy.php:326
 msgid "Linked to the order"
 msgstr ""
 
-#: includes/Privacy.php:326
+#: includes/Privacy.php:327
 msgid "Held for the age check"
 msgstr ""
 
-#: includes/Privacy.php:327
+#: includes/Privacy.php:328
 msgid "Cleared"
 msgstr ""
 
-#: includes/Privacy.php:328
+#: includes/Privacy.php:329
 msgid "Verification link emailed"
 msgstr ""
 
-#: includes/Privacy.php:333
+#: includes/Privacy.php:334
 msgid "Order"
 msgstr ""
 
@@ -969,93 +970,105 @@ msgid "Waiting for the shopper to verify their age."
 msgstr ""
 
 #: includes/Release.php:629
-msgid "Subscription renewal: AgeCheck cannot reuse the earlier age check yet, so review the order and release it yourself."
+msgid "The shopper did not pass the age check."
 msgstr ""
 
 #: includes/Release.php:630
-msgid "AgeCheck is not set up: add the fulfilment key in WooCommerce > Settings > AgeCheck, or confirm this site."
+msgid "The order ships outside the US. AgeCheck verifies US addresses only (including US territories and APO/FPO)."
 msgstr ""
 
 #: includes/Release.php:631
-msgid "Test keys never release orders automatically."
-msgstr ""
-
-#: includes/Release.php:632
-msgid "The order has no complete shipping address."
+msgid "AgeCheck refused to clear the order."
 msgstr ""
 
 #: includes/Release.php:633
-msgid "The order has no billing name to check the ID against."
+msgid "Subscription renewal: AgeCheck cannot reuse the earlier age check yet, so review the order and release it yourself."
 msgstr ""
 
 #: includes/Release.php:634
-msgid "AgeCheck refused the shipping address."
+msgid "AgeCheck is not set up: add the fulfilment key in WooCommerce > Settings > AgeCheck, or confirm this site."
 msgstr ""
 
 #: includes/Release.php:635
-msgid "AgeCheck does not know the shopper's verification (were the keys changed, or switched between live and test?)."
+msgid "Test keys never release orders automatically."
 msgstr ""
 
 #: includes/Release.php:636
-msgid "AgeCheck has this order linked to another verification."
+msgid "The order has no complete shipping address."
 msgstr ""
 
 #: includes/Release.php:637
-msgid "AgeCheck refused to start an age check for this order. It will try again later."
+msgid "The order has no billing name to check the ID against."
 msgstr ""
 
 #: includes/Release.php:638
-msgid "AgeCheck cannot start age checks for this store right now (check billing and live access in the Navexa dashboard)."
+msgid "AgeCheck refused the shipping address."
 msgstr ""
 
 #: includes/Release.php:639
-msgid "AgeCheck refused the clearance request (did the shipping address change?)."
+msgid "AgeCheck does not know the shopper's verification (were the keys changed, or switched between live and test?)."
 msgstr ""
 
 #: includes/Release.php:640
-msgid "AgeCheck answered in the other mode (live versus test) than this store's key."
+msgid "AgeCheck has this order linked to another verification."
 msgstr ""
 
 #: includes/Release.php:641
-msgid "The shopper passed a check that cannot clear orders. Ask them to verify with their ID."
+msgid "AgeCheck refused to start an age check for this order. It will try again later."
 msgstr ""
 
 #: includes/Release.php:642
-msgid "The shipping address differs from the one the age check covers. Restore it, then check again."
+msgid "AgeCheck cannot start age checks for this store right now (check billing and live access in the Navexa dashboard)."
 msgstr ""
 
 #: includes/Release.php:643
-msgid "AgeCheck has no verification for this order."
+msgid "AgeCheck refused the clearance request (did the shipping address change?)."
 msgstr ""
 
 #: includes/Release.php:644
-msgid "The order is not linked to an age check."
+msgid "AgeCheck answered in the other mode (live versus test) than this store's key."
 msgstr ""
 
 #: includes/Release.php:645
-msgid "AgeCheck gave an answer this plugin does not know. Update the plugin."
+msgid "The shopper passed a check that cannot clear orders. Ask them to verify with their ID."
 msgstr ""
 
 #: includes/Release.php:646
-msgid "The shopper verified for a different shipping address."
+msgid "The shipping address differs from the one the age check covers. Restore it, then check again."
 msgstr ""
 
 #: includes/Release.php:647
-msgid "The shopper's verification is already used by another order."
+msgid "AgeCheck has no verification for this order."
 msgstr ""
 
 #: includes/Release.php:648
+msgid "The order is not linked to an age check."
+msgstr ""
+
+#: includes/Release.php:649
+msgid "AgeCheck gave an answer this plugin does not know. Update the plugin."
+msgstr ""
+
+#: includes/Release.php:650
+msgid "The shopper verified for a different shipping address."
+msgstr ""
+
+#: includes/Release.php:651
+msgid "The shopper's verification is already used by another order."
+msgstr ""
+
+#: includes/Release.php:652
 msgid "The shopper's age check expired before the order was released."
 msgstr ""
 
 #. translators: %s: an error code, e.g. permission_denied.
-#: includes/Release.php:655
+#: includes/Release.php:659
 #, php-format
 msgid "AgeCheck refused the request (%s). Check the fulfilment key and its scopes in the Navexa dashboard."
 msgstr ""
 
 #. translators: %s: a reason code.
-#: includes/Release.php:658
+#: includes/Release.php:662
 #, php-format
 msgid "Reason: %s."
 msgstr ""

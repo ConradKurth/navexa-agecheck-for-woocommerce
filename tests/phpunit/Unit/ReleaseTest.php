@@ -196,10 +196,57 @@ final class ReleaseTest extends TestCase {
 	public function test_a_test_key_never_asks_for_a_clearance_without_the_constant(): void {
 		$order = $this->held_bound_order();
 		$this->respond( 200, $this->live_info( array( 'livemode' => false ) ) );
+		$this->respond( 200, array( 'verification' => array( 'id' => self::VID, 'status' => 'VERIFICATION_STATUS_NEEDS_DOC' ) ) );
 		$this->assertSame( Release::TEST_MODE, Release::run( $order->get_id(), Release::TRIGGER_HOLD ) );
-		$this->assertSame( array( 'GetIntegrationInfo' ), $this->rpcs() );
+		$this->assertSame( array( 'GetIntegrationInfo', 'GetVerification' ), $this->rpcs() );
 		$this->assertSame( 'test_mode', $order->meta[ Meta::REASON ] );
+		$this->assertSame( 'needs_doc', $order->meta[ Meta::VERIFICATION_STATUS ] );
 		$this->assertGreaterThan( time(), $order->meta[ Meta::NEXT_CHECK_AT ] );
+		$this->assertSame( Hold::STATUS, $order->get_status() );
+	}
+
+	public function test_a_test_key_records_a_pass_once_and_never_releases(): void {
+		$order                                    = $this->held_bound_order();
+		$order->meta[ Meta::VERIFICATION_STATUS ] = 'awaiting_identity';
+		$passed                                   = array(
+			'verification' => array(
+				'id'        => self::VID,
+				'status'    => 'VERIFICATION_STATUS_PASSED',
+				'passClass' => 'PASS_CLASS_DATA_VERIFIED',
+			),
+		);
+		$this->respond( 200, $this->live_info( array( 'livemode' => false ) ) );
+		$this->respond( 200, $passed );
+		$this->assertSame( Release::TEST_MODE, Release::run( $order->get_id(), Release::TRIGGER_WEBHOOK ) );
+		$this->assertSame( 'passed', $order->meta[ Meta::VERIFICATION_STATUS ] );
+		$this->assertSame( 'DATA_VERIFIED', $order->meta[ Meta::PASS_CLASS ] );
+		$this->assertSame( Hold::STATUS, $order->get_status() );
+		$this->assertNotSame( Meta::STATUS_CLEARED, $order->meta[ Meta::STATUS ] ?? '' );
+		$this->assertCount( 1, preg_grep( '/age check passed\. Test keys never release/', $order->notes ) );
+
+		$this->respond( 200, $passed );
+		Release::run( $order->get_id(), Release::TRIGGER_SHOPPER );
+		$this->assertCount( 1, preg_grep( '/age check passed\. Test keys never release/', $order->notes ), 'no second note for the same status' );
+	}
+
+	public function test_a_test_key_records_a_failure_and_never_denies(): void {
+		$order = $this->held_bound_order();
+		$this->respond( 200, $this->live_info( array( 'livemode' => false ) ) );
+		$this->respond( 200, array( 'verification' => array( 'id' => self::VID, 'status' => 'VERIFICATION_STATUS_FAILED' ) ) );
+		$this->assertSame( Release::TEST_MODE, Release::run( $order->get_id(), Release::TRIGGER_WEBHOOK ) );
+		$this->assertSame( 'failed', $order->meta[ Meta::VERIFICATION_STATUS ] );
+		$this->assertSame( Hold::STATUS, $order->get_status() );
+		$this->assertArrayNotHasKey( Meta::REFUND, $order->meta );
+		$this->assertCount( 1, preg_grep( '/age check failed\. Test keys never deny/', $order->notes ) );
+	}
+
+	public function test_a_test_key_run_goes_on_when_the_verification_read_fails(): void {
+		$order = $this->held_bound_order();
+		$this->respond( 200, $this->live_info( array( 'livemode' => false ) ) );
+		$this->respond( 503, array( 'code' => 'unavailable', 'message' => 'down' ) );
+		$this->assertSame( Release::TEST_MODE, Release::run( $order->get_id(), Release::TRIGGER_HOLD ) );
+		$this->assertSame( 'test_mode', $order->meta[ Meta::REASON ] );
+		$this->assertSame( Hold::STATUS, $order->get_status() );
 	}
 
 	public function test_clearance_refusals(): void {

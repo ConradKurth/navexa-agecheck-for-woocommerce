@@ -89,6 +89,11 @@ export default function Block() {
 	const required = !! ( server && server.required );
 	const status = ( local && local.status ) || ( server && server.status ) || 'none';
 	const busy = !! ( local && local.busy );
+	// The store's own copy (a US-only or failed check, say), if any.
+	const storeMessage = ( local && local.message ) || ( server && server.message ) || '';
+	// Place order repeats the store's reason when it gave one.
+	const requiredMessage =
+		status !== 'pending' && storeMessage ? storeMessage : t( 'required' );
 
 	// One loader per mount; its transport is the Store API extension update.
 	useEffect( () => {
@@ -169,14 +174,14 @@ export default function Block() {
 		if ( required && status !== 'passed' ) {
 			setValidationErrors( {
 				[ VALIDATION_KEY ]: {
-					message: t( 'required' ),
+					message: requiredMessage,
 					hidden: true,
 				},
 			} );
 		} else {
 			clearValidationError( VALIDATION_KEY );
 		}
-	}, [ required, status, setValidationErrors, clearValidationError ] );
+	}, [ required, status, requiredMessage, setValidationErrors, clearValidationError ] );
 
 	useEffect( () => () => clearValidationError( VALIDATION_KEY ), [ clearValidationError ] );
 
@@ -232,7 +237,7 @@ export default function Block() {
 		return null;
 	}
 
-	let message = ( local && local.message ) || ( server && server.message ) || '';
+	let message = storeMessage;
 	if ( ! message ) {
 		if ( local && local.reason === 'closed' ) {
 			message = t( 'closed' );

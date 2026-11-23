@@ -11,8 +11,10 @@
 namespace Navexa\AgeCheck\Tests\Unit;
 
 use Navexa\AgeCheck\Client;
+use Navexa\AgeCheck\Admin\Notices;
 use Navexa\AgeCheck\IntegrationInfo;
 use Navexa\AgeCheck\Mode;
+use Navexa\AgeCheck\Plugin;
 use Navexa\AgeCheck\Tests\TestCase;
 
 final class ModeTest extends TestCase {
@@ -188,6 +190,7 @@ final class ModeTest extends TestCase {
 	public function test_test_mode_notice_is_shown_to_store_managers_only(): void {
 		$this->respond( 200, array( 'livemode' => false ) );
 		Mode::info( Client::KEY_FULFILMENT );
+		$this->screen( 'woocommerce_page_wc-orders' );
 
 		ob_start();
 		Mode::test_mode_notice();
@@ -197,6 +200,54 @@ final class ModeTest extends TestCase {
 		ob_start();
 		Mode::test_mode_notice();
 		$this->assertSame( '', ob_get_clean() );
+	}
+
+	private function screen( string $id ): void {
+		$screen     = new \WP_Screen();
+		$screen->id = $id;
+		\Brain\Monkey\Functions\when( 'get_current_screen' )->justReturn( $screen );
+		\Brain\Monkey\Functions\when( 'wp_nonce_url' )->alias(
+			static function ( $url ) {
+				return $url . '&_wpnonce=n';
+			}
+		);
+	}
+
+	public function test_test_mode_notice_follows_the_screen_and_dismissal(): void {
+		$this->respond( 200, array( 'livemode' => false ) );
+		Mode::info( Client::KEY_FULFILMENT );
+
+		foreach ( array( 'dashboard', 'edit-post' ) as $id ) {
+			$this->screen( $id );
+			ob_start();
+			Mode::test_mode_notice();
+			$this->assertSame( '', ob_get_clean(), $id );
+		}
+
+		$this->screen( 'woocommerce_page_wc-orders' );
+		ob_start();
+		Mode::test_mode_notice();
+		$html = ob_get_clean();
+		$this->assertStringContainsString( 'AgeCheck TEST MODE', $html );
+		$this->assertStringContainsString( 'Dismiss until this changes', $html );
+		$this->assertStringContainsString( 'test=', $html );
+		$this->assertStringNotContainsString( 'is-dismissible', $html );
+
+		$this->current_user = 5;
+		$reason             = Notices::signature( Client::for_key( Client::KEY_START )->key_fingerprint() . '|' . Client::for_key( Client::KEY_FULFILMENT )->key_fingerprint() );
+		$this->user_meta[ '5:' . Notices::USER_META_TEST ] = $reason;
+		ob_start();
+		Mode::test_mode_notice();
+		$this->assertSame( '', ob_get_clean(), 'dismissed for these keys' );
+
+		$this->screen( 'woocommerce_page_wc-settings' );
+		$_GET['tab'] = Plugin::SETTINGS_TAB;
+		ob_start();
+		Mode::test_mode_notice();
+		$html = ob_get_clean();
+		unset( $_GET['tab'] );
+		$this->assertStringContainsString( 'is-dismissible', $html, 'always on the settings tab' );
+		$this->assertStringNotContainsString( 'Dismiss until this changes', $html );
 	}
 
 	public function test_flush_drops_cached_answers(): void {

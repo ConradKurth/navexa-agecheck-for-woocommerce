@@ -8,6 +8,7 @@
 namespace Navexa\AgeCheck\Tests\Unit;
 
 use Brain\Monkey\Functions;
+use Navexa\AgeCheck\Admin\Notices;
 use Navexa\AgeCheck\Install;
 use Navexa\AgeCheck\Mode;
 use Navexa\AgeCheck\Plugin;
@@ -215,6 +216,7 @@ final class InstallTest extends TestCase {
 	public function test_paused_notice_offers_a_nonced_post_form(): void {
 		Install::ensure();
 		$this->home = 'https://staging.shop.example';
+		$this->screen( 'woocommerce_page_wc-orders' );
 		ob_start();
 		Install::paused_notice();
 		$html = ob_get_clean();
@@ -222,6 +224,53 @@ final class InstallTest extends TestCase {
 		$this->assertStringContainsString( 'method="post"', $html );
 		$this->assertStringContainsString( 'value="' . Install::CONFIRM_ACTION . '"', $html );
 		$this->assertStringContainsString( 'nonce-' . Install::CONFIRM_ACTION, $html );
+	}
+
+	private function screen( string $id ): void {
+		$screen     = new \WP_Screen();
+		$screen->id = $id;
+		Functions\when( 'get_current_screen' )->justReturn( $screen );
+		Functions\when( 'wp_nonce_url' )->alias(
+			static function ( $url ) {
+				return $url . '&_wpnonce=n';
+			}
+		);
+	}
+
+	public function test_paused_notice_follows_the_screen_and_dismissal(): void {
+		Install::ensure();
+		$this->home = 'https://staging.shop.example';
+
+		foreach ( array( 'dashboard', 'edit-post' ) as $id ) {
+			$this->screen( $id );
+			ob_start();
+			Install::paused_notice();
+			$this->assertSame( '', ob_get_clean(), $id );
+		}
+
+		$this->screen( 'woocommerce_page_wc-orders' );
+		ob_start();
+		Install::paused_notice();
+		$html = ob_get_clean();
+		$this->assertStringContainsString( 'Dismiss until this changes', $html );
+		$this->assertStringContainsString( 'paused=', $html );
+		$this->assertStringNotContainsString( 'is-dismissible', $html );
+
+		$this->current_user = 5;
+		$reason             = Notices::signature( 'https://staging.shop.example' );
+		$this->user_meta[ '5:' . Notices::USER_META_PAUSED ] = $reason;
+		ob_start();
+		Install::paused_notice();
+		$this->assertSame( '', ob_get_clean(), 'dismissed for this address' );
+
+		$this->screen( 'woocommerce_page_wc-settings' );
+		$_GET['tab'] = Plugin::SETTINGS_TAB;
+		ob_start();
+		Install::paused_notice();
+		$html = ob_get_clean();
+		unset( $_GET['tab'] );
+		$this->assertStringContainsString( 'is-dismissible', $html, 'always on the settings tab' );
+		$this->assertStringNotContainsString( 'Dismiss until this changes', $html );
 	}
 
 	public function test_paused_notice_is_silent_when_not_paused_or_not_allowed(): void {

@@ -36,16 +36,18 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Uninstall {
 
-	const OPTION_PREFIX   = 'navexa_agecheck_';
-	const META_PREFIX     = '_navexa_agecheck_';
-	const DELETE_DATA     = 'navexa_agecheck_delete_data_on_uninstall';
-	const AS_GROUP        = 'navexa-agecheck';
-	const CRON_HOOK       = 'navexa_agecheck_sweep_cron';
-	const USER_META       = 'navexa_agecheck_dismissed_counts';
-	const USER_META_LINKS = 'navexa_agecheck_dismissed_links';
-	const HOLD_STATUS     = 'wc-agecheck-hold';
-	const HELD_BATCH      = 100;
-	const HELD_MAX_ORDERS = 5000;
+	const OPTION_PREFIX    = 'navexa_agecheck_';
+	const META_PREFIX      = '_navexa_agecheck_';
+	const DELETE_DATA      = 'navexa_agecheck_delete_data_on_uninstall';
+	const AS_GROUP         = 'navexa-agecheck';
+	const CRON_HOOK        = 'navexa_agecheck_sweep_cron';
+	const USER_META        = 'navexa_agecheck_dismissed_counts';
+	const USER_META_LINKS  = 'navexa_agecheck_dismissed_links';
+	const USER_META_TEST   = 'navexa_agecheck_dismissed_test';
+	const USER_META_PAUSED = 'navexa_agecheck_dismissed_paused';
+	const HOLD_STATUS      = 'wc-agecheck-hold';
+	const HELD_BATCH       = 100;
+	const HELD_MAX_ORDERS  = 5000;
 
 	/**
 	 * Uninstalls from this site, or from every site of a network.
@@ -69,6 +71,8 @@ final class Uninstall {
 		// User meta is network-wide.
 		delete_metadata( 'user', 0, self::USER_META, '', true );
 		delete_metadata( 'user', 0, self::USER_META_LINKS, '', true );
+		delete_metadata( 'user', 0, self::USER_META_TEST, '', true );
+		delete_metadata( 'user', 0, self::USER_META_PAUSED, '', true );
 	}
 
 	/**

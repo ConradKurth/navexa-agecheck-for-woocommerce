@@ -2,14 +2,14 @@
 # This file is distributed under the GPL-2.0-or-later.
 msgid ""
 msgstr ""
-"Project-Id-Version: Navexa AgeCheck for WooCommerce 1.0.2\n"
+"Project-Id-Version: Navexa AgeCheck for WooCommerce 1.0.3\n"
 "Report-Msgid-Bugs-To: https://github.com/ConradKurth/navexa-agecheck-for-woocommerce/issues\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-11-23T20:53:08+00:00\n"
+"POT-Creation-Date: 2026-11-23T21:13:47+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: navexa-agecheck-for-woocommerce\n"
@@ -44,19 +44,20 @@ msgstr ""
 msgid "AgeCheck: this order's shipping address is tied to its age check, so the change to the street, city, state, ZIP or country was undone. Name, company and phone can still be edited. To ship elsewhere, cancel the order and place a new one."
 msgstr ""
 
-#: includes/Admin/Notices.php:104
-#: includes/Admin/Notices.php:118
+#: includes/Admin/Notices.php:124
+#: includes/Admin/Notices.php:138
 #: includes/Settings.php:75
 msgid "Navexa AgeCheck"
 msgstr ""
 
-#: includes/Admin/Notices.php:107
-#: includes/Admin/Notices.php:146
+#: includes/Admin/Notices.php:127
+#: includes/Admin/Notices.php:166
+#: includes/Admin/Notices.php:217
 msgid "Dismiss until this changes"
 msgstr ""
 
 #. translators: %s: number of orders (may read "100+").
-#: includes/Admin/Notices.php:126
+#: includes/Admin/Notices.php:146
 #, php-format
 msgid "%s order failed its age check and needs a refund or cancellation."
 msgid_plural "%s orders failed their age check and need a refund or cancellation."
@@ -64,26 +65,26 @@ msgstr[0] ""
 msgstr[1] ""
 
 #. translators: %s: number of orders (may read "100+").
-#: includes/Admin/Notices.php:139
+#: includes/Admin/Notices.php:159
 #, php-format
 msgid "%s order has waited more than 30 days for its age check."
 msgid_plural "%s orders have waited more than 30 days for their age check."
 msgstr[0] ""
 msgstr[1] ""
 
-#: includes/Admin/Notices.php:162
+#: includes/Admin/Notices.php:243
 msgid "AgeCheck is not sending verification emails yet, so shoppers of held orders are not emailed a link to verify. Their orders stay held until they verify from their order page (Verify now) or you release them after checking their age yourself. Nothing needs changing on your side: the plugin uses the emails once AgeCheck turns them on."
 msgstr ""
 
-#: includes/Admin/Notices.php:167
+#: includes/Admin/Notices.php:248
 msgid "AgeCheck cannot email shoppers a link to verify until you set your store name in the AgeCheck dashboard (AgeCheck settings, store display name). Held orders stay held until then; once AgeCheck reports the name (within an hour), each held order's email goes out at its next check, or at once with the order action \"AgeCheck: check now\"."
 msgstr ""
 
-#: includes/Admin/Notices.php:169
+#: includes/Admin/Notices.php:250
 msgid "AgeCheck does not offer verification emails yet, so shoppers of held orders are not emailed a link. Their orders stay held until they verify from their order page or you release them after checking their age yourself."
 msgstr ""
 
-#: includes/Admin/Notices.php:178
+#: includes/Admin/Notices.php:259
 msgid "You are not allowed to do that."
 msgstr ""
 
@@ -545,7 +546,7 @@ msgstr ""
 
 #: includes/Hold.php:94
 #: includes/Hold.php:114
-#: includes/Uninstall.php:123
+#: includes/Uninstall.php:127
 msgctxt "Order status"
 msgid "Awaiting age check"
 msgstr ""
@@ -576,23 +577,23 @@ msgstr ""
 msgid "AgeCheck: this order has not passed its age check, so it stays \"Awaiting age check\" instead of moving to %s. To release it without an age check, choose \"AgeCheck: release without age check\" in Order actions."
 msgstr ""
 
-#: includes/Install.php:175
+#: includes/Install.php:177
 msgid "You are not allowed to change AgeCheck settings."
 msgstr ""
 
-#: includes/Install.php:193
+#: includes/Install.php:201
 msgid "Navexa AgeCheck is paused: confirm this site."
 msgstr ""
 
-#: includes/Install.php:195
+#: includes/Install.php:203
 msgid "This site's address changed since AgeCheck was set up, which usually means the site was copied or moved. Until you confirm it, every age check is refused and age-restricted orders cannot be completed."
 msgstr ""
 
-#: includes/Install.php:197
+#: includes/Install.php:205
 msgid "If this is a staging copy, replace the API keys with test keys before you confirm. Confirming gives this site a new install id; orders already linked to AgeCheck keep theirs."
 msgstr ""
 
-#: includes/Install.php:202
+#: includes/Install.php:210
 msgid "Confirm this site"
 msgstr ""
 
@@ -757,11 +758,11 @@ msgstr ""
 msgid "TEST %s"
 msgstr ""
 
-#: includes/Mode.php:243
+#: includes/Mode.php:252
 msgid "AgeCheck TEST MODE"
 msgstr ""
 
-#: includes/Mode.php:245
+#: includes/Mode.php:254
 msgid "Your Navexa AgeCheck keys are test keys: checks use the simulator, no real age check happens, and held orders are not released automatically. Switch to live keys before selling age-restricted products."
 msgstr ""
 
@@ -835,12 +836,12 @@ msgstr ""
 msgid "Back to the store"
 msgstr ""
 
-#: includes/Plugin.php:178
+#: includes/Plugin.php:179
 msgid "Navexa AgeCheck for WooCommerce needs WooCommerce to be installed and active. Age checks are off until it is."
 msgstr ""
 
 #. translators: %s: minimum WooCommerce version, e.g. 9.9.
-#: includes/Plugin.php:182
+#: includes/Plugin.php:183
 #, php-format
 msgid "Navexa AgeCheck for WooCommerce needs WooCommerce %s or later. Update WooCommerce before relying on age checks."
 msgstr ""
@@ -1624,7 +1625,7 @@ msgstr ""
 msgid "Every 15 minutes (AgeCheck)"
 msgstr ""
 
-#: includes/Uninstall.php:165
+#: includes/Uninstall.php:169
 msgid "Navexa AgeCheck was uninstalled while this order was awaiting its age check. It was not verified: check the customer's age before you ship it."
 msgstr ""
 

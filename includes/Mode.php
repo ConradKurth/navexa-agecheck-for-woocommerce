@@ -7,6 +7,8 @@
 
 namespace Navexa\AgeCheck;
 
+use Navexa\AgeCheck\Admin\Notices;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -232,18 +234,29 @@ final class Mode {
 	}
 
 	/**
-	 * TEST MODE banner on every admin screen while a key is a test key. Reads
-	 * stored state only, so it never adds a network call to an admin page.
+	 * TEST MODE notice while a key is a test key: always on this plugin's
+	 * settings tab, and on other WooCommerce screens until the staff member
+	 * dismisses it for these keys. Reads stored state only, so it never adds
+	 * a network call to an admin page.
 	 */
 	public static function test_mode_notice(): void {
 		if ( ! current_user_can( 'manage_woocommerce' ) || ! self::is_test_mode() ) {
 			return;
 		}
-		echo '<div class="notice notice-warning"><p><strong>';
+		$settings = Notices::on_settings_tab();
+		$reason   = Notices::signature( Client::for_key( Client::KEY_START )->key_fingerprint() . '|' . Client::for_key( Client::KEY_FULFILMENT )->key_fingerprint() );
+		if ( ! $settings && ( ! Notices::on_store_screen() || Notices::is_dismissed( 'test', $reason ) ) ) {
+			return;
+		}
+		echo '<div class="notice notice-warning' . ( $settings ? ' is-dismissible' : '' ) . '"><p><strong>';
 		esc_html_e( 'AgeCheck TEST MODE', 'navexa-agecheck-for-woocommerce' );
 		echo '</strong> ';
 		esc_html_e( 'Your Navexa AgeCheck keys are test keys: checks use the simulator, no real age check happens, and held orders are not released automatically. Switch to live keys before selling age-restricted products.', 'navexa-agecheck-for-woocommerce' );
-		echo '</p></div>';
+		echo '</p>';
+		if ( ! $settings ) {
+			echo Notices::dismiss_link( 'test', $reason ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- dismiss_link() escapes.
+		}
+		echo '</div>';
 	}
 
 	/**

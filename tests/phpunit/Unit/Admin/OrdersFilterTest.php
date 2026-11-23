@@ -134,6 +134,11 @@ final class OrdersFilterTest extends TestCase {
 		ob_start();
 		Notices::render();
 		$this->assertSame( '', ob_get_clean(), 'only on WooCommerce screens' );
+
+		$screen->id = 'dashboard';
+		ob_start();
+		Notices::render();
+		$this->assertSame( '', ob_get_clean(), 'not on the WordPress dashboard' );
 	}
 
 	public function test_the_link_refusal_notice_shows_on_woocommerce_screens_while_recent(): void {
@@ -207,6 +212,24 @@ final class OrdersFilterTest extends TestCase {
 		$this->assertSame( '2:0', $this->user_meta[ '3:' . Notices::USER_META ] );
 	}
 
+	public function test_dismiss_handler_stores_test_and_paused_signatures_only_when_valid(): void {
+		Functions\expect( 'check_admin_referer' )->once()->with( Notices::DISMISS_ACTION );
+		Functions\when( 'wp_get_referer' )->justReturn( false );
+		Functions\expect( 'wp_safe_redirect' )->once()->andThrow( new \RuntimeException( 'redirect' ) );
+		$good = Notices::signature( 'https://shop.example' );
+		$this->assertSame( 32, strlen( $good ) );
+		$_GET['test']   = $good;
+		$_GET['paused'] = 'not-a-signature';
+		try {
+			Notices::handle_dismiss();
+		} catch ( \RuntimeException $e ) {
+			$this->assertSame( 'redirect', $e->getMessage() );
+		}
+		unset( $_GET['test'], $_GET['paused'] );
+		$this->assertSame( $good, $this->user_meta[ '3:' . Notices::USER_META_TEST ] );
+		$this->assertArrayNotHasKey( '3:' . Notices::USER_META_PAUSED, $this->user_meta );
+	}
+
 	public function test_dismiss_handler_refuses_non_managers(): void {
 		$this->caps = array();
 		Functions\expect( 'wp_die' )->once()->andThrow( new \RuntimeException( 'die' ) );
@@ -217,8 +240,8 @@ final class OrdersFilterTest extends TestCase {
 	public function test_product_field_saves_only_known_values(): void {
 		ProductField::register();
 		$this->assertNotFalse( has_action( 'woocommerce_admin_process_product_object', array( ProductField::class, 'save' ) ) );
-		$this->caps['edit_product'] = true;
-		$product                    = new \WC_Product( 7 );
+		$this->caps['edit_product']         = true;
+		$product                            = new \WC_Product( 7 );
 		$_POST[ Requirement::PRODUCT_META ] = 'require';
 		ProductField::save( $product );
 		$this->assertSame( 'require', $product->meta[ Requirement::PRODUCT_META ] );
@@ -234,9 +257,13 @@ final class OrdersFilterTest extends TestCase {
 		ProductField::save( $product );
 		$this->assertArrayNotHasKey( Requirement::PRODUCT_META, $product->meta );
 
-		Functions\expect( 'woocommerce_wp_select' )->once()->with( \Mockery::on( static function ( $args ) {
-			return Requirement::PRODUCT_META === $args['id'] && array( '', 'require', 'exempt' ) === array_keys( $args['options'] );
-		} ) );
+		Functions\expect( 'woocommerce_wp_select' )->once()->with(
+			\Mockery::on(
+				static function ( $args ) {
+					return Requirement::PRODUCT_META === $args['id'] && array( '', 'require', 'exempt' ) === array_keys( $args['options'] );
+				}
+			)
+		);
 		ob_start();
 		ProductField::render();
 		ob_end_clean();

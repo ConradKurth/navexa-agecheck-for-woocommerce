@@ -8,10 +8,12 @@
 namespace Navexa\AgeCheck\Admin;
 
 use Navexa\AgeCheck\Hold;
+use Navexa\AgeCheck\Install;
 use Navexa\AgeCheck\Links;
 use Navexa\AgeCheck\Meta;
 use Navexa\AgeCheck\OrderQuery;
 use Navexa\AgeCheck\Options;
+use Navexa\AgeCheck\Plugin;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -28,6 +30,13 @@ defined( 'ABSPATH' ) || exit;
  *   refusal; it goes once a link is sent, and the display-name one as soon
  *   as AgeCheck reports a name (Options::STORE_PROFILE). Dismissing it hides
  *   it until the reason changes.
+ *
+ * Every lasting notice of this plugin (these, the test-mode one in Mode and
+ * the paused one in Install) shows only on WooCommerce screens
+ * (on_store_screen(): orders, settings, reports), never on the WordPress
+ * dashboard or other plugins' pages, and each staff member can dismiss it
+ * until its reason changes (dismiss_url(), is_dismissed()). The
+ * WooCommerce-missing notice shows on the Plugins screen only.
  */
 final class Notices {
 
@@ -36,6 +45,19 @@ final class Notices {
 	const DISMISS_ACTION   = 'navexa_agecheck_dismiss_notice';
 	const USER_META        = 'navexa_agecheck_dismissed_counts';
 	const USER_META_LINKS  = 'navexa_agecheck_dismissed_links';
+	const USER_META_TEST   = 'navexa_agecheck_dismissed_test';
+	const USER_META_PAUSED = 'navexa_agecheck_dismissed_paused';
+
+	/**
+	 * Dismissable notices: the dismiss URL's parameter and the user meta that
+	 * remembers the dismissed reason.
+	 */
+	const DISMISSIBLE = array(
+		'counts' => self::USER_META,
+		'links'  => self::USER_META_LINKS,
+		'test'   => self::USER_META_TEST,
+		'paused' => self::USER_META_PAUSED,
+	);
 
 	/**
 	 * Largest count the notice queries for.
@@ -90,15 +112,13 @@ final class Notices {
 			}
 		}
 
-		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
-		$id     = $screen instanceof \WP_Screen ? (string) $screen->id : '';
-		if ( 'dashboard' !== $id && false === strpos( $id, 'woocommerce' ) && false === strpos( $id, 'shop_order' ) ) {
+		if ( ! self::on_store_screen() ) {
 			return;
 		}
 		$links = self::links_text();
 		$block = Links::store_block();
-		if ( '' !== $links && array() !== $block && get_user_meta( $user, self::USER_META_LINKS, true ) !== $block['reason'] ) {
-			$dismiss = wp_nonce_url( admin_url( 'admin-post.php?action=' . self::DISMISS_ACTION . '&links=' . rawurlencode( $block['reason'] ) ), self::DISMISS_ACTION );
+		if ( '' !== $links && array() !== $block && ! self::is_dismissed( 'links', $block['reason'] ) ) {
+			$dismiss = self::dismiss_url( 'links', $block['reason'] );
 			printf(
 				'<div class="notice notice-warning"><p><strong>%1$s</strong></p><p>%2$s</p><p><a href="%3$s">%4$s</a></p></div>',
 				esc_html__( 'Navexa AgeCheck', 'navexa-agecheck-for-woocommerce' ),
@@ -112,7 +132,7 @@ final class Notices {
 			return;
 		}
 		$signature = $counts['denied'] . ':' . $counts['stale'];
-		if ( get_user_meta( $user, self::USER_META, true ) === $signature ) {
+		if ( self::is_dismissed( 'counts', $signature ) ) {
 			return;
 		}
 		echo '<div class="notice notice-error"><p><strong>' . esc_html__( 'Navexa AgeCheck', 'navexa-agecheck-for-woocommerce' ) . '</strong></p><ul>';
@@ -142,8 +162,69 @@ final class Notices {
 				)
 			);
 		}
-		$dismiss = wp_nonce_url( admin_url( 'admin-post.php?action=' . self::DISMISS_ACTION . '&counts=' . rawurlencode( $signature ) ), self::DISMISS_ACTION );
+		$dismiss = self::dismiss_url( 'counts', $signature );
 		printf( '</ul><p><a href="%1$s">%2$s</a></p></div>', esc_url( $dismiss ), esc_html__( 'Dismiss until this changes', 'navexa-agecheck-for-woocommerce' ) );
+	}
+
+	/**
+	 * Whether the current admin screen is a WooCommerce one (its settings,
+	 * including this plugin's tab, its orders, reports and other pages):
+	 * where this plugin's lasting notices show.
+	 */
+	public static function on_store_screen(): bool {
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		$id     = $screen instanceof \WP_Screen ? (string) $screen->id : '';
+		return false !== strpos( $id, 'woocommerce' ) || false !== strpos( $id, 'shop_order' );
+	}
+
+	/**
+	 * Whether the current screen is this plugin's settings tab.
+	 */
+	public static function on_settings_tab(): bool {
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only screen check.
+		$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : '';
+		return $screen instanceof \WP_Screen && 'woocommerce_page_wc-settings' === $screen->id && Plugin::SETTINGS_TAB === $tab;
+	}
+
+	/**
+	 * Whether the current user dismissed the $kind notice for $reason.
+	 *
+	 * @param string $kind   A DISMISSIBLE key.
+	 * @param string $reason What the notice is about now (a signature).
+	 */
+	public static function is_dismissed( string $kind, string $reason ): bool {
+		return isset( self::DISMISSIBLE[ $kind ] ) && get_user_meta( (int) get_current_user_id(), self::DISMISSIBLE[ $kind ], true ) === $reason;
+	}
+
+	/**
+	 * The link that dismisses the $kind notice for $reason, until it changes.
+	 *
+	 * @param string $kind   A DISMISSIBLE key.
+	 * @param string $reason What the notice is about now (a signature).
+	 */
+	public static function dismiss_url( string $kind, string $reason ): string {
+		return wp_nonce_url( admin_url( 'admin-post.php?action=' . self::DISMISS_ACTION . '&' . $kind . '=' . rawurlencode( $reason ) ), self::DISMISS_ACTION );
+	}
+
+	/**
+	 * The dismiss link as printed at the end of a notice.
+	 *
+	 * @param string $kind   A DISMISSIBLE key.
+	 * @param string $reason What the notice is about now (a signature).
+	 */
+	public static function dismiss_link( string $kind, string $reason ): string {
+		return '<p><a href="' . esc_url( self::dismiss_url( $kind, $reason ) ) . '">' . esc_html__( 'Dismiss until this changes', 'navexa-agecheck-for-woocommerce' ) . '</a></p>';
+	}
+
+	/**
+	 * A 32-hex signature of $value, for a dismissed reason that must not be
+	 * stored in the clear (a key fingerprint, a site address).
+	 *
+	 * @param string $value Value.
+	 */
+	public static function signature( string $value ): string {
+		return substr( hash( 'sha256', 'navexa-agecheck-notice-v1|' . $value ), 0, 32 );
 	}
 
 	/**
@@ -171,7 +252,7 @@ final class Notices {
 	}
 
 	/**
-	 * Dismisses the counts notice or the link notice for the current user.
+	 * Dismisses a notice (DISMISSIBLE) for the current user.
 	 */
 	public static function handle_dismiss(): void {
 		if ( ! current_user_can( 'manage_woocommerce' ) ) {
@@ -185,6 +266,12 @@ final class Notices {
 		$links = isset( $_GET['links'] ) ? sanitize_key( wp_unslash( $_GET['links'] ) ) : '';
 		if ( in_array( $links, Links::BLOCKING_STATES, true ) ) {
 			update_user_meta( get_current_user_id(), self::USER_META_LINKS, $links );
+		}
+		foreach ( array( 'test', 'paused' ) as $kind ) {
+			$reason = isset( $_GET[ $kind ] ) ? sanitize_key( wp_unslash( $_GET[ $kind ] ) ) : '';
+			if ( 1 === preg_match( '/^[a-f0-9]{32}$/', $reason ) ) {
+				update_user_meta( get_current_user_id(), self::DISMISSIBLE[ $kind ], $reason );
+			}
 		}
 		wp_safe_redirect( wp_get_referer() ? wp_get_referer() : admin_url() );
 		exit;

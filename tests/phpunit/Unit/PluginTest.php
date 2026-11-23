@@ -120,14 +120,32 @@ final class PluginTest extends TestCase {
 		$this->assertSame( 'https://shop.example/wp-admin/admin.php?page=wc-settings&tab=navexa_agecheck', Plugin::settings_url() );
 	}
 
+	private function screen( string $id ): void {
+		$screen     = new \WP_Screen();
+		$screen->id = $id;
+		Functions\when( 'get_current_screen' )->justReturn( $screen );
+	}
+
 	public function test_woocommerce_notice_when_woocommerce_is_missing(): void {
 		Functions\when( 'did_action' )->justReturn( 0 );
+		$this->screen( 'plugins' );
 		ob_start();
 		Plugin::woocommerce_notice();
 		$this->assertStringContainsString( 'needs WooCommerce to be installed', ob_get_clean() );
 	}
 
+	public function test_woocommerce_notice_is_for_the_plugins_screen_only(): void {
+		Functions\when( 'did_action' )->justReturn( 0 );
+		foreach ( array( 'dashboard', 'woocommerce_page_wc-settings' ) as $id ) {
+			$this->screen( $id );
+			ob_start();
+			Plugin::woocommerce_notice();
+			$this->assertSame( '', ob_get_clean(), $id );
+		}
+	}
+
 	public function test_woocommerce_notice_is_for_plugin_admins_only(): void {
+		$this->screen( 'plugins' );
 		$this->caps = array( 'manage_woocommerce' => true );
 		Functions\when( 'did_action' )->justReturn( 0 );
 		ob_start();
@@ -136,6 +154,7 @@ final class PluginTest extends TestCase {
 	}
 
 	public function test_no_woocommerce_notice_when_woocommerce_is_loaded(): void {
+		$this->screen( 'plugins' );
 		Functions\when( 'did_action' )->justReturn( 1 );
 		ob_start();
 		Plugin::woocommerce_notice();
@@ -150,6 +169,7 @@ final class PluginTest extends TestCase {
 		define( 'WC_VERSION', '9.8.5' );
 		Functions\when( 'did_action' )->justReturn( 1 );
 		$this->assertTrue( Plugin::woocommerce_too_old() );
+		$this->screen( 'plugins' );
 		ob_start();
 		Plugin::woocommerce_notice();
 		$this->assertStringContainsString( 'needs WooCommerce 9.9 or later', ob_get_clean() );

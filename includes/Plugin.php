@@ -166,12 +166,13 @@ final class Plugin {
 	}
 
 	/**
-	 * Admin notice when WooCommerce is missing or too old. The "Requires
-	 * Plugins" header normally prevents the first case; a deleted WooCommerce
-	 * directory does not.
+	 * Admin notice when WooCommerce is missing or too old, on the Plugins
+	 * screen only. The "Requires Plugins" header normally prevents the first
+	 * case; a deleted WooCommerce directory does not.
 	 */
 	public static function woocommerce_notice(): void {
-		if ( ! current_user_can( 'activate_plugins' ) ) {
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		if ( ! current_user_can( 'activate_plugins' ) || ! $screen instanceof \WP_Screen || 'plugins' !== $screen->id ) {
 			return;
 		}
 		if ( ! did_action( 'woocommerce_loaded' ) ) {

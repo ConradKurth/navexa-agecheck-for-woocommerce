@@ -7,6 +7,8 @@
 
 namespace Navexa\AgeCheck;
 
+use Navexa\AgeCheck\Admin\Notices;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -181,15 +183,21 @@ final class Install {
 	}
 
 	/**
-	 * Blocking notice while paused. It is not dismissible because AgeCheck
-	 * refuses every check until it is resolved, and it disappears as soon as
-	 * the site is confirmed.
+	 * Notice while paused (AgeCheck refuses every check until the site is
+	 * confirmed; it goes as soon as it is): always on this plugin's settings
+	 * tab, and on other WooCommerce screens until the staff member dismisses
+	 * it for this site address.
 	 */
 	public static function paused_notice(): void {
 		if ( ! self::is_paused() || ! current_user_can( 'manage_woocommerce' ) ) {
 			return;
 		}
-		echo '<div class="notice notice-error"><p><strong>';
+		$settings = Notices::on_settings_tab();
+		$reason   = Notices::signature( self::home() );
+		if ( ! $settings && ( ! Notices::on_store_screen() || Notices::is_dismissed( 'paused', $reason ) ) ) {
+			return;
+		}
+		echo '<div class="notice notice-error' . ( $settings ? ' is-dismissible' : '' ) . '"><p><strong>';
 		esc_html_e( 'Navexa AgeCheck is paused: confirm this site.', 'navexa-agecheck-for-woocommerce' );
 		echo '</strong></p><p>';
 		esc_html_e( 'This site\'s address changed since AgeCheck was set up, which usually means the site was copied or moved. Until you confirm it, every age check is refused and age-restricted orders cannot be completed.', 'navexa-agecheck-for-woocommerce' );
@@ -200,7 +208,11 @@ final class Install {
 		wp_nonce_field( self::CONFIRM_ACTION );
 		echo '<p><button type="submit" class="button button-primary">';
 		esc_html_e( 'Confirm this site', 'navexa-agecheck-for-woocommerce' );
-		echo '</button></p></form></div>';
+		echo '</button></p></form>';
+		if ( ! $settings ) {
+			echo Notices::dismiss_link( 'paused', $reason ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- dismiss_link() escapes.
+		}
+		echo '</div>';
 	}
 
 	/**

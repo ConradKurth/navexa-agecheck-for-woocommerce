@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-11-22T21:56:47+00:00\n"
+"POT-Creation-Date: 2026-11-23T20:43:57+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: navexa-agecheck-for-woocommerce\n"
@@ -111,7 +111,8 @@ msgstr ""
 #: includes/Admin/OrderPanel.php:117
 #: includes/Admin/OrderPanel.php:122
 #: includes/Admin/ProductField.php:41
-#: includes/OrderVerify.php:464
+#: includes/OrderVerify.php:118
+#: includes/OrderVerify.php:503
 #: includes/ReturnPage.php:100
 msgid "Age check"
 msgstr ""
@@ -513,11 +514,11 @@ msgid "Checking your age verification…"
 msgstr ""
 
 #: includes/Frontend.php:141
-msgid "Finish your age check in the window that opened. This page updates when you are done."
+msgid "Finish your age check in the window that opened. This page updates when you are done. If you closed that window, select Verify age to start again."
 msgstr ""
 
 #: includes/Frontend.php:144
-#: includes/OrderVerify.php:450
+#: includes/OrderVerify.php:489
 #: includes/Start.php:732
 msgid "Age verification is temporarily unavailable. Please try again in a few minutes."
 msgstr ""
@@ -764,45 +765,73 @@ msgstr ""
 msgid "Your Navexa AgeCheck keys are test keys: checks use the simulator, no real age check happens, and held orders are not released automatically. Switch to live keys before selling age-restricted products."
 msgstr ""
 
-#: includes/OrderVerify.php:108
+#: includes/OrderVerify.php:119
+msgid "This order has age-restricted items. We are finishing your age check, and the store ships the order once it is complete."
+msgstr ""
+
+#: includes/OrderVerify.php:123
 msgid "Verify your age"
 msgstr ""
 
-#: includes/OrderVerify.php:109
+#: includes/OrderVerify.php:124
 msgid "This order has age-restricted items. The store ships it once you pass an age check."
 msgstr ""
 
-#: includes/OrderVerify.php:111
+#: includes/OrderVerify.php:126
 msgid "We have also emailed you a link to the age check."
 msgstr ""
 
-#: includes/OrderVerify.php:120
+#: includes/OrderVerify.php:135
 msgid "Verify now"
 msgstr ""
 
-#: includes/OrderVerify.php:195
-#: includes/OrderVerify.php:198
+#: includes/OrderVerify.php:147
+msgid "This order will not ship"
+msgstr ""
+
+#: includes/OrderVerify.php:150
+msgid "Age-restricted items ship only to US addresses, so the store cannot ship this order."
+msgstr ""
+
+#: includes/OrderVerify.php:151
+msgid "We could not verify your age, so the store cannot ship this order."
+msgstr ""
+
+#: includes/OrderVerify.php:154
+msgid "Your payment has been refunded."
+msgstr ""
+
+#: includes/OrderVerify.php:156
+msgid "The order has been cancelled."
+msgstr ""
+
+#: includes/OrderVerify.php:158
+msgid "If you have paid, the store will refund your payment."
+msgstr ""
+
+#: includes/OrderVerify.php:234
+#: includes/OrderVerify.php:237
 msgid "This page has expired. Go back to your order and select Verify now again."
 msgstr ""
 
-#: includes/OrderVerify.php:217
+#: includes/OrderVerify.php:256
 #: includes/Start.php:206
 msgid "Too many age check attempts. Please wait a while and try again."
 msgstr ""
 
-#: includes/OrderVerify.php:239
+#: includes/OrderVerify.php:278
 msgid "We could not start your age check online. The store will contact you about this order."
 msgstr ""
 
-#: includes/OrderVerify.php:296
+#: includes/OrderVerify.php:335
 msgid "Thank you. The store ships your order once AgeCheck confirms your age check, and emails you as usual."
 msgstr ""
 
-#: includes/OrderVerify.php:296
+#: includes/OrderVerify.php:335
 msgid "Your age check is finished"
 msgstr ""
 
-#: includes/OrderVerify.php:485
+#: includes/OrderVerify.php:524
 msgid "Back to the store"
 msgstr ""
 

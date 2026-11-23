@@ -96,13 +96,28 @@ final class OrderVerify {
 	}
 
 	/**
-	 * Prints the "Verify now" box on the order-received and view-order pages.
+	 * Prints the order's age check state on the order-received and view-order
+	 * pages: the "Verify now" box while the order waits on its shopper, the
+	 * outcome after a failed check, and a short note while the result is on
+	 * its way (the release run that records it runs after the shopper is back).
+	 * Never an id, a reason code beyond US-only, or a verdict detail.
 	 *
 	 * @param mixed $order_id Order id (or order).
 	 */
 	public static function render_for( $order_id ): void {
 		$order = $order_id instanceof \WC_Order ? $order_id : wc_get_order( absint( $order_id ) );
-		if ( ! $order instanceof \WC_Order || ! self::needs_shopper( $order ) || Install::is_paused() ) {
+		if ( ! $order instanceof \WC_Order || 'shop_order' !== $order->get_type() || 'yes' !== Meta::get( $order, Meta::REQUIRED ) || Meta::is_released( $order ) || Install::is_paused() ) {
+			return;
+		}
+		if ( Meta::STATUS_DENIED === Meta::get( $order, Meta::STATUS ) ) {
+			self::render_denied( $order );
+			return;
+		}
+		if ( ! self::needs_shopper( $order ) ) {
+			if ( Hold::STATUS === $order->get_status( 'edit' ) ) {
+				echo '<section class="navexa-agecheck-order" style="margin:0 0 2em"><h2>' . esc_html__( 'Age check', 'navexa-agecheck-for-woocommerce' ) . '</h2>';
+				echo '<p>' . esc_html__( 'This order has age-restricted items. We are finishing your age check, and the store ships the order once it is complete.', 'navexa-agecheck-for-woocommerce' ) . '</p></section>';
+			}
 			return;
 		}
 		echo '<section class="navexa-agecheck-order" style="margin:0 0 2em"><h2>' . esc_html__( 'Verify your age', 'navexa-agecheck-for-woocommerce' ) . '</h2>';
@@ -119,6 +134,30 @@ final class OrderVerify {
 			esc_attr( wp_create_nonce( self::NONCE_PREFIX . $order->get_id() ) ),
 			esc_html__( 'Verify now', 'navexa-agecheck-for-woocommerce' )
 		);
+	}
+
+	/**
+	 * The outcome of a failed check: the order will not ship, and what
+	 * happens to the payment.
+	 *
+	 * @param \WC_Order $order Denied order.
+	 */
+	private static function render_denied( \WC_Order $order ): void {
+		$status = $order->get_status( 'edit' );
+		echo '<section class="navexa-agecheck-order" style="margin:0 0 2em"><h2>' . esc_html__( 'This order will not ship', 'navexa-agecheck-for-woocommerce' ) . '</h2>';
+		echo '<p>' . esc_html(
+			'not_us' === Meta::get( $order, Meta::REASON )
+				? __( 'Age-restricted items ship only to US addresses, so the store cannot ship this order.', 'navexa-agecheck-for-woocommerce' )
+				: __( 'We could not verify your age, so the store cannot ship this order.', 'navexa-agecheck-for-woocommerce' )
+		) . '</p>';
+		if ( 'refunded' === $status || Meta::REFUND_REFUNDED === Meta::get( $order, Meta::REFUND ) ) {
+			$money = __( 'Your payment has been refunded.', 'navexa-agecheck-for-woocommerce' );
+		} elseif ( 'cancelled' === $status ) {
+			$money = __( 'The order has been cancelled.', 'navexa-agecheck-for-woocommerce' );
+		} else {
+			$money = __( 'If you have paid, the store will refund your payment.', 'navexa-agecheck-for-woocommerce' );
+		}
+		echo '<p>' . esc_html( $money ) . '</p></section>';
 	}
 
 	/**

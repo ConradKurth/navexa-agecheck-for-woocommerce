@@ -97,6 +97,70 @@ final class OrderVerifyTest extends TestCase {
 		$this->assertSame( '', ob_get_clean(), 'nothing while the install is paused' );
 	}
 
+	/** Renders the order page note for an order. */
+	private function rendered( \WC_Order $order ): string {
+		ob_start();
+		OrderVerify::render_for( $order );
+		return (string) ob_get_clean();
+	}
+
+	public function test_a_denied_order_says_it_will_not_ship(): void {
+		$order                       = $this->waiting_order();
+		$order->meta[ Meta::STATUS ] = Meta::STATUS_DENIED;
+		$html                        = $this->rendered( $order );
+		$this->assertStringContainsString( 'This order will not ship', $html );
+		$this->assertStringContainsString( 'could not verify your age', $html );
+		$this->assertStringContainsString( 'If you have paid', $html );
+		$this->assertStringNotContainsString( 'Verify now', $html );
+		$this->assertStringNotContainsString( '<form', $html );
+		$this->assertStringNotContainsString( self::VID, $html );
+
+		$order->meta[ Meta::REASON ] = 'not_us';
+		$html                        = $this->rendered( $order );
+		$this->assertStringContainsString( 'ship only to US addresses', $html );
+		$this->assertStringNotContainsString( 'could not verify your age', $html );
+	}
+
+	public function test_a_denied_order_says_what_became_of_the_payment(): void {
+		$order                       = $this->held_order();
+		$order->meta[ Meta::STATUS ] = Meta::STATUS_DENIED;
+		$order->data['status']       = 'refunded';
+		$this->assertStringContainsString( 'has been refunded', $this->rendered( $order ) );
+
+		$order->data['status']        = Hold::STATUS;
+		$order->meta[ Meta::REFUND ] = Meta::REFUND_REFUNDED;
+		$this->assertStringContainsString( 'has been refunded', $this->rendered( $order ) );
+
+		unset( $order->meta[ Meta::REFUND ] );
+		$order->data['status'] = 'cancelled';
+		$html                  = $this->rendered( $order );
+		$this->assertStringContainsString( 'has been cancelled', $html );
+		$this->assertStringNotContainsString( 'If you have paid', $html );
+	}
+
+	public function test_a_held_order_with_a_passed_check_says_it_is_finishing(): void {
+		$order                                    = $this->waiting_order();
+		$order->meta[ Meta::VERIFICATION_STATUS ] = 'passed';
+		$html                                     = $this->rendered( $order );
+		$this->assertStringContainsString( 'finishing your age check', $html );
+		$this->assertStringNotContainsString( '<form', $html );
+		$this->assertStringNotContainsString( 'Verify now', $html );
+	}
+
+	public function test_the_order_page_note_stays_quiet_when_it_should(): void {
+		$denied                       = $this->waiting_order();
+		$denied->meta[ Meta::STATUS ] = Meta::STATUS_DENIED;
+		$released                     = $this->waiting_order();
+		Meta::mark_released( $released, Meta::STATUS_CLEARED );
+		$this->assertSame( '', $this->rendered( $released ) );
+		$unrequired                          = $this->held_order();
+		$unrequired->meta[ Meta::REQUIRED ] = 'no';
+		$unrequired->meta[ Meta::STATUS ]   = Meta::STATUS_DENIED;
+		$this->assertSame( '', $this->rendered( $unrequired ) );
+		$this->home = 'https://copy.example';
+		$this->assertSame( '', $this->rendered( $denied ), 'nothing while the install is paused' );
+	}
+
 	public function test_start_redirects_to_a_fresh_hosted_session_with_the_start_key(): void {
 		$order = $this->waiting_order();
 		$this->respond( 200, $this->live_info( array( 'scopes' => array( 'agecheck:verify' ) ) ) );

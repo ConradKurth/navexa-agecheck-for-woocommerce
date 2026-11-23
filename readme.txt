@@ -5,7 +5,7 @@ Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 7.4
 Requires Plugins: woocommerce
-Stable tag: 1.0.1
+Stable tag: 1.0.2
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -170,6 +170,11 @@ The plugin sends no telemetry.
 
 == Changelog ==
 
+= 1.0.2 =
+* Block checkout: the Place order error gives the reason (for example, US addresses only) instead of a generic prompt.
+* The order-received and My account order pages say when an order will not ship after a failed age check, and what happens to the payment.
+* The checkout tells shoppers who closed the age check window to select Verify age again.
+
 = 1.0.1 =
 * The plugin's home page is the Navexa AgeCheck page (https://navexa.co/agecheck).
 
@@ -191,6 +196,9 @@ The plugin sends no telemetry.
 * Verification links of orders that will not ship (cancelled, refunded in full, failed, trashed or deleted) are withdrawn automatically in the background, with the result noted on the order (in the WooCommerce log for a deleted one).
 
 == Upgrade Notice ==
+
+= 1.0.2 =
+Clearer shopper messages after a failed or interrupted age check.
 
 = 1.0.1 =
 Plugin home page link only.

@@ -146,6 +146,13 @@ On a shared machine, give the environment its own ports in `.wp-env.override.jso
 
 The plugin directory must be named `navexa-agecheck-for-woocommerce` (the smoke checks the basename): in a worktree with another name, the mapping above does it; then `wp plugin activate navexa-agecheck-for-woocommerce`.
 
+## When AgeCheck can't be reached
+
+Fail closed, with no fail-open setting (readme.txt's FAQ says the same for merchants). A transport error, the 8 s timeout, a bodiless 500 or a Cloudflare 520-526 is a retryable `ConnectError` (`unavailable` or `deadline_exceeded`; a Connect body's own code wins).
+
+- **Before payment**: the start and refresh answer `unavailable` ("Age verification is temporarily unavailable. Please try again in a few minutes."). The gate asks `GetVerification` again at Place order, so even a session holding a guard is refused with `Gate::REFUSE_UNAVAILABLE` on any `ConnectError` but `not_found` (only a resumed order already bound is admitted at its bound ship-to without a call; it is held after payment). A paused install, a missing guard secret and an unknown mode refuse the same way. `ReadmeTest` keeps readme.txt quoting the opening words of `Gate::message()`.
+- **Orders already placed** (after-payment mode, order-pay, express orders outside the checkout): the hold is local, so they stay in "Awaiting age check". A failed `AttachOrder` leaves `ATTACH_PENDING` for the release run and the sweep. `Release::run_job` reschedules a retryable failure (60 s × 2^attempt, capped at 1 h, Retry-After honoured, `MAX_ATTEMPTS` 8), and the 15-minute sweep queues every held order anyway. No reason or order note is recorded for an outage. "Verify now" answers a 503 "temporarily unavailable" page.
+
 ## Pre-payment (W2)
 
 Contract (plan §2.7): the browser posts `{v: 1, action: "start"|"refresh"}` to `POST /wc/store/v1/cart/extensions` (namespace `navexa-agecheck`; `extensionCartUpdate` on block checkout, a fetch with the Store API `Nonce` header from `GET /wc/store/v1/cart` on classic pages) and reads `extensions["navexa-agecheck"] = {v, required, status, hosted_url?, message?}` from the cart response. Statuses: `none | pending | passed | failed | refused | unavailable`. The browser never sees a verification id, a guard or a key.

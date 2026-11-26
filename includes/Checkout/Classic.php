@@ -24,10 +24,13 @@ defined( 'ABSPATH' ) || exit;
  *   no-JavaScript "Update totals" post, for carts that need no check and for
  *   local pickup.
  * - A resumed order_awaiting_payment that is already bound (a retried
- *   payment) must still ship where it was bound to ship. Otherwise it is
- *   dropped from the session, so WooCommerce creates a new order, and that
- *   order is decided like any new checkout (a check already passed for the
- *   new ship-to admits it).
+ *   payment, Gate::bound_awaiting_order()) must still ship where it was bound
+ *   to ship. Otherwise it is dropped from the session, so WooCommerce creates
+ *   a new order, and that order is decided like any new checkout (a check
+ *   already passed for the new ship-to admits it). At its bound ship-to the
+ *   button shows the check as passed (Start::state() for
+ *   Gate::ROUTE_CLASSIC, which asks only order_awaiting_payment: a Store API
+ *   draft is not what this checkout resumes).
  * - The button renders at woocommerce_review_order_before_submit, inside the
  *   fragment WooCommerce replaces on every checkout update, so it always
  *   shows the session's current state.
@@ -96,7 +99,7 @@ final class Classic {
 		}
 		$ship_to = ShipTo::from_checkout_data( $data );
 		$country = ShipTo::country_from_checkout_data( $data );
-		$resumed = self::resumable_bound_order();
+		$resumed = Gate::bound_awaiting_order();
 		$refusal = Gate::check( $ship_to, $country, $resumed );
 		if ( null !== $refusal && $refusal['clear_resumable'] && null !== $resumed ) {
 			// The resumed order was bound for another ship-to. Stop resuming it,
@@ -120,31 +123,13 @@ final class Classic {
 	}
 
 	/**
-	 * The order WooCommerce's create_order() will resume (same cart hash,
-	 * pending or failed), when it is already bound to a verification.
-	 */
-	private static function resumable_bound_order(): ?\WC_Order {
-		$session = Session::wc_session();
-		$cart    = Session::cart();
-		if ( null === $session || null === $cart ) {
-			return null;
-		}
-		$order_id = absint( $session->get( 'order_awaiting_payment' ) );
-		$order    = $order_id ? wc_get_order( $order_id ) : null;
-		if ( ! $order instanceof \WC_Order || ! $order->has_cart_hash( $cart->get_cart_hash() ) || ! $order->has_status( array( 'pending', 'failed' ) ) ) {
-			return null;
-		}
-		return '' !== Gate::bound_verification_id( $order ) ? $order : null;
-	}
-
-	/**
 	 * The Verify age block above the Place order button.
 	 */
 	public static function render_button(): void {
 		if ( ! Gate::enforces() ) {
 			return;
 		}
-		$state = Start::state();
+		$state = Start::state( Gate::ROUTE_CLASSIC );
 		if ( empty( $state['required'] ) ) {
 			return;
 		}

@@ -8,6 +8,7 @@
 namespace Navexa\AgeCheck\Tests\Unit;
 
 use Brain\Monkey\Functions;
+use Navexa\AgeCheck\Binding;
 use Navexa\AgeCheck\Checkout\Blocks;
 use Navexa\AgeCheck\Checkout\BlocksIntegration;
 use Navexa\AgeCheck\Checkout\Classic;
@@ -21,6 +22,7 @@ use Navexa\AgeCheck\Mode;
 use Navexa\AgeCheck\Options;
 use Navexa\AgeCheck\Requirement;
 use Navexa\AgeCheck\ShipTo;
+use Navexa\AgeCheck\Start;
 use Navexa\AgeCheck\Tests\TestCase;
 
 final class CheckoutTest extends TestCase {
@@ -236,6 +238,73 @@ final class CheckoutTest extends TestCase {
 		$errors           = new \WP_Error();
 		Classic::validate( $this->posted( $this->us_address() ), $errors );
 		$this->assertSame( Gate::message( Gate::REFUSE_VERIFY_FIRST ), $errors->messages[0], 'a paid order is never resumed' );
+	}
+
+	/**
+	 * A payment retry as the hooks run it: the gate admits the shopper's
+	 * guarded check, Binding binds the order to it before payment (the check
+	 * leaves the session), the card is declined (the order fails), and the
+	 * session's $key names the order the next attempt resumes.
+	 *
+	 * @param string $key order_awaiting_payment (classic) or store_api_draft_order.
+	 * @param int    $id  Order id.
+	 */
+	private function declined_after_binding( string $key, int $id ): \WC_Order {
+		$this->customer_at( $this->us_address() );
+		$this->admit_checkout( 'acv_1', $this->us_address() );
+		$order               = $this->order_at( $this->us_address(), 'flat_rate', null, 'pending', $id );
+		$this->orders[ $id ] = $order;
+		$this->respond( 200, array( 'verification' => $this->verification( 'acv_1', 'PASSED', array( 'orderExternalId' => 'x' ) ) ) );
+		Binding::bind_checkout( $order );
+		$this->assertSame( 'acv_1', $order->meta[ Meta::VERIFICATION_ID ] );
+		$this->assertNull( Session::record(), 'the check left the session with the order' );
+		$order->data['status'] = 'failed';
+		$this->session()->set( $key, $id );
+		$this->http_requests = array();
+		Gate::reset();
+		return $order;
+	}
+
+	public function test_classic_retry_after_a_declined_payment_needs_no_second_check(): void {
+		$this->declined_after_binding( 'order_awaiting_payment', 55 );
+		$this->assertSame( Start::STATUS_PASSED, Start::state( Gate::ROUTE_CLASSIC )['status'] );
+		ob_start();
+		Classic::render_button();
+		$html = ob_get_clean();
+		$this->assertStringContainsString( 'data-status="passed"', $html );
+		$this->assertStringNotContainsString( 'data-navexa-agecheck-verify', $html, 'no Verify age button: pressing it would bill a check nothing uses' );
+
+		$errors = new \WP_Error();
+		Classic::validate( $this->posted( $this->us_address() ), $errors );
+		$this->assertSame( array(), $errors->codes, 'Place order resumes the bound order' );
+		$this->assertSame( 'acv_1', Gate::admitted_verification_id() );
+		$this->assertSame( 55, $this->session()->get( 'order_awaiting_payment' ) );
+		$this->assertSame( array(), $this->http_requests, 'no AgeCheck call, so no second check' );
+	}
+
+	public function test_classic_ship_to_change_after_a_declined_payment_needs_a_new_check(): void {
+		$this->declined_after_binding( 'order_awaiting_payment', 55 );
+		$moved = $this->us_address( array( 'address_1' => '9 Elm St' ) );
+		$this->customer_at( $moved );
+		$this->assertSame( Start::STATUS_NONE, Start::state( Gate::ROUTE_CLASSIC )['status'] );
+		ob_start();
+		Classic::render_button();
+		$this->assertStringContainsString( 'data-navexa-agecheck-verify="1"', ob_get_clean() );
+
+		$errors = new \WP_Error();
+		Classic::validate( $this->posted( $moved ), $errors );
+		$this->assertSame( array( Gate::message( Gate::REFUSE_SHIP_TO_CHANGED ) ), $errors->messages );
+		$this->assertNull( $this->session()->get( 'order_awaiting_payment' ), 'the next attempt is a new order' );
+		$this->assertSame( array(), $this->http_requests );
+	}
+
+	public function test_classic_another_cart_after_a_declined_payment_is_another_order(): void {
+		$this->declined_after_binding( 'order_awaiting_payment', 55 );
+		self::$wc->cart->hash = 'another-cart';
+		$this->assertSame( Start::STATUS_NONE, Start::state( Gate::ROUTE_CLASSIC )['status'] );
+		$errors = new \WP_Error();
+		Classic::validate( $this->posted( $this->us_address() ), $errors );
+		$this->assertSame( array( Gate::message( Gate::REFUSE_VERIFY_FIRST ) ), $errors->messages, 'WooCommerce creates a new order: it needs its own check' );
 	}
 
 	public function test_classic_ignores_junk_arguments(): void {
@@ -525,6 +594,141 @@ final class CheckoutTest extends TestCase {
 		$errors             = new \WP_Error();
 		Blocks::validate( $order, $errors );
 		$this->assertSame( array(), $errors->codes );
+	}
+
+	public function test_blocks_retry_after_a_declined_payment_needs_no_second_check(): void {
+		$order = $this->declined_after_binding( 'store_api_draft_order', 56 );
+		$this->assertSame(
+			array(
+				'v'        => 1,
+				'required' => true,
+				'status'   => 'passed',
+			),
+			Start::endpoint_data(),
+			'the checkout block lets Place order through'
+		);
+
+		Blocks::mark_cart_checkout( $order );
+		$errors = new \WP_Error();
+		Blocks::validate( $order, $errors );
+		$this->assertSame( array(), $errors->codes, 'WooCommerce resumes the bound draft' );
+		$this->assertSame( 'acv_1', Gate::admitted_verification_id() );
+		$this->assertSame( 56, $this->session()->get( 'store_api_draft_order' ) );
+		$this->assertSame( array(), $this->http_requests, 'no AgeCheck call, so no second check' );
+	}
+
+	public function test_blocks_ship_to_change_after_a_declined_payment_needs_a_new_check(): void {
+		$order = $this->declined_after_binding( 'store_api_draft_order', 56 );
+		$moved = $this->us_address( array( 'address_1' => '9 Elm St' ) );
+		$this->customer_at( $moved );
+		$this->assertSame( Start::STATUS_NONE, Start::state( Gate::ROUTE_STORE_API )['status'] );
+
+		// The Store API writes the new address onto the reused draft; AddressGuard reverts it.
+		Blocks::mark_cart_checkout( $order );
+		$errors = new \WP_Error();
+		Blocks::validate( $order, $errors );
+		$this->assertSame( array( Gate::message( Gate::REFUSE_SHIP_TO_CHANGED ) ), $errors->messages );
+		$this->assertNull( $this->session()->get( 'store_api_draft_order' ), 'the next attempt creates a new draft' );
+		$this->assertSame( Start::STATUS_NONE, Start::state( Gate::ROUTE_STORE_API )['status'] );
+		$this->assertSame( array(), $this->http_requests );
+	}
+
+	public function test_blocks_another_cart_after_a_declined_payment_is_another_order(): void {
+		$this->declined_after_binding( 'store_api_draft_order', 56 );
+		self::$wc->cart->hash = 'another-cart';
+		$this->assertSame( Start::STATUS_NONE, Start::state( Gate::ROUTE_STORE_API )['status'], 'WooCommerce will not resume the declined order' );
+		$draft = $this->order( $this->us_address(), 'flat_rate', 78 );
+		Blocks::mark_cart_checkout( $draft );
+		$errors = new \WP_Error();
+		Blocks::validate( $draft, $errors );
+		$this->assertSame( array( Gate::message( Gate::REFUSE_VERIFY_FIRST ) ), $errors->messages, 'the new draft needs its own check' );
+	}
+
+	/** The classic button's data-status, as rendered. */
+	private function classic_status(): string {
+		ob_start();
+		Classic::render_button();
+		return preg_match( '/data-status="([a-z]+)"/', (string) ob_get_clean(), $m ) ? $m[1] : '';
+	}
+
+	public function test_blocks_place_again_then_back_to_the_bound_ship_to_on_woocommerce_11(): void {
+		// WooCommerce 11.x's Store API process_payment() also records the
+		// declined draft as order_awaiting_payment.
+		$order = $this->declined_after_binding( 'store_api_draft_order', 56 );
+		$this->session()->set( 'order_awaiting_payment', 56 );
+		$this->assertSame( Start::STATUS_PASSED, Start::endpoint_data()['status'] );
+
+		// The shopper moves to B, verifies there and places the order: the
+		// reused bound draft is set aside (PLACE_AGAIN).
+		$moved = $this->us_address( array( 'address_1' => '9 Elm St' ) );
+		$this->customer_at( $moved );
+		$this->guard_for( $moved, 'acv_new' );
+		Blocks::mark_cart_checkout( $order );
+		$errors = new \WP_Error();
+		Blocks::validate( $order, $errors );
+		$this->assertSame( array( Gate::message( Gate::REFUSE_PLACE_AGAIN ) ), $errors->messages );
+		$this->assertNull( $this->session()->get( 'store_api_draft_order' ) );
+		$this->assertSame( 56, $this->session()->get( 'order_awaiting_payment' ) );
+
+		// Back to A. The Store API no longer resumes 56: it creates a new
+		// draft, which the check bound to 56 cannot admit. The block must say
+		// so and offer Verify age, not show passed for a Place order the gate
+		// refuses (the dead end).
+		$this->customer_at( $this->us_address() );
+		$state = Start::endpoint_data();
+		$this->assertSame( Start::STATUS_NONE, $state['status'] );
+		$this->assertSame( Gate::message( Gate::REFUSE_SHIP_TO_CHANGED ), $state['message'] );
+		$draft = $this->order( $this->us_address(), 'flat_rate', 78 );
+		Blocks::mark_cart_checkout( $draft );
+		$errors = new \WP_Error();
+		Blocks::validate( $draft, $errors );
+		$this->assertSame( array( Gate::message( Gate::REFUSE_SHIP_TO_CHANGED ) ), $errors->messages, 'the gate agrees: a new check' );
+
+		// The classic checkout still resumes 56 (order_awaiting_payment) at A,
+		// and says passed for it.
+		$this->assertSame( Start::STATUS_PASSED, $this->classic_status() );
+		$errors = new \WP_Error();
+		Classic::validate( $this->posted( $this->us_address() ), $errors );
+		$this->assertSame( array(), $errors->codes );
+		$this->assertSame( 'acv_1', Gate::admitted_verification_id() );
+		$this->assertSame( array(), $this->http_requests, 'no AgeCheck call' );
+	}
+
+	public function test_a_block_decline_then_the_classic_checkout_agrees_with_the_classic_gate(): void {
+		// WooCommerce 9.9: the Store API records only store_api_draft_order,
+		// which the classic checkout never resumes. Classic creates a new
+		// order, which needs its own check: the button must offer it.
+		$this->declined_after_binding( 'store_api_draft_order', 56 );
+		$this->assertSame( Start::STATUS_NONE, $this->classic_status() );
+		$errors = new \WP_Error();
+		Classic::validate( $this->posted( $this->us_address() ), $errors );
+		$this->assertSame( array( Gate::message( Gate::REFUSE_VERIFY_FIRST ) ), $errors->messages );
+		$this->assertSame( 56, $this->session()->get( 'store_api_draft_order' ), 'the block checkout still resumes it' );
+		$this->assertSame( Start::STATUS_PASSED, Start::endpoint_data()['status'] );
+
+		// WooCommerce 11.x also records it as order_awaiting_payment, so the
+		// classic checkout resumes it at its bound ship-to.
+		$this->session()->set( 'order_awaiting_payment', 56 );
+		$this->assertSame( Start::STATUS_PASSED, $this->classic_status() );
+		$errors = new \WP_Error();
+		Classic::validate( $this->posted( $this->us_address() ), $errors );
+		$this->assertSame( array(), $errors->codes );
+		$this->assertSame( 'acv_1', Gate::admitted_verification_id() );
+		$this->assertSame( array(), $this->http_requests );
+	}
+
+	public function test_a_classic_decline_then_the_block_checkout_agrees_with_the_store_api_gate(): void {
+		// The Store API never resumes order_awaiting_payment: it creates a new
+		// draft, which needs its own check.
+		$this->declined_after_binding( 'order_awaiting_payment', 55 );
+		$this->assertSame( Start::STATUS_NONE, Start::endpoint_data()['status'] );
+		$draft = $this->order( $this->us_address(), 'flat_rate', 78 );
+		Blocks::mark_cart_checkout( $draft );
+		$errors = new \WP_Error();
+		Blocks::validate( $draft, $errors );
+		$this->assertSame( array( Gate::message( Gate::REFUSE_VERIFY_FIRST ) ), $errors->messages );
+		$this->assertSame( Start::STATUS_PASSED, $this->classic_status(), 'the classic checkout still resumes it' );
+		$this->assertSame( array(), $this->http_requests );
 	}
 
 	public function test_blocks_is_cart_checkout(): void {

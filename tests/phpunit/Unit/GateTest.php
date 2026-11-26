@@ -171,6 +171,64 @@ final class GateTest extends TestCase {
 		$this->assertTrue( Gate::check( $this->ship_to, 'US', $order )['clear_resumable'], 'a guard MAC is not a binding' );
 	}
 
+	public function test_resumable_bound_order_is_the_order_the_route_resumes_at_its_bound_ship_to(): void {
+		$classic_route = Gate::ROUTE_CLASSIC;
+		$store_api     = Gate::ROUTE_STORE_API;
+		$moved         = ShipTo::from_wc_address( $this->us_address( array( 'address_1' => '9 Elm St' ) ) );
+		$this->assertNull( Gate::resumable_bound_order( $this->ship_to, $classic_route ), 'nothing in the session' );
+		$this->assertNull( Gate::resumable_bound_order( $this->ship_to, $store_api ), 'nothing in the session' );
+
+		$classic                                = \WC_Order::make( 'failed', 55 );
+		$classic->meta[ Meta::VERIFICATION_ID ] = 'acv_bound';
+		$classic->meta[ Meta::SHIP_TO_HASH ]    = $this->ship_to->hash();
+		$this->orders[55]                       = $classic;
+		$this->session()->set( 'order_awaiting_payment', 55 );
+		$this->assertSame( $classic, Gate::bound_awaiting_order() );
+		$this->assertNull( Gate::bound_draft_order(), 'the Store API resumes only its own draft' );
+		$this->assertSame( $classic, Gate::resumable_bound_order( $this->ship_to, $classic_route ) );
+		$this->assertNull( Gate::resumable_bound_order( $this->ship_to, $store_api ), 'the Store API does not resume order_awaiting_payment' );
+		$this->assertNull( Gate::resumable_bound_order( $moved, $classic_route ) );
+		$this->assertNull( Gate::resumable_bound_order( $this->ship_to, 'junk' ), 'an unknown route resumes nothing' );
+
+		$classic->data['status'] = 'checkout-draft';
+		$this->assertNull( Gate::bound_awaiting_order(), 'classic resumes pending or failed only' );
+
+		$draft                                = \WC_Order::make( 'checkout-draft', 56 );
+		$draft->meta[ Meta::VERIFICATION_ID ] = 'acv_bound';
+		$draft->meta[ Meta::SHIP_TO_HASH ]    = $this->ship_to->hash();
+		$draft->cart_hash                     = 'another-cart';
+		$this->orders[56]                     = $draft;
+		$this->session()->set( 'store_api_draft_order', 56 );
+		$this->assertSame( $draft, Gate::bound_draft_order(), 'a checkout-draft whatever the cart' );
+		$this->assertSame( $draft, Gate::resumable_bound_order( $this->ship_to, $store_api ) );
+		$this->assertNull( Gate::resumable_bound_order( $this->ship_to, $classic_route ), 'the classic checkout does not resume store_api_draft_order' );
+		$this->assertNull( Gate::resumable_bound_order( $moved, $store_api ) );
+		$draft->data['status'] = 'failed';
+		$this->assertNull( Gate::bound_draft_order(), 'a failed order only for the same cart' );
+		$draft->cart_hash = 'cart-hash';
+		$this->assertSame( $draft, Gate::bound_draft_order() );
+		$draft->needs_payment = false;
+		$this->assertNull( Gate::bound_draft_order(), 'nothing to pay: not resumed' );
+		$draft->needs_payment = null;
+
+		// WooCommerce 11.x: the Store API records its draft as order_awaiting_payment too.
+		$this->session()->set( 'order_awaiting_payment', 56 );
+		$this->assertSame( $draft, Gate::resumable_bound_order( $this->ship_to, $classic_route ) );
+		$this->assertSame( $draft, Gate::resumable_bound_order( $this->ship_to, $store_api ) );
+
+		unset( $draft->meta[ Meta::SHIP_TO_HASH ] );
+		$this->assertNull( Gate::resumable_bound_order( $this->ship_to, $store_api ), 'no bound ship-to: fail closed' );
+		$this->assertNull( Gate::resumable_bound_order( $this->ship_to, $classic_route ), 'no bound ship-to: fail closed' );
+		unset( $draft->meta[ Meta::VERIFICATION_ID ] );
+		$this->assertNull( Gate::bound_draft_order(), 'not bound' );
+
+		self::$wc->cart = null;
+		$classic->data['status'] = 'failed';
+		$this->session()->set( 'order_awaiting_payment', 55 );
+		$this->assertNull( Gate::bound_awaiting_order(), 'no cart' );
+		$this->assertSame( array(), $this->http_requests );
+	}
+
 	public function test_verdict_reads_enum_names_and_numbers(): void {
 		$this->assertSame( 'passed', Gate::verdict( array( 'status' => 3, 'passClass' => 3, 'livemode' => true ), Client::KEY_FULFILMENT ) );
 		$this->assertSame( 'not_clearing', Gate::verdict( array( 'status' => 3, 'passClass' => 2, 'livemode' => true ), Client::KEY_FULFILMENT ) );

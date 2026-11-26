@@ -5,7 +5,7 @@ Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 7.4
 Requires Plugins: woocommerce
-Stable tag: 1.0.3
+Stable tag: 1.0.4
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -181,6 +181,9 @@ The plugin sends no telemetry.
 
 == Changelog ==
 
+= 1.0.4 =
+* Fix: after a declined payment, checkout no longer asks the shopper to verify their age again. The order is already tied to their age check, so retrying the payment (for example with another card) places it without a second check, which AgeCheck would have billed. Changing the shipping address or the cart after a declined payment still needs a new age check.
+
 = 1.0.3 =
 * Admin notices show only on WooCommerce screens (never the WordPress dashboard or other plugins' pages), and each one can be dismissed until its reason changes. The WooCommerce-missing notice shows on the Plugins screen only.
 
@@ -210,6 +213,9 @@ The plugin sends no telemetry.
 * Verification links of orders that will not ship (cancelled, refunded in full, failed, trashed or deleted) are withdrawn automatically in the background, with the result noted on the order (in the WooCommerce log for a deleted one).
 
 == Upgrade Notice ==
+
+= 1.0.4 =
+Fixes a second age check (billed by AgeCheck) after a declined payment. Recommended for every store.
 
 = 1.0.3 =
 Admin notices limited to WooCommerce screens and dismissible.

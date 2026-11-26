@@ -29,6 +29,11 @@ defined( 'ABSPATH' ) || exit;
  *
  * Statuses: passed | pending | failed | refused | unavailable (the plan's
  * §2.7 contract) plus none (nothing started, or the ship-to changed since).
+ * The cart data also reads passed for a payment retry: the draft the Store
+ * API will resume is already bound to the shopper's check at this ship-to
+ * (Gate::resumable_bound_order() for Gate::ROUTE_STORE_API), and the gate
+ * admits it as it is. The classic checkout's button asks the same for the
+ * order the classic checkout resumes (Gate::ROUTE_CLASSIC).
  *
  * The browser sends no PII and no verification id, and never receives the
  * verification id or an API key. Start calls CreateVerification once per
@@ -232,12 +237,14 @@ final class Start {
 
 	/**
 	 * Cart endpoint data: {v, required, status, hosted_url?, message?}.
-	 * Reads the session only; never calls AgeCheck.
+	 * Reads the session only; never calls AgeCheck. The checkout block reads
+	 * it and places the order through the Store API, so a payment retry reads
+	 * passed only for the draft the Store API resumes.
 	 *
 	 * @return array<string, mixed>
 	 */
 	public static function endpoint_data(): array {
-		$state = self::state();
+		$state = self::state( Gate::ROUTE_STORE_API );
 		if ( null !== self::$answer ) {
 			$state = array_merge( $state, self::$answer );
 			unset( $state['v'] );
@@ -250,11 +257,17 @@ final class Start {
 	}
 
 	/**
-	 * The session's state for the cart response.
+	 * The session's state for a checkout that places its order through
+	 * $route: the cart data (the checkout block, Gate::ROUTE_STORE_API) and
+	 * the classic button (Gate::ROUTE_CLASSIC). Passed for a guarded check at
+	 * this ship-to, or for the bound order a payment retry through $route
+	 * resumes at its bound ship-to (Gate::resumable_bound_order()): exactly
+	 * what the gate on that route admits without a new check.
 	 *
+	 * @param string $route Gate::ROUTE_STORE_API or Gate::ROUTE_CLASSIC.
 	 * @return array<string, mixed>
 	 */
-	public static function state(): array {
+	public static function state( string $route ): array {
 		$context  = self::context();
 		$required = null === $context['refusal'] || ! empty( $context['refusal']['_required'] );
 		$state    = array(
@@ -278,7 +291,11 @@ final class Start {
 		if ( '' === $mac ) {
 			return $state;
 		}
-		if ( null !== Session::guarded_verification_id( $mac ) ) {
+		if ( null !== Session::guarded_verification_id( $mac ) || null !== Gate::resumable_bound_order( $ship_to, $route ) ) {
+			// A guarded pass, or the order a payment retry through $route
+			// resumes at the ship-to it was bound with (its check left the
+			// session when the order was bound, before payment): the gate
+			// admits either.
 			$state['status'] = self::STATUS_PASSED;
 			return $state;
 		}

@@ -187,6 +187,35 @@ final class ModeTest extends TestCase {
 		$this->assertCount( 2, $this->http_requests );
 	}
 
+	public function test_test_mode_notice_says_test_orders_stay_held(): void {
+		$this->respond( 200, array( 'livemode' => false ) );
+		Mode::info( Client::KEY_FULFILMENT );
+		$this->screen( 'woocommerce_page_wc-orders' );
+		ob_start();
+		Mode::test_mode_notice();
+		$html = (string) ob_get_clean();
+		$this->assertStringContainsString( 'held orders are not released automatically', $html );
+		$this->assertStringNotContainsString( 'NAVEXA_AGECHECK_ALLOW_TEST_RELEASE', $html );
+	}
+
+	/**
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_test_mode_notice_says_so_when_test_release_is_allowed(): void {
+		define( 'NAVEXA_AGECHECK_ALLOW_TEST_RELEASE', true );
+		$this->respond( 200, array( 'livemode' => false ) );
+		Mode::info( Client::KEY_FULFILMENT );
+		$this->screen( 'woocommerce_page_wc-orders' );
+		ob_start();
+		Mode::test_mode_notice();
+		$html = (string) ob_get_clean();
+		$this->assertStringContainsString( 'AgeCheck TEST MODE', $html );
+		$this->assertStringContainsString( 'NAVEXA_AGECHECK_ALLOW_TEST_RELEASE is set', $html );
+		$this->assertStringContainsString( 'released automatically', $html );
+		$this->assertStringNotContainsString( 'not released automatically', $html );
+	}
+
 	public function test_test_mode_notice_is_shown_to_store_managers_only(): void {
 		$this->respond( 200, array( 'livemode' => false ) );
 		Mode::info( Client::KEY_FULFILMENT );

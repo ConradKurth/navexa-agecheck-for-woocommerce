@@ -340,6 +340,18 @@ final class Meta {
 	}
 
 	/**
+	 * Whether the plugin denied the order or recorded a refund for it
+	 * (pending, done by the gateway, or resolved by staff). Such an order is
+	 * never released on its own and never loses its verification state:
+	 * staff decide (Release::cleared(), Binding::reverify()).
+	 *
+	 * @param \WC_Order $order Order.
+	 */
+	public static function is_denied( \WC_Order $order ): bool {
+		return self::STATUS_DENIED === self::get( $order, self::STATUS ) || '' !== self::get( $order, self::REFUND );
+	}
+
+	/**
 	 * Whether STATUS says cleared or override but that release was not
 	 * recorded for this order (copied from another order, or written without
 	 * mark_released()).

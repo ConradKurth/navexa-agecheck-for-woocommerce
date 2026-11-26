@@ -21,7 +21,9 @@ defined( 'ABSPATH' ) || exit;
  *   CreateHostedSession accepts a failed verification only then (and answers
  *   FAILED_PRECONDITION once it may not, an under-age failure included). The
  *   release run asks it on every DENIED not_verified with GetVerification
- *   FAILED for such an order (defer()); a live key only. While AgeCheck
+ *   FAILED for such an order (defer()), and on every failure a test key's
+ *   run reads (test orders wait the same window, so Try again can be tried
+ *   with a test key). While AgeCheck
  *   accepts, Meta::RETRY_OPEN is 'yes', Meta::STATUS stays empty (no refund,
  *   no "will not ship" page) and the run asks again at least hourly. Once it
  *   refuses (or Meta::RETRY_UNTIL is past), GetClearance decides as before:
@@ -183,12 +185,14 @@ final class DocRetry {
 	 *
 	 * @param \WC_Order            $order        Order.
 	 * @param array<string, mixed> $verification GetVerification's verification.
-	 * @param IntegrationInfo      $info         Fulfilment key info.
-	 * @param Client               $client       Fulfilment-key client.
+	 * @param Client               $client       Fulfilment-key client (a live or a test key).
+	 * @param bool                 $refunds      Whether a denial and refund follow the window
+	 *                                           (false for a test key without test release:
+	 *                                           the note then promises no refund).
 	 * @throws ConnectError When AgeCheck cannot answer now (retryable).
 	 */
-	public static function defer( \WC_Order $order, array $verification, IntegrationInfo $info, Client $client ): bool {
-		if ( ! self::opted_in( $order ) || ! $info->livemode ) {
+	public static function defer( \WC_Order $order, array $verification, Client $client, bool $refunds = true ): bool {
+		if ( ! self::opted_in( $order ) ) {
 			return false;
 		}
 		$was_open = 'yes' === Meta::get( $order, Meta::RETRY_OPEN );
@@ -216,11 +220,17 @@ final class DocRetry {
 		if ( ! $was_open ) {
 			Meta::note(
 				$order,
-				sprintf(
-					/* translators: %s: a date and time. */
-					__( 'AgeCheck: the shopper\'s age check did not pass. They may try again until %s; a refund waits until then. Do not ship.', 'navexa-agecheck-for-woocommerce' ),
-					self::date( $until )
-				)
+				$refunds
+					? sprintf(
+						/* translators: %s: a date and time. */
+						__( 'AgeCheck: the shopper\'s age check did not pass. They may try again until %s; a refund waits until then. Do not ship.', 'navexa-agecheck-for-woocommerce' ),
+						self::date( $until )
+					)
+					: sprintf(
+						/* translators: %s: a date and time. */
+						__( 'AgeCheck: the shopper\'s age check did not pass. They may try again until %s. Test keys never deny or refund orders. Do not ship.', 'navexa-agecheck-for-woocommerce' ),
+						self::date( $until )
+					)
 			);
 		}
 		Meta::set( $order, Meta::REASON, self::REASON );

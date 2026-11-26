@@ -5,7 +5,7 @@ Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 7.4
 Requires Plugins: woocommerce
-Stable tag: 1.1.0
+Stable tag: 1.1.1
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -171,7 +171,7 @@ Yes. It supports the classic and block checkout and both order storage modes (Hi
 
 = How do I test it? =
 
-Use test keys from the Navexa dashboard. AgeCheck then runs a simulator instead of a real check, a TEST MODE banner shows, and held orders are never released automatically.
+Use test keys from the Navexa dashboard. AgeCheck then runs a simulator instead of a real check, a TEST MODE banner shows, and held orders are never released automatically. A shopper whose test ID check fails can still try again from the order page, as with live keys.
 
 = What are the known limits? =
 
@@ -238,6 +238,13 @@ The plugin sends no telemetry.
 
 == Changelog ==
 
+= 1.1.1 =
+* Fix: an order that was denied (and refunded, or listed for a refund) is never released on its own when the shopper passes later, whether or not the order's age check could be retried. Staff decide: release it without age check, or cancel it.
+* Fix: a clearance answer AgeCheck repeats from an earlier attempt no longer makes a passed age check look expired. The plugin asks again before it starts a new age check, and it never drops a denied order's age check.
+* Fix: two release runs for the same order no longer leave a used clearance request on the order.
+* Test keys: a shopper whose test ID check fails can try again from the order page, as with live keys.
+* Test keys: the TEST MODE notice says so when NAVEXA_AGECHECK_ALLOW_TEST_RELEASE lets test orders be released.
+
 = 1.1.0 =
 * Checkout: Place order opens the age check in a window on the checkout page. The shopper types their date of birth there and takes the ID check only when needed; once they pass, the window shows "Verified" for a moment, closes, and the order goes through. Classic and block checkout. The Verify age button is gone.
 * After a pass, the name and address fields are locked to the check (block checkout: WooCommerce's address cards); changing the address means checking again.
@@ -285,6 +292,9 @@ The plugin sends no telemetry.
 * Verification links of orders that will not ship (cancelled, refunded in full, failed, trashed or deleted) are withdrawn automatically in the background, with the result noted on the order (in the WooCommerce log for a deleted one).
 
 == Upgrade Notice ==
+
+= 1.1.1 =
+Fixes a case where an order denied for a failed age check could be released after the shopper passed a retry. Recommended for every store.
 
 = 1.1.0 =
 Age check in a window on the checkout page at Place order, entry gate date of birth and branding, gate-only mode, ID check retry on the same order, returning-guest codes, and an opt-in to hold orders while AgeCheck is down. Clear your page cache after updating.

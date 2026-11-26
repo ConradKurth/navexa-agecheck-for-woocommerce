@@ -102,11 +102,7 @@ final class DocRetryTest extends TestCase {
 		$old = $this->opted_in_order();
 		unset( $old->meta[ Meta::DOC_RETRY ] );
 		$this->assertFalse( DocRetry::opted_in( $old ) );
-		$info = IntegrationInfo::from_response( $this->live_info( array( 'docRetry' => true ) ) );
-		$this->assertFalse( DocRetry::defer( $old, $this->failed( gmdate( 'Y-m-d\TH:i:s\Z' ) )['verification'], $info, $this->fulfilment_client() ) );
-		// A test key never defers (nor denies: the release path never asks).
-		$test = IntegrationInfo::from_response( array( 'livemode' => false, 'docRetry' => true ) );
-		$this->assertFalse( DocRetry::defer( $this->opted_in_order(), $this->failed( gmdate( 'Y-m-d\TH:i:s\Z' ) )['verification'], $test, $this->fulfilment_client() ) );
+		$this->assertFalse( DocRetry::defer( $old, $this->failed( gmdate( 'Y-m-d\TH:i:s\Z' ) )['verification'], $this->fulfilment_client() ) );
 	}
 
 	public function test_a_hold_in_the_window_records_the_retry_and_a_clear_releases(): void {

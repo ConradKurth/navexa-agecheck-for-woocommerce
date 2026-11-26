@@ -312,9 +312,10 @@ final class Release {
 		}
 
 		if ( ! Mode::may_auto_release( $info ) ) {
-			self::record_test_verification( $order, $client );
-			Meta::set( $order, Meta::REASON, 'test_mode' );
-			Meta::set( $order, Meta::NEXT_CHECK_AT, time() + self::TEST_RECHECK );
+			if ( ! self::record_test_verification( $order, $client ) ) {
+				Meta::set( $order, Meta::REASON, 'test_mode' );
+				Meta::set( $order, Meta::NEXT_CHECK_AT, time() + self::TEST_RECHECK );
+			}
 			$order->save_meta_data();
 			$outcome = self::TEST_MODE;
 		} else {
@@ -333,48 +334,73 @@ final class Release {
 	 * the order's verification: GetVerification (a read, which spends
 	 * nothing) records its status and pass class for the panel, and a note
 	 * says when the shopper's check has passed or failed. It never releases or
-	 * denies. Panel-only: a failure is logged and the run goes on.
+	 * denies. A failure the shopper may still retry (DocRetry::defer(), the
+	 * same window as a live key's) is recorded as such, so the order page
+	 * offers Try again with a test key too; its note promises no refund. When
+	 * that retry closes with the check still failed, the "cancel it yourself"
+	 * note follows once. Panel-only: a failure is logged and the run goes on.
 	 *
 	 * @param \WC_Order $order  Order.
 	 * @param Client    $client Fulfilment-key client.
+	 * @return bool Whether the order now waits on a retry (reason and next
+	 *              check recorded by DocRetry::defer()).
 	 */
-	private static function record_test_verification( \WC_Order $order, Client $client ): void {
+	private static function record_test_verification( \WC_Order $order, Client $client ): bool {
 		$vid = Meta::get( $order, Meta::VERIFICATION_ID );
 		if ( '' === $vid ) {
-			return;
+			return false;
 		}
 		$before = Meta::get( $order, Meta::VERIFICATION_STATUS );
 		try {
 			$answer = $client->call( 'GetVerification', array( 'id' => $vid ) );
 		} catch ( ConnectError $e ) {
 			Client::log( 'warning', sprintf( 'agecheck release order=%d vid=%s test verification read failed code=%s', $order->get_id(), $vid, $e->connect_code() ) );
-			return;
+			return false;
 		}
 		$verification = isset( $answer['verification'] ) && is_array( $answer['verification'] ) ? $answer['verification'] : array();
 		if ( array() === $verification ) {
-			return;
+			return false;
 		}
-		$status = Binding::record_verification( $order, $verification );
+		// Waiting on a retry before this run: a reason the caller has not
+		// replaced yet, or AgeCheck's last answer that it may be retried.
+		$was_waiting = DocRetry::REASON === Meta::get( $order, Meta::REASON ) || 'yes' === Meta::get( $order, Meta::RETRY_OPEN );
+		$status      = Binding::record_verification( $order, $verification );
+		$retry       = false;
+		$closed      = false;
+		if ( 'failed' === $status && DocRetry::opted_in( $order ) ) {
+			try {
+				$retry  = DocRetry::defer( $order, $verification, $client, false );
+				$closed = ! $retry && $was_waiting;
+			} catch ( ConnectError $e ) {
+				Client::log( 'warning', sprintf( 'agecheck release order=%d vid=%s test retry check failed code=%s', $order->get_id(), $vid, $e->connect_code() ) );
+			}
+		}
 		$order->save_meta_data();
-		if ( $status === $before ) {
-			return;
+		// A retry that closed with the status still failed gets the failure's
+		// note below, once: the caller then replaces the reason, and defer()
+		// has cleared RETRY_OPEN.
+		if ( $status === $before && ! $closed ) {
+			return $retry;
 		}
 		if ( 'passed' === $status ) {
 			Meta::note( $order, __( 'AgeCheck: the shopper\'s age check passed. Test keys never release orders: to try the rest of the flow, release it with "AgeCheck: release without age check".', 'navexa-agecheck-for-woocommerce' ) );
-		} elseif ( 'failed' === $status ) {
+		} elseif ( 'failed' === $status && ! $retry ) {
 			Meta::note( $order, __( 'AgeCheck: the shopper\'s age check failed. Test keys never deny or refund orders: cancel it yourself.', 'navexa-agecheck-for-woocommerce' ) );
 		}
+		return $retry;
 	}
 
 	/**
 	 * GetClearance and what follows from its answer.
 	 *
-	 * @param \WC_Order       $order  Order.
-	 * @param Client          $client Fulfilment-key client.
-	 * @param IntegrationInfo $info   The fulfilment key's info.
+	 * @param \WC_Order       $order   Order.
+	 * @param Client          $client  Fulfilment-key client.
+	 * @param IntegrationInfo $info    The fulfilment key's info.
+	 * @param bool            $retried Whether this run asked already and asks
+	 *                                 again on a fresh key.
 	 * @throws ConnectError A failure.
 	 */
-	private static function clear( \WC_Order $order, Client $client, IntegrationInfo $info ): string {
+	private static function clear( \WC_Order $order, Client $client, IntegrationInfo $info, bool $retried = false ): string {
 		$external = Binding::owned_external_id( $order );
 		$ship_to  = OrderAddress::ship_to( $order );
 		if ( '' === $external || null === $ship_to ) {
@@ -440,7 +466,7 @@ final class Release {
 				}
 				self::rotate_key( $order, $external );
 				if ( 'not_verified' === $reason ) {
-					return self::not_verified( $order, $client, $info );
+					return self::not_verified( $order, $client, $info, $retried );
 				}
 				return self::finish_review( $order, '' === $reason ? 'denied' : $reason );
 			default:
@@ -452,17 +478,26 @@ final class Release {
 	 * DENIED not_verified: the verification failed (deny), or it passed but its
 	 * identity data was purged before the order cleared (verify again).
 	 *
-	 * @param \WC_Order       $order  Order.
-	 * @param Client          $client Client.
-	 * @param IntegrationInfo $info   Fulfilment key info.
+	 * A pass next to DENIED not_verified is first asked about once more on the
+	 * fresh key rotate_key() saved: AgeCheck replays a key's answer for 24
+	 * hours, so a DENIED recorded under the stored key before the shopper
+	 * passed a retry comes back unchanged (1.1.0 could leave such a key on the
+	 * order). Only a DENIED not_verified on a fresh key means the pass was
+	 * purged. A denied or refunded order is never verified again on its own:
+	 * staff decide.
+	 *
+	 * @param \WC_Order       $order   Order.
+	 * @param Client          $client  Client.
+	 * @param IntegrationInfo $info    Fulfilment key info.
+	 * @param bool            $retried Whether the answer came on a fresh key.
 	 * @throws ConnectError When AgeCheck cannot answer.
 	 */
-	private static function not_verified( \WC_Order $order, Client $client, IntegrationInfo $info ): string {
+	private static function not_verified( \WC_Order $order, Client $client, IntegrationInfo $info, bool $retried ): string {
 		$answer       = $client->call( 'GetVerification', array( 'id' => Meta::get( $order, Meta::VERIFICATION_ID ) ) );
 		$verification = isset( $answer['verification'] ) && is_array( $answer['verification'] ) ? $answer['verification'] : array();
 		$status       = Binding::record_verification( $order, $verification );
 		if ( 'failed' === $status ) {
-			if ( DocRetry::defer( $order, $verification, $info, $client ) ) {
+			if ( DocRetry::defer( $order, $verification, $client ) ) {
 				// TAX-1838: the shopper may still try again; the refund waits.
 				$order->save_meta_data();
 				return self::PENDING;
@@ -470,6 +505,13 @@ final class Release {
 			return self::deny( $order, 'not_verified', $info );
 		}
 		if ( 'passed' === $status ) {
+			if ( ! $retried ) {
+				Client::log( 'info', sprintf( 'agecheck release order=%d denied next to a pass: asking again on a fresh key', $order->get_id() ) );
+				return self::clear( $order, $client, $info, true );
+			}
+			if ( Meta::is_denied( $order ) ) {
+				return self::finish_review( $order, 'passed_after_denial' );
+			}
 			Binding::reverify( $order, 'verification_purged' );
 			$order->save_meta_data();
 			self::enqueue( $order->get_id(), self::TRIGGER_RETRY );
@@ -514,12 +556,13 @@ final class Release {
 	 * @throws ConnectError When a denied order's verification cannot be read.
 	 */
 	private static function cleared( \WC_Order $order, bool $replayed, Client $client ): string {
-		if ( Meta::STATUS_DENIED === Meta::get( $order, Meta::STATUS ) && DocRetry::opted_in( $order ) && ! self::overridden( $order, $client ) ) {
+		if ( Meta::is_denied( $order ) && ( self::refunded( $order ) || ! self::overridden( $order, $client ) ) ) {
 			// Denied (refunded, or listed for a refund) and then passed: the
 			// shopper finished a retry after the plugin stopped waiting
-			// (TAX-1838). Never ship it on its own: staff decide. A merchant
-			// override in AgeCheck's dashboard still releases it, as for an
-			// order without the retry.
+			// (TAX-1838), or a stale answer denied it. Never ship it on its
+			// own, whatever the verification's opt-in says: staff decide. A
+			// merchant override in AgeCheck's dashboard is staff's decision and
+			// still releases it, unless its money went back already.
 			Meta::set( $order, Meta::CLEARANCE_KEY, '' );
 			Client::log( 'warning', sprintf( 'agecheck release order=%d cleared after denial', $order->get_id() ) );
 			return self::finish_review( $order, 'passed_after_denial' );
@@ -539,6 +582,16 @@ final class Release {
 			$note = sprintf( __( 'TEST %s', 'navexa-agecheck-for-woocommerce' ), $note );
 		}
 		return Hold::release( $order, $note ) ? self::RELEASED : self::CLEARED;
+	}
+
+	/**
+	 * Whether the denied order's money went back (refunded through the
+	 * gateway, or refunded or cancelled by staff).
+	 *
+	 * @param \WC_Order $order Order.
+	 */
+	private static function refunded( \WC_Order $order ): bool {
+		return in_array( Meta::get( $order, Meta::REFUND ), array( Meta::REFUND_REFUNDED, Meta::REFUND_RESOLVED ), true );
 	}
 
 	/**
@@ -610,13 +663,16 @@ final class Release {
 	}
 
 	/**
-	 * Replaces the stored clearance key after a recorded HOLD or DENIED.
+	 * Replaces the stored clearance key after a recorded HOLD or DENIED, and
+	 * saves it at once: a key whose answer AgeCheck replays must never stay
+	 * stored because a later path returned without saving.
 	 *
 	 * @param \WC_Order $order    Order.
 	 * @param string    $external External id.
 	 */
 	private static function rotate_key( \WC_Order $order, string $external ): void {
 		Meta::set( $order, Meta::CLEARANCE_KEY, self::new_clearance_key( $external ) );
+		$order->save_meta_data();
 	}
 
 	/**

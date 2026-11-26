@@ -494,7 +494,9 @@ final class Binding {
 
 	/**
 	 * Drops the order's verification so the next run starts an order-bound one
-	 * (unsaved meta changes).
+	 * (unsaved meta changes). On a denied or refunded order (Meta::is_denied())
+	 * the document retry's opt-in (DOC_RETRY, BOUND_BY) stays: it is what tells
+	 * the record apart, and such an order is never released on its own anyway.
 	 *
 	 * @param \WC_Order $order  Order.
 	 * @param string    $reason Why.
@@ -506,7 +508,12 @@ final class Binding {
 			$previous[] = $vid;
 			Meta::set( $order, Meta::PREVIOUS_VERIFICATION_IDS, implode( ',', array_slice( array_unique( $previous ), -10 ) ) );
 		}
-		foreach ( array( Meta::VERIFICATION_ID, Meta::ATTACH_PENDING, Meta::BOUND_AT, Meta::BOUND_BY, Meta::SHIP_TO_HASH, Meta::CLEARANCE_KEY, Meta::LINK, Meta::LINK_ID, Meta::LINK_EXPIRES_AT, Meta::LINK_SENT_AT, Meta::LINK_KEY, Meta::VERIFICATION_STATUS, Meta::PASS_CLASS, Meta::DOC_RETRY, Meta::RETRY_UNTIL, Meta::RETRY_OPEN ) as $key ) {
+		$keys = array( Meta::VERIFICATION_ID, Meta::ATTACH_PENDING, Meta::BOUND_AT, Meta::SHIP_TO_HASH, Meta::CLEARANCE_KEY, Meta::LINK, Meta::LINK_ID, Meta::LINK_EXPIRES_AT, Meta::LINK_SENT_AT, Meta::LINK_KEY, Meta::VERIFICATION_STATUS, Meta::PASS_CLASS, Meta::RETRY_UNTIL, Meta::RETRY_OPEN );
+		if ( ! Meta::is_denied( $order ) ) {
+			$keys[] = Meta::BOUND_BY;
+			$keys[] = Meta::DOC_RETRY;
+		}
+		foreach ( $keys as $key ) {
 			Meta::set( $order, $key, '' );
 		}
 		Meta::set( $order, Meta::CREATE_ATTEMPT, Meta::get_int( $order, Meta::CREATE_ATTEMPT ) + 1 );

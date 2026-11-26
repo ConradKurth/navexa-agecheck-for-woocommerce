@@ -217,22 +217,54 @@ final class ReleaseRaceTest extends TestCase {
 		$this->assertTrue( OrderVerify::needs_shopper( $order ) );
 		$notes = implode( "\n", $order->notes );
 		$this->assertStringContainsString( 'may try again until', $notes );
+		$this->assertStringContainsString( 'Test keys never deny or refund orders', $notes );
+		$this->assertStringNotContainsString( 'a refund waits', $notes, 'a test key never refunds' );
 		$this->assertStringNotContainsString( 'cancel it yourself', $notes );
 
-		// AgeCheck closes it (its window, the ID checks spent): as before.
+		// AgeCheck closes it (its window, the ID checks spent): as before, and
+		// the merchant is told to cancel it, since nothing will.
 		$this->respond( 200, $this->failed( $decided ) );
 		$this->respond( 400, array( 'code' => 'failed_precondition', 'message' => 'agecheck: a hosted session is not allowed' ) );
 		$this->assertSame( Release::TEST_MODE, Release::run( $order->get_id(), Release::TRIGGER_WEBHOOK ) );
 		$this->assertFalse( DocRetry::open( $order ) );
 		$this->assertSame( 'test_mode', $order->meta[ Meta::REASON ] );
 		$this->assertSame( Meta::STATUS_PENDING, $order->meta[ Meta::STATUS ], 'a test key never denies' );
+		$this->assertSame( 1, substr_count( implode( "\n", $order->notes ), 'cancel it yourself' ) );
+
+		// A later run with the check still failed and the retry still closed
+		// notes nothing again.
+		$this->respond( 200, $this->failed( $decided ) );
+		$this->respond( 400, array( 'code' => 'failed_precondition', 'message' => 'agecheck: a hosted session is not allowed' ) );
+		$this->assertSame( Release::TEST_MODE, Release::run( $order->get_id(), Release::TRIGGER_WEBHOOK ) );
+		$this->assertSame( 1, substr_count( implode( "\n", $order->notes ), 'cancel it yourself' ) );
 
 		// The window is the live one: past RETRY_UNTIL nothing is asked.
 		$late                            = $this->opted_in_order();
 		$late->meta[ Meta::RETRY_UNTIL ] = time() - 1;
 		$this->assertFalse( DocRetry::defer( $late, $this->failed( $decided )['verification'], $this->fulfilment_client() ) );
-		$this->assertSame( 'CreateHostedSession', $this->rpcs()[4], 'no call for the late order' );
-		$this->assertCount( 5, $this->http_requests );
+		$this->assertSame( 'CreateHostedSession', $this->rpcs()[6], 'no call for the late order' );
+		$this->assertCount( 7, $this->http_requests );
+	}
+
+	public function test_a_test_key_retry_that_runs_out_tells_the_merchant_to_cancel(): void {
+		$order   = $this->opted_in_order();
+		$decided = time() - 600;
+		$this->respond( 200, $this->live_info( array( 'livemode' => false, 'docRetry' => true ) ) );
+		$this->respond( 200, $this->failed( $decided ) );
+		$this->respond( 200, array( 'hostedUrl' => 'https://verify.navexa.co/v/tok' ) );
+		$this->assertSame( Release::TEST_MODE, Release::run( $order->get_id(), Release::TRIGGER_WEBHOOK ) );
+		$this->assertTrue( DocRetry::open( $order ) );
+
+		// RETRY_UNTIL passes with the check still failed: no call, one note.
+		$order->meta[ Meta::RETRY_UNTIL ]   = time() - 1;
+		$order->meta[ Meta::NEXT_CHECK_AT ] = '';
+		$order->save_meta_data();
+		$this->respond( 200, $this->failed( $decided ) );
+		$this->assertSame( Release::TEST_MODE, Release::run( $order->get_id(), Release::TRIGGER_SWEEP ) );
+		$this->assertSame( array( 'GetIntegrationInfo', 'GetVerification', 'CreateHostedSession', 'GetVerification' ), array_slice( $this->rpcs(), 0, 4 ) );
+		$this->assertSame( 'test_mode', $order->meta[ Meta::REASON ] );
+		$this->assertSame( '', Meta::get( $order, Meta::RETRY_OPEN ) );
+		$this->assertSame( 1, substr_count( implode( "\n", $order->notes ), 'cancel it yourself' ) );
 	}
 
 	/**

@@ -336,8 +336,9 @@ final class Release {
 	 * says when the shopper's check has passed or failed. It never releases or
 	 * denies. A failure the shopper may still retry (DocRetry::defer(), the
 	 * same window as a live key's) is recorded as such, so the order page
-	 * offers Try again with a test key too. Panel-only: a failure is logged
-	 * and the run goes on.
+	 * offers Try again with a test key too; its note promises no refund. When
+	 * that retry closes with the check still failed, the "cancel it yourself"
+	 * note follows once. Panel-only: a failure is logged and the run goes on.
 	 *
 	 * @param \WC_Order $order  Order.
 	 * @param Client    $client Fulfilment-key client.
@@ -360,17 +361,25 @@ final class Release {
 		if ( array() === $verification ) {
 			return false;
 		}
-		$status = Binding::record_verification( $order, $verification );
-		$retry  = false;
+		// Waiting on a retry before this run: a reason the caller has not
+		// replaced yet, or AgeCheck's last answer that it may be retried.
+		$was_waiting = DocRetry::REASON === Meta::get( $order, Meta::REASON ) || 'yes' === Meta::get( $order, Meta::RETRY_OPEN );
+		$status      = Binding::record_verification( $order, $verification );
+		$retry       = false;
+		$closed      = false;
 		if ( 'failed' === $status && DocRetry::opted_in( $order ) ) {
 			try {
-				$retry = DocRetry::defer( $order, $verification, $client );
+				$retry  = DocRetry::defer( $order, $verification, $client, false );
+				$closed = ! $retry && $was_waiting;
 			} catch ( ConnectError $e ) {
 				Client::log( 'warning', sprintf( 'agecheck release order=%d vid=%s test retry check failed code=%s', $order->get_id(), $vid, $e->connect_code() ) );
 			}
 		}
 		$order->save_meta_data();
-		if ( $status === $before ) {
+		// A retry that closed with the status still failed gets the failure's
+		// note below, once: the caller then replaces the reason, and defer()
+		// has cleared RETRY_OPEN.
+		if ( $status === $before && ! $closed ) {
 			return $retry;
 		}
 		if ( 'passed' === $status ) {

@@ -186,9 +186,12 @@ final class DocRetry {
 	 * @param \WC_Order            $order        Order.
 	 * @param array<string, mixed> $verification GetVerification's verification.
 	 * @param Client               $client       Fulfilment-key client (a live or a test key).
+	 * @param bool                 $refunds      Whether a denial and refund follow the window
+	 *                                           (false for a test key without test release:
+	 *                                           the note then promises no refund).
 	 * @throws ConnectError When AgeCheck cannot answer now (retryable).
 	 */
-	public static function defer( \WC_Order $order, array $verification, Client $client ): bool {
+	public static function defer( \WC_Order $order, array $verification, Client $client, bool $refunds = true ): bool {
 		if ( ! self::opted_in( $order ) ) {
 			return false;
 		}
@@ -217,11 +220,17 @@ final class DocRetry {
 		if ( ! $was_open ) {
 			Meta::note(
 				$order,
-				sprintf(
-					/* translators: %s: a date and time. */
-					__( 'AgeCheck: the shopper\'s age check did not pass. They may try again until %s; a refund waits until then. Do not ship.', 'navexa-agecheck-for-woocommerce' ),
-					self::date( $until )
-				)
+				$refunds
+					? sprintf(
+						/* translators: %s: a date and time. */
+						__( 'AgeCheck: the shopper\'s age check did not pass. They may try again until %s; a refund waits until then. Do not ship.', 'navexa-agecheck-for-woocommerce' ),
+						self::date( $until )
+					)
+					: sprintf(
+						/* translators: %s: a date and time. */
+						__( 'AgeCheck: the shopper\'s age check did not pass. They may try again until %s. Test keys never deny or refund orders. Do not ship.', 'navexa-agecheck-for-woocommerce' ),
+						self::date( $until )
+					)
 			);
 		}
 		Meta::set( $order, Meta::REASON, self::REASON );

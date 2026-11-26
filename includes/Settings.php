@@ -248,7 +248,7 @@ final class Settings extends \WC_Settings_Page {
 				'type'     => 'checkbox',
 				'title'    => __( 'Express payment buttons', 'navexa-agecheck-for-woocommerce' ),
 				'desc'     => __( 'Hide express checkout buttons on age-restricted carts and products', 'navexa-agecheck-for-woocommerce' ),
-				'desc_tip' => __( 'Apple Pay, Google Pay, Link, Amazon Pay, WooPay and PayPal buttons from WooPayments, WooCommerce Stripe Gateway and WooCommerce PayPal Payments skip the checkout form, so the shopper never sees Verify age. Hidden, the shopper pays through the checkout form instead. An express order that still gets through is refused before payment (Before payment mode) or held after payment until the age check clears.', 'navexa-agecheck-for-woocommerce' ),
+				'desc_tip' => __( 'Apple Pay, Google Pay, Link, Amazon Pay, WooPay and PayPal buttons from WooPayments, WooCommerce Stripe Gateway and WooCommerce PayPal Payments skip the checkout form, so the age check at Place order never runs. Hidden, the shopper pays through the checkout form instead. An express order that still gets through is refused before payment (Before payment mode) or held after payment until the age check clears.', 'navexa-agecheck-for-woocommerce' ),
 				'default'  => 'yes',
 			),
 			array(

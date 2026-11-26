@@ -1,0 +1,20 @@
+{
+  "latest": "1.0.0",
+  "versions": {
+    "1.0.0": {
+      "commit": "af010cc1d1af212392b5a96881f023e351679bf7",
+      "files": {
+        "agecheck-1.0.0.js": "sha384-VyHt3NnrM5wIyBmXbo/mZHIDVKq5rae+As/45j1C1WQoLYOHO8qtYjsDhQjL/j33",
+        "agecheck-1.0.0.debug.js": "sha384-noSRZX5KVXPYY/VVk9iaLvuEYmtlurUogN5zSzjkpXBCBSYKvNAUZBsFy8MxM4vz",
+        "agecheck-gate-1.0.0.js": "sha384-YlCh06ZOx6aot0PQw52J0tvI0PRkqXvQFqtlneZ6YartxcH4uY8fj37ntKwjwlej",
+        "agecheck-gate-1.0.0.debug.js": "sha384-3rZkEkHuK38urMtNJIr4Vul0wUes8e4BfxlqS4XtBXGMijHsP+xyVpnKX02aKTUx",
+        "schema/1.0.0/gate-options.schema.json": "sha384-Okot2KxTVy/8WL8MOV9noI2Tc+uK9zleejOAm+P9QI1qxu08YzURPY8ntbJ0o8IY",
+        "schema/1.0.0/vectors/age.json": "sha384-ze/QFCVvKB+ZSfYoBuHX1fYzeGgvbbOgXbbBQCeEld2wujiOTb4/DwKGmiaCr7k9",
+        "schema/1.0.0/vectors/attributes.json": "sha384-X/oiXFyoPDxdwi8Fwc779cQLDD3k0X7A4zWmASRZuPYfXPn3woHczJIquSOaty+4",
+        "schema/1.0.0/vectors/contrast.json": "sha384-pw/U8YE3dSdhns1nsklV6PJ3t0Hjvg8muTeAf43cjSjf0+Lz8AgFL7DO8uKrO2Qu",
+        "schema/1.0.0/vectors/options.json": "sha384-JR8WKQeX8NSOkEYxWsXWsp28zdGrUvdgvHWSBB8kRs88OD7zoc8eQsv/HlMpSG2E",
+        "schema/1.0.0/vectors/remember.json": "sha384-IKuvY5RFMnB4kivu+W5KqFHeFNrfdh6Dcek6Y2CRRN1l/m7QMSs4+jE08LWlyKnT"
+      }
+    }
+  }
+}

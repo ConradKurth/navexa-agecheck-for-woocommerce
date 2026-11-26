@@ -69,6 +69,11 @@ jobs:
       - run: npm run test:mock
       - run: npm run test:loader
       - run: npm run typecheck
+      # The shared loader is vendored byte for byte (bin/sync-loader.mjs):
+      # agecheck-js's verify-vendored (pin, sha384 against its manifest, MIT
+      # banner, schema) plus the PHP constant and the readable builds.
+      - name: Vendored AgeCheck loader matches its manifest
+        run: node bin/sync-loader.mjs --check
       # The loader (esbuild) and the checkout block (wp-scripts); the built
       # files are committed, so the build must reproduce them exactly.
       - run: npm run build

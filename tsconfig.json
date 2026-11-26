@@ -12,5 +12,5 @@
 		"skipLibCheck": true,
 		"types": ["node"]
 	},
-	"include": ["assets/src/loader/**/*.ts"]
+	"include": ["assets/src/loader/**/*.ts", "assets/src/gate/**/*.ts", "assets/src/admin/**/*.ts"]
 }

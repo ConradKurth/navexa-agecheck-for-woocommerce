@@ -11,7 +11,7 @@
 	"scripts": {
 		"mock": "node tests/mock-agecheck/server.mjs",
 		"test:mock": "node --test \"tests/mock-agecheck/*.test.mjs\"",
-		"test:loader": "node --test \"assets/src/loader/*.test.ts\"",
+		"test:loader": "node --test \"assets/src/loader/*.test.ts\" \"assets/src/gate/*.test.ts\" \"bin/*.test.mjs\"",
 		"typecheck": "tsc -p tsconfig.json",
 		"build:loader": "node assets/src/loader/build.mjs",
 		"build:blocks": "wp-scripts build --config webpack.config.cjs --webpack-src-dir=assets/src/blocks --output-path=assets/build",

@@ -1,0 +1,22 @@
+{
+  "description": "The gate's date-of-birth answer (mode dob): ok, under, or invalid (not a calendar date, before 1900, or after today). Dates are calendar days in the visitor's time zone. Someone born on 29 February turns a year older on 1 March in a common year.",
+  "cases": [
+    { "name": "21st birthday today", "birth": "2005-06-15", "today": "2026-06-15", "minAge": 21, "verdict": "ok" },
+    { "name": "21st birthday tomorrow", "birth": "2005-06-16", "today": "2026-06-15", "minAge": 21, "verdict": "under" },
+    { "name": "18th birthday today", "birth": "2008-06-15", "today": "2026-06-15", "minAge": 18, "verdict": "ok" },
+    { "name": "19th birthday tomorrow", "birth": "2007-06-16", "today": "2026-06-15", "minAge": 19, "verdict": "under" },
+    { "name": "born 31 Dec, new year's day", "birth": "2005-12-31", "today": "2027-01-01", "minAge": 21, "verdict": "ok" },
+    { "name": "leap day, 28 Feb of a common year", "birth": "2004-02-29", "today": "2025-02-28", "minAge": 21, "verdict": "under" },
+    { "name": "leap day, 1 Mar of a common year", "birth": "2004-02-29", "today": "2025-03-01", "minAge": 21, "verdict": "ok" },
+    { "name": "leap day, 29 Feb of a leap year", "birth": "2003-02-28", "today": "2024-02-29", "minAge": 21, "verdict": "ok" },
+    { "name": "leap day birthday on a leap day", "birth": "2006-02-29", "today": "2027-03-01", "minAge": 21, "verdict": "invalid" },
+    { "name": "29 Feb in a leap year, 21 years on, a leap day again", "birth": "2000-02-29", "today": "2021-02-28", "minAge": 21, "verdict": "under" },
+    { "name": "29 Feb 2000, 1 Mar 2021", "birth": "2000-02-29", "today": "2021-03-01", "minAge": 21, "verdict": "ok" },
+    { "name": "1900 is not a leap year", "birth": "1900-02-29", "today": "2026-06-15", "minAge": 21, "verdict": "invalid" },
+    { "name": "born today", "birth": "2026-06-15", "today": "2026-06-15", "minAge": 18, "verdict": "under" },
+    { "name": "future date", "birth": "2026-06-16", "today": "2026-06-15", "minAge": 18, "verdict": "invalid" },
+    { "name": "before 1900", "birth": "1899-12-31", "today": "2026-06-15", "minAge": 18, "verdict": "invalid" },
+    { "name": "31 April", "birth": "2000-04-31", "today": "2026-06-15", "minAge": 18, "verdict": "invalid" },
+    { "name": "month 13", "birth": "2000-13-01", "today": "2026-06-15", "minAge": 18, "verdict": "invalid" }
+  ]
+}

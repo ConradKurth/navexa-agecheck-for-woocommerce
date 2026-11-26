@@ -153,15 +153,23 @@ for entry in "$dest"/* "$dest"/.[!.]* "$dest"/..?*; do
 		*) die "not a runtime file: ${entry#"$dest"/} (add it to .gitattributes export-ignore, or to this allowlist if the plugin needs it)" ;;
 	esac
 done
-for required in uninstall.php LICENSE includes/Plugin.php "languages/$slug.pot" assets/src/loader/agecheck.ts assets/src/loader/build.mjs assets/src/blocks; do
+for required in uninstall.php LICENSE includes/Plugin.php "languages/$slug.pot" assets/src/loader/classic.ts assets/src/loader/build.mjs assets/src/blocks \
+	assets/vendor/agecheck-js/manifest.json assets/vendor/agecheck-js/LICENSE assets/vendor/agecheck-js/src/index.ts; do
 	[ -e "$dest/$required" ] || die "$required is missing"
 done
-ls "$dest"/assets/js/agecheck-*.min.js > /dev/null 2>&1 || die "the built loader (assets/js/agecheck-*.min.js) is missing"
+loader_version=$(sed -n "s/.*const LOADER_VERSION = '\([0-9.]*\)';.*/\1/p" "$dest/includes/Frontend.php")
+for build in agecheck agecheck-gate; do
+	[ -f "$dest/assets/vendor/agecheck-js/$build-$loader_version.js" ] || die "the vendored loader assets/vendor/agecheck-js/$build-$loader_version.js is missing (Frontend::LOADER_VERSION $loader_version)"
+done
+[ ! -d "$dest/assets/vendor/agecheck-js/schema" ] || die "the vendored loader's schema/ is for tests only (export-ignore)"
 ls "$dest"/assets/build/*/block.json > /dev/null 2>&1 || die "the built checkout block (assets/build/) is missing"
 while IFS= read -r -d '' min; do
 	[ -f "${min%.min.js}.js" ] || die "${min#"$dest"/} has no unminified build next to it (Guideline 4)"
 done < <(find "$dest/assets" -name '*.min.js' -print0)
-unwanted=$(cd "$dest" && find . \( -name '.*' -o -name node_modules -o -name vendor -o -name tests -o -name '*.test.*' -o -name '*.map' \
+while IFS= read -r -d '' loader; do
+	[ -f "${loader%.js}.debug.js" ] || die "${loader#"$dest"/} has no readable .debug.js build next to it (Guideline 4)"
+done < <(find "$dest/assets/vendor" -name 'agecheck*.js' ! -name '*.debug.js' -print0)
+unwanted=$(cd "$dest" && find . \( -name '.*' -o -name node_modules -o -path ./vendor -o -name tests -o -name '*.test.*' -o -name '*.map' \
 	-o -name 'composer.*' -o -name 'package*.json' -o -name 'phpcs.xml*' -o -name 'phpstan.neon*' -o -name 'phpunit.xml*' -o -name 'tsconfig*.json' \
 	-o -name 'webpack.config.*' -o -name '*.md' -o -type l \) ! -name . -print | sort)
 [ -z "$unwanted" ] || die "development files would ship: $(echo "$unwanted" | tr '\n' ' ')"

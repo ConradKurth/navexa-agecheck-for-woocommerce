@@ -1,0 +1,219 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:navexa:agecheck-js:gate-options:1",
+  "title": "Navexa AgeCheck entry gate options (GateOptions)",
+  "description": "The options of NavexaAgeCheck.gate() and the data- attributes of the gate's script tag (agecheck-js, TAX-1873). Every consumer (WooCommerce settings, the free gate generator, BigCommerce, Shopify) validates against this schema and tests against schema/vectors/. The loader accepts exactly what this schema accepts; it ignores anything else (the default is used and a console warning printed). One rule is not expressible here: x-contrast.",
+  "type": "object",
+  "additionalProperties": false,
+  "x-contrast": {
+    "minimum": 4.5,
+    "pairs": [
+      [
+        "text",
+        "card"
+      ],
+      [
+        "accentText",
+        "accent"
+      ]
+    ],
+    "description": "WCAG 2.x contrast ratio of each resolved pair (defaults filled in), unrounded, must be at least 4.5. Settings UIs refuse a pair under it and the gate generator blocks the copy until it is fixed. The loader falls back to the default pair and warns (warning contrast.<fg>-<bg>). Helper: contrastRatio() in agecheck-js; vectors: vectors/contrast.json."
+  },
+  "x-placeholders": {
+    "{age}": "the minimum age",
+    "{site}": "the site name (empty without one)"
+  },
+  "x-normalization": {
+    "text": "siteName, title, message and every label: Checked as given; then control characters fold to spaces and the ends are trimmed. Empty = the default. Length is in Unicode code points.",
+    "colour": "lower-cased",
+    "font": "trimmed",
+    "attributes": "Attribute values are trimmed first, an empty attribute counts as not set, and data-min-age / data-remember-days become numbers when they are 1 to 3 digits. data-theme-<key> and data-label-<key> use kebab-case keys (data-theme-accent-text = theme.accentText); an unknown key is ignored with a warning. data-navexa-gate (valueless, empty or any value) turns the gate on."
+  },
+  "properties": {
+    "mode": {
+      "enum": [
+        "attest",
+        "dob"
+      ],
+      "default": "attest",
+      "description": "attest = Yes/No buttons; dob = date of birth (month, day, year), judged in the browser and never stored or sent.",
+      "x-attribute": "data-mode"
+    },
+    "minAge": {
+      "enum": [
+        18,
+        19,
+        21
+      ],
+      "default": 21,
+      "x-attribute": "data-min-age"
+    },
+    "rememberDays": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 365,
+      "default": 30,
+      "description": "How long a Yes is remembered (localStorage navexa_agecheck_gate_v1 = {passedAt, minAge}); 0 = this tab only (sessionStorage).",
+      "x-attribute": "data-remember-days"
+    },
+    "exitUrl": {
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^([hH][tT][tT][pP][sS]?://[^\\s\"<>\\\\\\u0000-\\u001f\\u007f]+)?$",
+      "description": "Where an under-age visitor goes: an absolute http: or https: URL that the WHATWG URL parser accepts; empty = a message instead. No gate shows on this URL's own page.",
+      "x-attribute": "data-exit-url"
+    },
+    "siteName": {
+      "type": "string",
+      "maxLength": 60,
+      "default": "",
+      "description": "Also the logo's alt text. Checked as given; then control characters fold to spaces and the ends are trimmed. Empty = the default.",
+      "x-attribute": "data-site-name"
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 80,
+      "default": "Welcome",
+      "description": "Default: \"Welcome\", or \"Welcome to {site}\" with a site name. Checked as given; then control characters fold to spaces and the ends are trimmed. Empty = the default.",
+      "x-attribute": "data-title"
+    },
+    "message": {
+      "type": "string",
+      "maxLength": 300,
+      "default": "You must be {age} or older to enter this site. Please confirm your age.",
+      "description": "Default (attest): \"You must be {age} or older to enter this site. Please confirm your age.\"; (dob): \"You must be {age} or older to enter this site. Please enter your date of birth.\". Checked as given; then control characters fold to spaces and the ends are trimmed. Empty = the default.",
+      "x-attribute": "data-message"
+    },
+    "logoUrl": {
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^([hH][tT][tT][pP][sS]://[^\\s\"<>\\\\\\u0000-\\u001f\\u007f]+)?$",
+      "description": "An absolute https: URL (an http: logo is mixed content on https sites); empty = no logo.",
+      "x-attribute": "data-logo-url"
+    },
+    "theme": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Colours and font. The backdrop is a colour only (no image) in v1.",
+      "default": {
+        "backdrop": "#1e1e1e",
+        "card": "#ffffff",
+        "text": "#1e1e1e",
+        "accent": "#1e1e1e",
+        "accentText": "#ffffff",
+        "font": "system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif"
+      },
+      "properties": {
+        "backdrop": {
+          "type": "string",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}))?$",
+          "default": "#1e1e1e",
+          "description": "Behind the card, and the page colour while the gate hides it. #rgb or #rrggbb (any case; the loader lower-cases it); empty = the default.",
+          "x-attribute": "data-theme-backdrop"
+        },
+        "card": {
+          "type": "string",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}))?$",
+          "default": "#ffffff",
+          "description": "Card background. #rgb or #rrggbb (any case; the loader lower-cases it); empty = the default.",
+          "x-attribute": "data-theme-card"
+        },
+        "text": {
+          "type": "string",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}))?$",
+          "default": "#1e1e1e",
+          "description": "Card text. #rgb or #rrggbb (any case; the loader lower-cases it); empty = the default.",
+          "x-attribute": "data-theme-text"
+        },
+        "accent": {
+          "type": "string",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}))?$",
+          "default": "#1e1e1e",
+          "description": "Buttons and the focus ring. #rgb or #rrggbb (any case; the loader lower-cases it); empty = the default.",
+          "x-attribute": "data-theme-accent"
+        },
+        "accentText": {
+          "type": "string",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}))?$",
+          "default": "#ffffff",
+          "description": "Button text. #rgb or #rrggbb (any case; the loader lower-cases it); empty = the default.",
+          "x-attribute": "data-theme-accent-text"
+        },
+        "font": {
+          "type": "string",
+          "pattern": "^([A-Za-z0-9 ,'\"-]{1,100})?$",
+          "default": "system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif",
+          "description": "A CSS font-family list, or inherit for the site's own font; empty = the default.",
+          "x-attribute": "data-theme-font"
+        }
+      }
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Every string on the gate. Checked as given; then control characters fold to spaces and the ends are trimmed. Empty = the default.",
+      "properties": {
+        "yes": {
+          "type": "string",
+          "maxLength": 40,
+          "default": "I am {age} or older",
+          "x-attribute": "data-label-yes"
+        },
+        "no": {
+          "type": "string",
+          "maxLength": 40,
+          "default": "I am under {age}",
+          "x-attribute": "data-label-no"
+        },
+        "submit": {
+          "type": "string",
+          "maxLength": 40,
+          "default": "Enter",
+          "x-attribute": "data-label-submit"
+        },
+        "dob": {
+          "type": "string",
+          "maxLength": 40,
+          "default": "Date of birth",
+          "x-attribute": "data-label-dob"
+        },
+        "month": {
+          "type": "string",
+          "maxLength": 40,
+          "default": "Month",
+          "x-attribute": "data-label-month"
+        },
+        "day": {
+          "type": "string",
+          "maxLength": 40,
+          "default": "Day",
+          "x-attribute": "data-label-day"
+        },
+        "year": {
+          "type": "string",
+          "maxLength": 40,
+          "default": "Year",
+          "x-attribute": "data-label-year"
+        },
+        "invalid": {
+          "type": "string",
+          "maxLength": 160,
+          "default": "Enter a real date of birth: month, day and year.",
+          "x-attribute": "data-label-invalid"
+        },
+        "denied": {
+          "type": "string",
+          "maxLength": 160,
+          "default": "Sorry, you must be {age} or older to visit this site.",
+          "x-attribute": "data-label-denied"
+        },
+        "leaving": {
+          "type": "string",
+          "maxLength": 160,
+          "default": "Leaving this site…",
+          "x-attribute": "data-label-leaving"
+        }
+      }
+    }
+  }
+}

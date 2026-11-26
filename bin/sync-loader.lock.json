@@ -1,0 +1,27 @@
+{
+  "package": "@navexa/agecheck-js",
+  "version": "1.0.1",
+  "commit": "a359cb0bae2e9e8aed275fdd2ff749dbfda98f6e",
+  "vendor": {
+    "LICENSE": "sha384-kT4QYJLd9Rd06i4T+fos7TyJTifsRGpGawiozvop5cXDIYFveuaj1zBf6FX+2gbX",
+    "manifest.json": "sha384-1vb1TE3eWvzVSQQn1mli934wvTep/Nte1/UjiWItCHkyu3crx7UOi2xKto3Q5ya0",
+    "src/age.ts": "sha384-JCvTgyoQAEXvl3zYRb/aZgUjLMEdKOaLp9KCPlGjZnURF1KZzkBzelHAluFfdELb",
+    "src/autogate.ts": "sha384-gnA7uXP4DcrdSkf8IGxHPjz6e+A9JWip2wHCg1LyLqtHVOXhSgs1uOXEchMp95VN",
+    "src/contrast.ts": "sha384-tynxzx3Dq44Z3cexR+CTTz3JDAznyOpChndwhNxhATb29mWrIlpNT4w+T98O6jyy",
+    "src/crawler.ts": "sha384-S7hD+OVVS91DlXnLeQwCTGh4NU9WfIWvPSOHVnIIqympvfcDWt959rpckK3aJwJZ",
+    "src/dom.ts": "sha384-HUA6VRcxu6sigIeI5KFJNNoqtFrrPNUwoMYcndAXnJi0bxg/Hh19BKWkCOcDARRY",
+    "src/env.ts": "sha384-Qe1A017pcjahWLkwNcIUaQZLB3hWcjzRw0UNpDfr8P4LGUi9xBJmVNA/VSZ9e0OI",
+    "src/gate.ts": "sha384-AgZlDBjXiZYKJoftzTrO83SaodrzDGhyeWeBUry3fHu7jPnSbvA3HvoaaaQyWkAj",
+    "src/global.ts": "sha384-z8FjVgzaZZ9iIs6YBn2cgqcegTzOhwoHBnGUkx4syh5lvuTmy8ej9BoFE/e3/tO0",
+    "src/iife-gate.ts": "sha384-k06GUWeqCex48f93q43j4HwRIEYUhOj4kX1iBXV18zfB27usw1c25GJhD0q+Rtfs",
+    "src/iife.ts": "sha384-CNBjQF390GSndIm/WeqmKNzxgos2IQDw+Zmf+zn1HfQMFrBl1tQW0S4e5tL8UG4K",
+    "src/index.ts": "sha384-qVdjWlilf/K+zS2/e3qeXTxwsYOwfmd5B/yPCok2FKGl/9jTRiHz4eGHM8tN+418",
+    "src/options.ts": "sha384-WFlid2tKmP+ddYyCGGHz7oJm0kbJ9r+UUBj1xT8Y+a0t26yEpUQ1Gdt7H0GYRbpR",
+    "src/verify.ts": "sha384-BYatqMZi9ufK2kPmaSSMxtP7DjHWfsX1wP/Fr9EisAVjlveqPgREiclyk9JebUCL",
+    "src/version.ts": "sha384-hLBZRs4BNpK737Qojv8Jw/LeWm9h5C9XnfqVFrQHljIsj6ripTpV7qK2G/chCIpX"
+  },
+  "tools": {
+    "bin/agecheck-js/agecheck-js.mjs": "sha384-6sxurjUT/DYXiKFLlZBu8N10xRqQ/nXHHPX1WTCfGDGpwRpLXapmNeP0CVXvJNNz",
+    "tests/mock-agecheck/hosted-engine.mjs": "sha384-D5hgvU9iurmLm0j6d3aAWGyx31y+f4MRFtqCH97RWJsiBrhG9wVwCAFyf9xqsQRc"
+  }
+}

@@ -1,0 +1,266 @@
+{
+  "description": "GateOptions in, the gate's resolved configuration out (agecheck-js gateConfig). valid: the schema accepts the options as given. warnings: the option paths the loader ignores (using the default instead), plus contrast.<fg>-<bg> for a colour pair under 4.5:1, which the schema cannot express; valid is true exactly when no warning other than contrast.* is listed. config: the resolved fields this case pins, {age} and {site} filled in. The first case pins every default.",
+  "cases": [
+    {
+      "name": "defaults",
+      "options": {},
+      "valid": true,
+      "warnings": [],
+      "config": {
+        "mode": "attest",
+        "minAge": 21,
+        "rememberDays": 30,
+        "exitUrl": "",
+        "siteName": "",
+        "title": "Welcome",
+        "message": "You must be 21 or older to enter this site. Please confirm your age.",
+        "logoUrl": "",
+        "theme": { "backdrop": "#1e1e1e", "card": "#ffffff", "text": "#1e1e1e", "accent": "#1e1e1e", "accentText": "#ffffff", "font": "system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif" },
+        "labels": {
+          "yes": "I am 21 or older",
+          "no": "I am under 21",
+          "submit": "Enter",
+          "dob": "Date of birth",
+          "month": "Month",
+          "day": "Day",
+          "year": "Year",
+          "invalid": "Enter a real date of birth: month, day and year.",
+          "denied": "Sorry, you must be 21 or older to visit this site.",
+          "leaving": "Leaving this site…"
+        }
+      }
+    },
+    {
+      "name": "dob, 18, site name: default title and message follow",
+      "options": { "mode": "dob", "minAge": 18, "siteName": "Example Goods" },
+      "valid": true,
+      "warnings": [],
+      "config": { "mode": "dob", "minAge": 18, "siteName": "Example Goods", "title": "Welcome to Example Goods", "message": "You must be 18 or older to enter this site. Please enter your date of birth.", "labels": { "yes": "I am 18 or older", "denied": "Sorry, you must be 18 or older to visit this site." } }
+    },
+    {
+      "name": "every option set and valid",
+      "options": {
+        "mode": "attest",
+        "minAge": 19,
+        "rememberDays": 0,
+        "exitUrl": "https://example.com/sorry",
+        "siteName": "Shop",
+        "title": "Hi {site}",
+        "message": "Over {age}?",
+        "logoUrl": "https://cdn.example.com/logo.svg",
+        "theme": { "backdrop": "#0B5", "card": "#FAFAFA", "text": "#111111", "accent": "#0a6b3d", "accentText": "#fff", "font": "inherit" },
+        "labels": { "yes": "Yes, {age}+", "no": "No", "leaving": "Bye from {site}" }
+      },
+      "valid": true,
+      "warnings": [],
+      "config": {
+        "mode": "attest",
+        "minAge": 19,
+        "rememberDays": 0,
+        "exitUrl": "https://example.com/sorry",
+        "siteName": "Shop",
+        "title": "Hi Shop",
+        "message": "Over 19?",
+        "logoUrl": "https://cdn.example.com/logo.svg",
+        "theme": { "backdrop": "#0b5", "card": "#fafafa", "text": "#111111", "accent": "#0a6b3d", "accentText": "#fff", "font": "inherit" },
+        "labels": { "yes": "Yes, 19+", "no": "No", "submit": "Enter", "leaving": "Bye from Shop" }
+      }
+    },
+    {
+      "name": "rememberDays bounds",
+      "options": { "rememberDays": 365 },
+      "valid": true,
+      "warnings": [],
+      "config": { "rememberDays": 365 }
+    },
+    {
+      "name": "text is trimmed and control characters fold to spaces",
+      "options": { "siteName": "  Shop  ", "message": "Line one\nline two\tend" },
+      "valid": true,
+      "warnings": [],
+      "config": { "siteName": "Shop", "title": "Welcome to Shop", "message": "Line one line two end" }
+    },
+    {
+      "name": "empty strings mean the default",
+      "options": { "title": "", "exitUrl": "", "logoUrl": "", "theme": { "accent": "", "font": "" }, "labels": { "yes": "" } },
+      "valid": true,
+      "warnings": [],
+      "config": { "title": "Welcome", "exitUrl": "", "logoUrl": "", "theme": { "accent": "#1e1e1e" }, "labels": { "yes": "I am 21 or older" } }
+    },
+    {
+      "name": "text at its limits",
+      "options": { "siteName": "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS", "labels": { "yes": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy" } },
+      "valid": true,
+      "warnings": [],
+      "config": { "siteName": "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS", "labels": { "yes": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy" } }
+    },
+    {
+      "name": "text one over its limit is ignored",
+      "options": { "siteName": "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS", "labels": { "yes": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy" } },
+      "valid": false,
+      "warnings": ["siteName", "labels.yes"],
+      "config": { "siteName": "", "title": "Welcome", "labels": { "yes": "I am 21 or older" } }
+    },
+    {
+      "name": "length counts code points, not UTF-16 units",
+      "options": { "labels": { "submit": "🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃" } },
+      "valid": true,
+      "warnings": [],
+      "config": { "labels": { "submit": "🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃🍃" } }
+    },
+    {
+      "name": "minimum age outside 18, 19, 21",
+      "options": { "minAge": 20 },
+      "valid": false,
+      "warnings": ["minAge"],
+      "config": { "minAge": 21 }
+    },
+    {
+      "name": "minimum age as a string (attributes convert; options do not)",
+      "options": { "minAge": "21" },
+      "valid": false,
+      "warnings": ["minAge"],
+      "config": { "minAge": 21 }
+    },
+    {
+      "name": "unknown mode",
+      "options": { "mode": "DOB" },
+      "valid": false,
+      "warnings": ["mode"],
+      "config": { "mode": "attest" }
+    },
+    {
+      "name": "rememberDays out of range or fractional",
+      "options": { "rememberDays": 366 },
+      "valid": false,
+      "warnings": ["rememberDays"],
+      "config": { "rememberDays": 30 }
+    },
+    {
+      "name": "rememberDays fractional",
+      "options": { "rememberDays": 1.5 },
+      "valid": false,
+      "warnings": ["rememberDays"],
+      "config": { "rememberDays": 30 }
+    },
+    {
+      "name": "rememberDays negative",
+      "options": { "rememberDays": -1 },
+      "valid": false,
+      "warnings": ["rememberDays"],
+      "config": { "rememberDays": 30 }
+    },
+    {
+      "name": "exit URL: script, relative and data URLs refused",
+      "options": { "exitUrl": "javascript:alert(1)", "logoUrl": "data:image/png;base64,AAAA" },
+      "valid": false,
+      "warnings": ["exitUrl", "logoUrl"],
+      "config": { "exitUrl": "", "logoUrl": "" }
+    },
+    {
+      "name": "relative exit URL",
+      "options": { "exitUrl": "/sorry" },
+      "valid": false,
+      "warnings": ["exitUrl"],
+      "config": { "exitUrl": "" }
+    },
+    {
+      "name": "http exit URL is fine, an http logo is not",
+      "options": { "exitUrl": "http://example.com/", "logoUrl": "http://cdn.example.com/logo.png" },
+      "valid": false,
+      "warnings": ["logoUrl"],
+      "config": { "exitUrl": "http://example.com/", "logoUrl": "" }
+    },
+    {
+      "name": "URL with a space or a leading space",
+      "options": { "exitUrl": " https://example.com/", "logoUrl": "https://cdn.example.com/my logo.png" },
+      "valid": false,
+      "warnings": ["exitUrl", "logoUrl"],
+      "config": { "exitUrl": "", "logoUrl": "" }
+    },
+    {
+      "name": "colours: names, rgb() and 4-digit hex refused",
+      "options": { "theme": { "backdrop": "red", "card": "rgb(0,0,0)", "accent": "#0000" } },
+      "valid": false,
+      "warnings": ["theme.backdrop", "theme.card", "theme.accent"],
+      "config": { "theme": { "backdrop": "#1e1e1e", "card": "#ffffff", "accent": "#1e1e1e" } }
+    },
+    {
+      "name": "colour with CSS injection",
+      "options": { "theme": { "accentText": "#fff;}body{display:none" } },
+      "valid": false,
+      "warnings": ["theme.accentText"],
+      "config": { "theme": { "accentText": "#ffffff" } }
+    },
+    {
+      "name": "font with CSS punctuation",
+      "options": { "theme": { "font": "x; background:url(evil)" } },
+      "valid": false,
+      "warnings": ["theme.font"],
+      "config": { "theme": { "font": "system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif" } }
+    },
+    {
+      "name": "quoted font family list",
+      "options": { "theme": { "font": "\"Playfair Display\", Georgia, serif" } },
+      "valid": true,
+      "warnings": [],
+      "config": { "theme": { "font": "\"Playfair Display\", Georgia, serif" } }
+    },
+    {
+      "name": "unknown keys",
+      "options": { "minage": 18, "theme": { "background": "#000000" }, "labels": { "cancel": "No" } },
+      "valid": false,
+      "warnings": ["minage", "theme.background", "labels.cancel"],
+      "config": { "minAge": 21 }
+    },
+    {
+      "name": "wrong types",
+      "options": { "title": 5, "theme": "dark", "labels": ["Yes"] },
+      "valid": false,
+      "warnings": ["title", "theme", "labels"],
+      "config": { "title": "Welcome", "theme": { "card": "#ffffff" }, "labels": { "yes": "I am 21 or older" } }
+    },
+    {
+      "name": "null is not 'not set'",
+      "options": { "exitUrl": null },
+      "valid": false,
+      "warnings": ["exitUrl"],
+      "config": { "exitUrl": "" }
+    },
+    {
+      "name": "low-contrast text falls back to the default text and card",
+      "options": { "theme": { "card": "#000000" } },
+      "valid": true,
+      "warnings": ["contrast.text-card"],
+      "config": { "theme": { "card": "#ffffff", "text": "#1e1e1e" } }
+    },
+    {
+      "name": "low-contrast button falls back to the default button colours",
+      "options": { "theme": { "accent": "#0b5" } },
+      "valid": true,
+      "warnings": ["contrast.accentText-accent"],
+      "config": { "theme": { "accent": "#1e1e1e", "accentText": "#ffffff" } }
+    },
+    {
+      "name": "a dark theme that passes",
+      "options": { "theme": { "backdrop": "#000000", "card": "#2b2b2b", "text": "#f5f5dc", "accent": "#ffd700", "accentText": "#000000" } },
+      "valid": true,
+      "warnings": [],
+      "config": { "theme": { "backdrop": "#000000", "card": "#2b2b2b", "text": "#f5f5dc", "accent": "#ffd700", "accentText": "#000000" } }
+    },
+    {
+      "name": "contrast just under 4.5:1",
+      "options": { "theme": { "text": "#777777" } },
+      "valid": true,
+      "warnings": ["contrast.text-card"],
+      "config": { "theme": { "text": "#1e1e1e", "card": "#ffffff" } }
+    },
+    {
+      "name": "contrast just over 4.5:1",
+      "options": { "theme": { "text": "#767676" } },
+      "valid": true,
+      "warnings": [],
+      "config": { "theme": { "text": "#767676", "card": "#ffffff" } }
+    }
+  ]
+}

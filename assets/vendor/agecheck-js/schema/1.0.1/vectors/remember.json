@@ -1,0 +1,20 @@
+{
+  "description": "isRemembered(minAge, rememberDays): whether a stored Yes covers a gate (agecheck-js isRemembered, B5). The value lives under navexa_agecheck_gate_v1 as {passedAt (epoch ms), minAge}. rememberDays 0 reads sessionStorage only; otherwise localStorage, then sessionStorage. A value counts while now - passedAt < rememberDays days (no expiry for 0), passedAt is not in the future, and its minAge is at least the gate's. Anything unreadable counts as not remembered. now = 1781517600000 (2026-06-15T10:00:00Z).",
+  "now": 1781517600000,
+  "cases": [
+    { "name": "fresh pass, same age", "local": "{\"passedAt\":1781517600000,\"minAge\":21}", "minAge": 21, "rememberDays": 30, "remembered": true },
+    { "name": "29 days 23 hours old", "local": "{\"passedAt\":1778929200000,\"minAge\":21}", "minAge": 21, "rememberDays": 30, "remembered": true },
+    { "name": "exactly 30 days old", "local": "{\"passedAt\":1778925600000,\"minAge\":21}", "minAge": 21, "rememberDays": 30, "remembered": false },
+    { "name": "stored 21 covers a gate of 18", "local": "{\"passedAt\":1781517600000,\"minAge\":21}", "minAge": 18, "rememberDays": 30, "remembered": true },
+    { "name": "stored 18 does not cover 21", "local": "{\"passedAt\":1781517600000,\"minAge\":18}", "minAge": 21, "rememberDays": 30, "remembered": false },
+    { "name": "passedAt in the future", "local": "{\"passedAt\":1781517600001,\"minAge\":21}", "minAge": 21, "rememberDays": 30, "remembered": false },
+    { "name": "rememberDays 0 ignores localStorage", "local": "{\"passedAt\":1781517600000,\"minAge\":21}", "minAge": 21, "rememberDays": 0, "remembered": false },
+    { "name": "rememberDays 0, this tab, a year old", "session": "{\"passedAt\":1749981600000,\"minAge\":21}", "minAge": 21, "rememberDays": 0, "remembered": true },
+    { "name": "sessionStorage fallback when localStorage had no room", "session": "{\"passedAt\":1781517600000,\"minAge\":21}", "minAge": 21, "rememberDays": 30, "remembered": true },
+    { "name": "Woo 1.0 key and shape do not count", "local": "{\"v\":1,\"age\":21,\"at\":1781517600000}", "minAge": 21, "rememberDays": 30, "remembered": false },
+    { "name": "not JSON", "local": "yes", "minAge": 21, "rememberDays": 30, "remembered": false },
+    { "name": "string fields", "local": "{\"passedAt\":\"1781517600000\",\"minAge\":\"21\"}", "minAge": 21, "rememberDays": 30, "remembered": false },
+    { "name": "nothing stored", "minAge": 21, "rememberDays": 30, "remembered": false },
+    { "name": "365 days remembers 364 days", "local": "{\"passedAt\":1750068000000,\"minAge\":21}", "minAge": 21, "rememberDays": 365, "remembered": true }
+  ]
+}

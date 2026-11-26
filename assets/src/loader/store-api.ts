@@ -13,7 +13,7 @@
  * merchant turned Turnstile on); startData throwing StartRefused answers
  * refused with its message, without calling the store.
  */
-import type { Action, StoreAnswer, Transport } from "./agecheck"
+import type { Action, StoreAnswer, Transport } from "./types.ts"
 
 export interface StoreApiOptions {
   /** Store API base, ending in /wc/store/v1/. */

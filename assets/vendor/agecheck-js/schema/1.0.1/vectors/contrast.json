@@ -1,0 +1,16 @@
+{
+  "description": "WCAG 2.x contrast ratio of two colours (#rgb or #rrggbb, any order). ratio is rounded to 2 decimals for reading; pass compares the unrounded ratio with 4.5 (agecheck-js contrastRatio, MIN_CONTRAST).",
+  "cases": [
+    { "fg": "#000000", "bg": "#ffffff", "ratio": 21, "pass": true },
+    { "fg": "#fff", "bg": "#000", "ratio": 21, "pass": true },
+    { "fg": "#ffffff", "bg": "#ffffff", "ratio": 1, "pass": false },
+    { "fg": "#1e1e1e", "bg": "#ffffff", "ratio": 16.67, "pass": true },
+    { "fg": "#767676", "bg": "#ffffff", "ratio": 4.54, "pass": true },
+    { "fg": "#777777", "bg": "#ffffff", "ratio": 4.48, "pass": false },
+    { "fg": "#ffffff", "bg": "#0b5", "ratio": 2.55, "pass": false },
+    { "fg": "#000000", "bg": "#00BB55", "ratio": 8.24, "pass": true },
+    { "fg": "#ffffff", "bg": "#0a6b3d", "ratio": 6.6, "pass": true },
+    { "fg": "#ffffff", "bg": "#2271b1", "ratio": 5.17, "pass": true },
+    { "fg": "#e00", "bg": "#ffffff", "ratio": 4.53, "pass": true }
+  ]
+}

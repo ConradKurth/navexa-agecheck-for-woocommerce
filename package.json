@@ -1,6 +1,6 @@
 {
 	"name": "navexa-agecheck-for-woocommerce",
-	"version": "1.0.4",
+	"version": "1.1.0",
 	"private": true,
 	"description": "Development tooling for Navexa AgeCheck for WooCommerce: the mock AgeCheck engine, the loader (esbuild) and the checkout block (wp-scripts).",
 	"license": "GPL-2.0-or-later",
@@ -11,7 +11,7 @@
 	"scripts": {
 		"mock": "node tests/mock-agecheck/server.mjs",
 		"test:mock": "node --test \"tests/mock-agecheck/*.test.mjs\"",
-		"test:loader": "node --test \"assets/src/loader/*.test.ts\"",
+		"test:loader": "node --test \"assets/src/loader/*.test.ts\" \"assets/src/gate/*.test.ts\" \"bin/*.test.mjs\"",
 		"typecheck": "tsc -p tsconfig.json",
 		"build:loader": "node assets/src/loader/build.mjs",
 		"build:blocks": "wp-scripts build --config webpack.config.cjs --webpack-src-dir=assets/src/blocks --output-path=assets/build",

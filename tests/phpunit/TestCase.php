@@ -125,6 +125,9 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 				'sanitize_text_field' => static function ( $value ) {
 					return trim( (string) $value );
 				},
+				'number_format_i18n'  => static function ( $number, $decimals = 0 ) {
+					return number_format( (float) $number, (int) $decimals );
+				},
 				'wp_parse_url'        => static function ( $url, $component = -1 ) {
 					return parse_url( $url, $component ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url
 				},

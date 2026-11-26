@@ -165,6 +165,7 @@ final class UninstallTest extends TestCase {
 				array( 'delete_metadata', 'user', 0, 'navexa_agecheck_dismissed_test', '', true ),
 				array( 'delete_metadata', 'user', 0, 'navexa_agecheck_dismissed_paused', '', true ),
 				array( 'delete_metadata', 'user', 0, 'navexa_agecheck_dismissed_capped', '', true ),
+				array( 'delete_metadata', 'user', 0, 'navexa_agecheck_dismissed_setup', '', true ),
 			),
 			$this->calls_to( 'delete_metadata' )
 		);
@@ -172,6 +173,7 @@ final class UninstallTest extends TestCase {
 		$this->assertSame( \Navexa\AgeCheck\Admin\Notices::USER_META_TEST, Uninstall::USER_META_TEST );
 		$this->assertSame( \Navexa\AgeCheck\Admin\Notices::USER_META_PAUSED, Uninstall::USER_META_PAUSED );
 		$this->assertSame( \Navexa\AgeCheck\Admin\Notices::USER_META_CAPPED, Uninstall::USER_META_CAPPED );
+		$this->assertSame( \Navexa\AgeCheck\Admin\Notices::USER_META_SETUP, Uninstall::USER_META_SETUP );
 		$this->assertSame( array(), $this->db->ran( 'DELETE' ), 'order and product meta kept by default' );
 		$this->assertSame( array(), $this->calls_to( 'wp_cache_flush' ) );
 	}
@@ -287,7 +289,7 @@ final class UninstallTest extends TestCase {
 		$this->assertSame( array( array( 'switch_to_blog', 1 ), array( 'switch_to_blog', 2 ) ), $this->calls_to( 'switch_to_blog' ) );
 		$this->assertCount( 2, $this->calls_to( 'restore_current_blog' ) );
 		$this->assertCount( 2, $this->db->ran( 'DROP TABLE' ) );
-		$this->assertCount( 5, $this->calls_to( 'delete_metadata' ), 'user meta is network-wide: once per key' );
+		$this->assertCount( 6, $this->calls_to( 'delete_metadata' ), 'user meta is network-wide: once per key' );
 	}
 
 	public function test_uninstall_php_loads_the_class_itself(): void {

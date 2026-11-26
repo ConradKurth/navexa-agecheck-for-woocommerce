@@ -2,14 +2,14 @@
 # This file is distributed under the GPL-2.0-or-later.
 msgid ""
 msgstr ""
-"Project-Id-Version: Navexa AgeCheck for WooCommerce 1.0.4\n"
+"Project-Id-Version: Navexa AgeCheck for WooCommerce 1.1.0\n"
 "Report-Msgid-Bugs-To: https://github.com/ConradKurth/navexa-agecheck-for-woocommerce/issues\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-11-26T07:09:30+00:00\n"
+"POT-Creation-Date: 2026-11-26T14:55:44+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: navexa-agecheck-for-woocommerce\n"
@@ -44,21 +44,22 @@ msgstr ""
 msgid "AgeCheck: this order's shipping address is tied to its age check, so the change to the street, city, state, ZIP or country was undone. Name, company and phone can still be edited. To ship elsewhere, cancel the order and place a new one."
 msgstr ""
 
-#: includes/Admin/Notices.php:130
-#: includes/Admin/Notices.php:141
 #: includes/Admin/Notices.php:154
-#: includes/Settings.php:75
+#: includes/Admin/Notices.php:165
+#: includes/Admin/Notices.php:178
+#: includes/Admin/Notices.php:224
+#: includes/Settings.php:113
 msgid "Navexa AgeCheck"
 msgstr ""
 
-#: includes/Admin/Notices.php:133
-#: includes/Admin/Notices.php:182
-#: includes/Admin/Notices.php:233
+#: includes/Admin/Notices.php:157
+#: includes/Admin/Notices.php:206
+#: includes/Admin/Notices.php:301
 msgid "Dismiss until this changes"
 msgstr ""
 
 #. translators: %s: number of orders (may read "100+").
-#: includes/Admin/Notices.php:162
+#: includes/Admin/Notices.php:186
 #, php-format
 msgid "%s order failed its age check and needs a refund or cancellation."
 msgid_plural "%s orders failed their age check and need a refund or cancellation."
@@ -66,41 +67,53 @@ msgstr[0] ""
 msgstr[1] ""
 
 #. translators: %s: number of orders (may read "100+").
-#: includes/Admin/Notices.php:175
+#: includes/Admin/Notices.php:199
 #, php-format
 msgid "%s order has waited more than 30 days for its age check."
 msgid_plural "%s orders have waited more than 30 days for their age check."
 msgstr[0] ""
 msgstr[1] ""
 
-#: includes/Admin/Notices.php:259
+#: includes/Admin/Notices.php:226
+msgid "Navexa AgeCheck places age-restricted orders on hold until they pass an age check, and it needs both API keys to check and release them. To use only the entry age gate, set Age verification to Off."
+msgstr ""
+
+#: includes/Admin/Notices.php:228
+msgid "Navexa AgeCheck refuses age-restricted checkouts until you add your API keys. To use only the entry age gate, set Age verification to Off."
+msgstr ""
+
+#: includes/Admin/Notices.php:232
+msgid "AgeCheck settings"
+msgstr ""
+
+#: includes/Admin/Notices.php:327
 msgid "AgeCheck is not sending verification emails yet, so shoppers of held orders are not emailed a link to verify. Their orders stay held until they verify from their order page (Verify now) or you release them after checking their age yourself. Nothing needs changing on your side: the plugin uses the emails once AgeCheck turns them on."
 msgstr ""
 
-#: includes/Admin/Notices.php:264
+#: includes/Admin/Notices.php:332
 msgid "AgeCheck cannot email shoppers a link to verify until you set your store name in the AgeCheck dashboard (AgeCheck settings, store display name). Held orders stay held until then; once AgeCheck reports the name (within an hour), each held order's email goes out at its next check, or at once with the order action \"AgeCheck: check now\"."
 msgstr ""
 
-#: includes/Admin/Notices.php:266
+#: includes/Admin/Notices.php:334
 msgid "AgeCheck does not offer verification emails yet, so shoppers of held orders are not emailed a link. Their orders stay held until they verify from their order page or you release them after checking their age yourself."
 msgstr ""
 
 #. translators: %s: a date and time.
-#: includes/Admin/Notices.php:283
+#: includes/Admin/Notices.php:351
 #, php-format
 msgid "Your store has used its AgeCheck ID checks for today, so shoppers whose age check needs a photo ID cannot place age-restricted orders until %s (00:00 UTC). AgeCheck raises the limit once your first AgeCheck invoice is paid; contact Navexa if you need more."
 msgstr ""
 
-#: includes/Admin/Notices.php:297
+#: includes/Admin/Notices.php:365
 msgid "While this lasts, checkout also refuses orders when AgeCheck is down instead of taking and holding them (your \"When AgeCheck is down\" setting), because those shoppers could not be sent a link."
 msgstr ""
 
-#: includes/Admin/Notices.php:305
+#: includes/Admin/Notices.php:373
 msgid "You are not allowed to do that."
 msgstr ""
 
 #: includes/Admin/OrderPanel.php:70
-#: includes/Settings.php:51
+#: includes/Settings.php:71
 msgid "AgeCheck"
 msgstr ""
 
@@ -123,8 +136,9 @@ msgstr ""
 #: includes/Admin/OrderPanel.php:118
 #: includes/Admin/OrderPanel.php:123
 #: includes/Admin/ProductField.php:41
-#: includes/OrderVerify.php:121
-#: includes/OrderVerify.php:533
+#: includes/Frontend.php:180
+#: includes/OrderVerify.php:123
+#: includes/OrderVerify.php:538
 #: includes/ReturnPage.php:100
 msgid "Age check"
 msgstr ""
@@ -420,32 +434,33 @@ msgstr ""
 msgid "AgeCheck: the shopper's earlier age check cannot be used for this order (%s). A new age check is needed."
 msgstr ""
 
-#: includes/Checkout/Classic.php:149
-#: includes/Frontend.php:142
+#: includes/Checkout/Classic.php:187
+#: includes/Frontend.php:144
 msgid "Age verified."
 msgstr ""
 
-#: includes/Checkout/Classic.php:150
-#: includes/Frontend.php:140
+#: includes/Checkout/Classic.php:188
+#: includes/Frontend.php:142
 #: assets/build/verify-age-no-payment/index.js:1
 #: assets/build/verify-age/index.js:1
-msgid "This order contains age-restricted items. Verify your age to place it."
+msgid "This order contains age-restricted items. When you place it, you'll confirm your age in a secure window on this page."
 msgstr ""
 
-#: includes/Checkout/Classic.php:167
+#: includes/Checkout/Classic.php:203
 #: includes/Frontend.php:151
 msgid "Security check"
 msgstr ""
 
-#: includes/Checkout/Classic.php:172
-#: includes/Frontend.php:137
-#: assets/build/verify-age-no-payment/index.js:1
-#: assets/build/verify-age/index.js:1
-msgid "Verify age"
+#: includes/Checkout/Classic.php:220
+msgid "Your name and address are locked to your age check."
+msgstr ""
+
+#: includes/Checkout/Classic.php:221
+msgid "Change details"
 msgstr ""
 
 #: includes/Checkout/Gate.php:411
-msgid "Your shipping address changed after your age check. Verify your age again for the new address."
+msgid "Your shipping address changed after your age check. Place your order again to confirm your age for the new address."
 msgstr ""
 
 #: includes/Checkout/Gate.php:413
@@ -453,7 +468,7 @@ msgid "Age-restricted items ship only to US addresses, including US territories 
 msgstr ""
 
 #: includes/Checkout/Gate.php:415
-msgid "Enter your full shipping address, then verify your age."
+msgid "Enter your full shipping address, then place your order."
 msgstr ""
 
 #: includes/Checkout/Gate.php:417
@@ -461,7 +476,7 @@ msgid "Age verification is temporarily unavailable, so this order cannot be plac
 msgstr ""
 
 #: includes/Checkout/Gate.php:419
-#: includes/Frontend.php:143
+#: includes/Frontend.php:145
 msgid "We could not verify your age, so this order cannot be placed."
 msgstr ""
 
@@ -507,85 +522,153 @@ msgstr ""
 msgid "AgeCheck: the shopper's age check did not pass. They may try again until %s; a refund waits until then. Do not ship."
 msgstr ""
 
-#: includes/EntryGate.php:132
+#: includes/EntryGate.php:194
+msgid "Date of birth"
+msgstr ""
+
+#: includes/EntryGate.php:195
+msgid "Month"
+msgstr ""
+
+#: includes/EntryGate.php:196
+msgid "Day"
+msgstr ""
+
+#: includes/EntryGate.php:197
+msgid "Year"
+msgstr ""
+
+#: includes/EntryGate.php:198
+msgid "Enter a real date of birth: month, day and year."
+msgstr ""
+
+#. translators: %d: minimum age, e.g. 21.
+#: includes/EntryGate.php:200
+#, php-format
+msgid "Sorry, you must be %d or older to visit this store."
+msgstr ""
+
+#: includes/EntryGate.php:201
+msgid "Leaving this store…"
+msgstr ""
+
+#: includes/EntryGate.php:243
 msgid "Welcome"
 msgstr ""
 
 #. translators: %s: the store's name.
-#: includes/EntryGate.php:135
+#: includes/EntryGate.php:246
 #, php-format
 msgid "Welcome to %s"
 msgstr ""
 
 #. translators: %d: minimum age, e.g. 21.
-#: includes/EntryGate.php:145
+#: includes/EntryGate.php:252
+#, php-format
+msgid "You must be %d or older to enter this store. Please enter your date of birth."
+msgstr ""
+
+#. translators: %d: minimum age, e.g. 21.
+#: includes/EntryGate.php:254
 #, php-format
 msgid "You must be %d or older to enter this store. Please confirm your age."
 msgstr ""
 
 #. translators: %d: minimum age, e.g. 21.
-#: includes/EntryGate.php:147
+#: includes/EntryGate.php:256
 #, php-format
 msgid "I am %d or older"
 msgstr ""
 
 #. translators: %d: minimum age, e.g. 21.
-#: includes/EntryGate.php:149
+#: includes/EntryGate.php:258
 #, php-format
 msgid "I am under %d"
 msgstr ""
 
-#. translators: %d: minimum age, e.g. 21.
-#: includes/EntryGate.php:151
-#, php-format
-msgid "Sorry, you must be %d or older to visit this store."
-msgstr ""
-
-#: includes/EntryGate.php:152
-msgid "Leaving this store…"
-msgstr ""
-
-#: includes/Frontend.php:138
-msgid "Verifying…"
-msgstr ""
-
-#: includes/Frontend.php:139
-msgid "Checking your age verification…"
+#: includes/EntryGate.php:259
+msgid "Enter"
 msgstr ""
 
 #: includes/Frontend.php:141
-msgid "Finish your age check in the window that opened. This page updates when you are done. If you closed that window, select Verify age to start again."
+msgid "Checking your age verification…"
 msgstr ""
 
-#: includes/Frontend.php:144
-#: includes/OrderVerify.php:519
-#: includes/Start.php:948
-msgid "Age verification is temporarily unavailable. Please try again in a few minutes."
+#: includes/Frontend.php:143
+msgid "Your age check is not finished. Place your order again to continue it."
 msgstr ""
 
 #: includes/Frontend.php:146
-msgid "Verify your age before placing this order."
-msgstr ""
-
-#: includes/Frontend.php:147
-msgid "Opening the secure age check…"
+#: includes/OrderVerify.php:524
+#: includes/Start.php:1017
+msgid "Age verification is temporarily unavailable. Please try again in a few minutes."
 msgstr ""
 
 #: includes/Frontend.php:148
-msgid "The age check window was closed. Select Verify age to try again."
+msgid "The age check was closed before it finished. Place your order again to continue."
 msgstr ""
 
 #: includes/Frontend.php:149
-msgid "The security check could not be completed. Reload the page, then select Verify age again."
+msgid "The security check could not be completed. Reload the page, then place your order again."
 msgstr ""
 
 #: includes/Frontend.php:150
-msgid "Complete the security check shown below, then select Verify age again."
+msgid "Complete the security check shown, then place your order again."
+msgstr ""
+
+#: includes/Frontend.php:152
+msgid "If you change your address, you'll confirm your age again when you place the order."
+msgstr ""
+
+#: includes/Frontend.php:153
+msgid "Your age check is tied to this name and address. If you change the address, you'll confirm your age again when you place the order."
+msgstr ""
+
+#: includes/Frontend.php:171
+#: includes/OrderVerify.php:144
+msgid "Verify your age"
+msgstr ""
+
+#: includes/Frontend.php:172
+msgid "Close"
+msgstr ""
+
+#: includes/Frontend.php:173
+msgid "Loading the secure age check…"
+msgstr ""
+
+#: includes/Frontend.php:174
+msgid "The age check is taking longer than usual to load."
+msgstr ""
+
+#: includes/Frontend.php:175
+msgid "Continue in a new window"
+msgstr ""
+
+#: includes/Frontend.php:176
+msgid "The age check is open in another window. Finish it there; this page updates when you are done."
+msgstr ""
+
+#: includes/Frontend.php:177
+msgid "Show the age check window"
+msgstr ""
+
+#: includes/Frontend.php:178
+msgid "Your browser blocked the new window."
+msgstr ""
+
+#: includes/Frontend.php:179
+msgid "Continue the age check on this page"
+msgstr ""
+
+#: includes/Frontend.php:182
+msgctxt "the age check window after a pass"
+msgid "Verified"
 msgstr ""
 
 #: includes/Hold.php:94
 #: includes/Hold.php:114
-#: includes/Uninstall.php:129
+#: includes/Uninstall.php:131
 msgctxt "Order status"
 msgid "Awaiting age check"
 msgstr ""
@@ -805,236 +888,246 @@ msgstr ""
 msgid "Your Navexa AgeCheck keys are test keys: checks use the simulator, no real age check happens, and held orders are not released automatically. Switch to live keys before selling age-restricted products."
 msgstr ""
 
-#: includes/OrderVerify.php:123
+#: includes/OrderVerify.php:125
 msgid "This order has age-restricted items, and age verification was unavailable when you placed it. The store holds the order until you verify your age: once verification is back, we email you a link, and you can also verify from this page."
 msgstr ""
 
-#: includes/OrderVerify.php:126
+#: includes/OrderVerify.php:128
 msgid "This order has age-restricted items. We are finishing your age check, and the store ships the order once it is complete."
 msgstr ""
 
-#: includes/OrderVerify.php:133
+#: includes/OrderVerify.php:135
 msgid "Your ID check didn't pass"
 msgstr ""
 
 #. translators: %s: a date and time.
-#: includes/OrderVerify.php:137
+#: includes/OrderVerify.php:139
 #, php-format
 msgid "You can try again until %s. Use a valid government photo ID in the name on the order."
 msgstr ""
 
-#: includes/OrderVerify.php:142
-msgid "Verify your age"
-msgstr ""
-
-#: includes/OrderVerify.php:144
+#: includes/OrderVerify.php:146
 msgid "Age verification was unavailable when you placed this order, so the store holds it until you verify your age. Select Verify now; if it is still unavailable, try again later or use the link we email you."
 msgstr ""
 
-#: includes/OrderVerify.php:146
+#: includes/OrderVerify.php:148
 msgid "This order has age-restricted items. The store ships it once you pass an age check."
 msgstr ""
 
-#: includes/OrderVerify.php:149
+#: includes/OrderVerify.php:151
 msgid "We have also emailed you a link to the age check."
 msgstr ""
 
-#: includes/OrderVerify.php:158
+#: includes/OrderVerify.php:160
 msgid "Try again"
 msgstr ""
 
-#: includes/OrderVerify.php:158
+#: includes/OrderVerify.php:160
 msgid "Verify now"
 msgstr ""
 
-#: includes/OrderVerify.php:170
+#: includes/OrderVerify.php:172
 msgid "This order will not ship"
 msgstr ""
 
-#: includes/OrderVerify.php:173
+#: includes/OrderVerify.php:175
 msgid "Age-restricted items ship only to US addresses, so the store cannot ship this order."
 msgstr ""
 
-#: includes/OrderVerify.php:174
+#: includes/OrderVerify.php:176
 msgid "We could not verify your age, so the store cannot ship this order."
 msgstr ""
 
-#: includes/OrderVerify.php:177
+#: includes/OrderVerify.php:179
 msgid "Your payment has been refunded."
 msgstr ""
 
-#: includes/OrderVerify.php:179
+#: includes/OrderVerify.php:181
 msgid "The order has been cancelled."
 msgstr ""
 
-#: includes/OrderVerify.php:181
+#: includes/OrderVerify.php:183
 msgid "If you have paid, the store will refund your payment."
 msgstr ""
 
-#: includes/OrderVerify.php:257
-#: includes/OrderVerify.php:260
+#: includes/OrderVerify.php:259
+#: includes/OrderVerify.php:262
 msgid "This page has expired. Go back to your order and select Verify now again."
 msgstr ""
 
-#: includes/OrderVerify.php:279
-#: includes/Start.php:222
+#: includes/OrderVerify.php:284
+#: includes/Start.php:248
+#: includes/Start.php:264
 msgid "Too many age check attempts. Please wait a while and try again."
 msgstr ""
 
-#: includes/OrderVerify.php:301
+#: includes/OrderVerify.php:306
 msgid "We could not start your age check online. The store will contact you about this order."
 msgstr ""
 
-#: includes/OrderVerify.php:332
+#: includes/OrderVerify.php:337
 msgid "This order's age check can't be tried again. Contact the store about it."
 msgstr ""
 
-#: includes/OrderVerify.php:365
+#: includes/OrderVerify.php:370
 msgid "Thank you. The store ships your order once AgeCheck confirms your age check, and emails you as usual."
 msgstr ""
 
-#: includes/OrderVerify.php:365
+#: includes/OrderVerify.php:370
 msgid "Your age check is finished"
 msgstr ""
 
-#: includes/OrderVerify.php:554
+#: includes/OrderVerify.php:559
 msgid "Back to the store"
 msgstr ""
 
-#: includes/Plugin.php:179
+#: includes/Plugin.php:79
+msgid "Settings"
+msgstr ""
+
+#: includes/Plugin.php:193
 msgid "Navexa AgeCheck for WooCommerce needs WooCommerce to be installed and active. Age checks are off until it is."
 msgstr ""
 
 #. translators: %s: minimum WooCommerce version, e.g. 9.9.
-#: includes/Plugin.php:183
+#: includes/Plugin.php:197
 #, php-format
 msgid "Navexa AgeCheck for WooCommerce needs WooCommerce %s or later. Update WooCommerce before relying on age checks."
 msgstr ""
 
-#: includes/Privacy.php:102
+#: includes/Privacy.php:105
 msgid "Navexa AgeCheck for WooCommerce checks the age of shoppers who order age-restricted products. The text below says what the plugin sends to Navexa AgeCheck and what it keeps in your store. Adjust it to your store's settings (for example, whether Cloudflare Turnstile is on)."
 msgstr ""
 
-#: includes/Privacy.php:103
+#: includes/Privacy.php:106
+#: includes/Privacy.php:131
 msgid "Suggested text:"
 msgstr ""
 
-#: includes/Privacy.php:104
+#: includes/Privacy.php:107
 msgid "We use Navexa AgeCheck to verify the age of customers who order age-restricted products. When you start an age check at checkout, we send Navexa AgeCheck the shipping address of the order you are about to place and, when you have entered them and the order ships to your US billing address, your billing name and billing address, for the age check. When such an order is placed, we send its shipping address and an order reference, and, when no age check was done at checkout, your billing name, billing address and email address, and Navexa AgeCheck may email you a link to verify your age for that order. If you have an account with us, we also send a keyed reference to your account (the reference is not your name, email address or account number), so that a returning customer who passed an age check here recently may not have to verify again. When returning-customer checks are on and you check out as a guest, we also send Navexa AgeCheck your billing email address when you start an age check, so that if you passed a check here recently Navexa can email you a one-time code that lets you skip a new one; Navexa keeps the address encrypted with your check, and a one-way keyed code made from it that is tied to our store. You then verify on Navexa's own page (verify.navexa.co), where you enter your date of birth and, when asked, agree to a data check or photograph an ID document and take a selfie; we never see or keep your date of birth or ID images. Navexa uses Didit for the ID, selfie and liveness checks and, when the shipping address is your billing address, to check your billing name, billing address and date of birth against US data sources such as financial and credit-bureau records."
 msgstr ""
 
-#: includes/Privacy.php:105
+#: includes/Privacy.php:108
 msgid "We keep, with your order, the AgeCheck verification reference, whether your age check passed or failed and when, and a one-way hash of the shipping address that was checked. While you check out, your shopping session holds the verification reference. To stop abuse, we count age check attempts per session and per IP address for one hour, stored only as keyed hashes. Navexa's privacy policy explains how Navexa handles your data: https://navexa.co/privacy"
 msgstr ""
 
-#: includes/Privacy.php:108
-msgid "When you enter the store, we ask you to confirm that you are old enough. Your answer is remembered only in your own browser (local storage), so that we do not ask again for a while; it is not sent to us or to Navexa, and it is not an age verification."
-msgstr ""
-
-#: includes/Privacy.php:112
+#: includes/Privacy.php:115
 msgid "Before an age check starts, the checkout page runs a Cloudflare Turnstile security check, which loads a script from Cloudflare (challenges.cloudflare.com) and sends Cloudflare information about your browser; we send Cloudflare the check's result token and your IP address to confirm it. Cloudflare's Turnstile privacy addendum: https://www.cloudflare.com/turnstile-privacy-policy/"
 msgstr ""
 
-#: includes/Privacy.php:128
+#: includes/Privacy.php:129
+msgid "Age verification is off in Navexa AgeCheck for WooCommerce: new orders are not age-checked, and nothing about them is sent to Navexa AgeCheck. Orders placed while it was on keep their age check details, and orders still on hold from before the switch are still checked with Navexa AgeCheck until they are released, cancelled or refunded. While any remain, keep the age verification part of your privacy policy. Only the entry age gate runs for new visitors when you turn it on, and the text below describes it."
+msgstr ""
+
+#: includes/Privacy.php:143
+msgid "When you enter the store, we ask for your date of birth to confirm that you are old enough. Your date of birth is checked in your own browser and is never stored or sent to us or to Navexa. Only the fact that you confirmed is remembered in your browser (local storage), so that we do not ask again for a while. This is not an age verification."
+msgstr ""
+
 #: includes/Privacy.php:145
+msgid "When you enter the store, we ask you to confirm that you are old enough. Your answer is remembered only in your own browser (local storage), so that we do not ask again for a while; it is not sent to us or to Navexa, and it is not an age verification."
+msgstr ""
+
+#: includes/Privacy.php:159
+#: includes/Privacy.php:176
 msgid "Navexa AgeCheck age checks"
 msgstr ""
 
-#: includes/Privacy.php:168
+#: includes/Privacy.php:199
 msgid "Age checks"
 msgstr ""
 
-#: includes/Privacy.php:169
+#: includes/Privacy.php:200
 msgid "Navexa AgeCheck age checks linked to your orders."
 msgstr ""
 
 #. translators: %s: an order number.
-#: includes/Privacy.php:207
+#: includes/Privacy.php:238
 #, php-format
 msgid "Removed the age check details from order %s."
 msgstr ""
 
-#: includes/Privacy.php:214
+#: includes/Privacy.php:245
 msgid "Navexa AgeCheck keeps its own record of each age check. To have it deleted, contact Navexa at privacy@navexa.co."
 msgstr ""
 
-#: includes/Privacy.php:255
+#: includes/Privacy.php:286
 msgid "AgeCheck: the age check details were erased on a personal data erasure request. The release state is kept."
 msgstr ""
 
 #. translators: %s: an order number.
-#: includes/Privacy.php:272
+#: includes/Privacy.php:303
 #, php-format
 msgid "Kept the age check details of order %s: WooCommerce is set to keep order data on erasure requests (WooCommerce > Settings > Accounts & Privacy)."
 msgstr ""
 
 #. translators: %s: an order number.
-#: includes/Privacy.php:290
+#: includes/Privacy.php:321
 #, php-format
 msgid "Kept the age check details of order %s: the order is still waiting for its age check or a refund."
 msgstr ""
 
 #. translators: %s: an order number.
-#: includes/Privacy.php:297
+#: includes/Privacy.php:328
 #, php-format
 msgid "Kept the age check details of order %s: AgeCheck is still withdrawing its emailed verification link."
 msgstr ""
 
 #. translators: %s: an order number.
-#: includes/Privacy.php:304
+#: includes/Privacy.php:335
 #, php-format
 msgid "Kept the age check details of order %s: the order can still ship, and its shipping address stays tied to its age check until it is completed, cancelled, refunded or failed."
 msgstr ""
 
-#: includes/Privacy.php:319
+#: includes/Privacy.php:350
 msgid "AgeCheck verification"
 msgstr ""
 
-#: includes/Privacy.php:320
+#: includes/Privacy.php:351
 msgid "Earlier AgeCheck verifications"
 msgstr ""
 
-#: includes/Privacy.php:321
+#: includes/Privacy.php:352
 msgid "Placed while age verification was unavailable"
 msgstr ""
 
-#: includes/Privacy.php:322
+#: includes/Privacy.php:353
 msgid "Verification status"
 msgstr ""
 
-#: includes/Privacy.php:323
+#: includes/Privacy.php:354
 msgid "Age check result"
 msgstr ""
 
-#: includes/Privacy.php:324
+#: includes/Privacy.php:355
 msgid "How the age check passed"
 msgstr ""
 
-#: includes/Privacy.php:325
+#: includes/Privacy.php:356
 msgid "Reason"
 msgstr ""
 
-#: includes/Privacy.php:326
+#: includes/Privacy.php:357
 msgid "Checked shipping address (hash)"
 msgstr ""
 
-#: includes/Privacy.php:327
+#: includes/Privacy.php:358
 msgid "Linked to the order"
 msgstr ""
 
-#: includes/Privacy.php:328
+#: includes/Privacy.php:359
 msgid "Held for the age check"
 msgstr ""
 
-#: includes/Privacy.php:329
+#: includes/Privacy.php:360
 msgid "Cleared"
 msgstr ""
 
-#: includes/Privacy.php:330
+#: includes/Privacy.php:361
 msgid "Verification link emailed"
 msgstr ""
 
-#: includes/Privacy.php:335
+#: includes/Privacy.php:366
 msgid "Order"
 msgstr ""
 
@@ -1204,452 +1297,625 @@ msgstr ""
 msgid "Return to checkout"
 msgstr ""
 
-#: includes/Settings.php:76
-msgid "Age verification for age-restricted orders. AgeCheck verifies orders shipping to US addresses only: an age-restricted order shipping anywhere else is refused."
+#: includes/Settings.php:98
+#: includes/Settings.php:139
+msgid "Age verification"
 msgstr ""
 
-#: includes/Settings.php:81
-msgid "Connection"
-msgstr ""
-
-#: includes/Settings.php:87
-#: includes/Settings.php:708
-msgid "Start key"
-msgstr ""
-
-#: includes/Settings.php:88
-msgid "An API key with the agecheck:verify scope. Used only when a shopper starts or refreshes a check, so a flood of starts cannot slow down order fulfilment."
-msgstr ""
-
-#: includes/Settings.php:94
-#: includes/Settings.php:709
-msgid "Fulfilment key"
-msgstr ""
-
-#: includes/Settings.php:95
-msgid "A second API key with the agecheck:verify and agecheck:clearance scopes. Used to link orders to checks and to release held orders."
-msgstr ""
-
-#: includes/Settings.php:101
-msgid "When shoppers verify"
-msgstr ""
-
-#: includes/Settings.php:102
-msgid "In both modes, a paid age-restricted order that has not passed is held, never released for shipping."
-msgstr ""
-
-#: includes/Settings.php:105
-msgid "Before payment: the shopper verifies at checkout"
-msgstr ""
-
-#: includes/Settings.php:106
-msgid "After payment: the order is held until the shopper verifies"
-msgstr ""
-
-#: includes/Settings.php:112
-msgid "Client IP address"
-msgstr ""
-
-#: includes/Settings.php:113
-msgid "Where to read the shopper's IP address for the age check rate limits. Choose a header only when your store is behind that proxy or CDN: anyone can send these headers to a store that is not."
-msgstr ""
-
-#: includes/Settings.php:115
-msgid "The connection (REMOTE_ADDR)"
-msgstr ""
-
-#: includes/Settings.php:124
-msgid "Which orders need an age check"
-msgstr ""
-
-#: includes/Settings.php:125
-msgid "A product's own \"Age check\" setting (product editor, General tab) overrides these rules. Local pickup orders never need one: check the buyer's ID at the counter. Orders paid on the \"pay for order\" page are accepted, then held until the shopper verifies."
-msgstr ""
-
-#: includes/Settings.php:130
-msgid "Products"
-msgstr ""
-
-#: includes/Settings.php:133
-msgid "Every product"
-msgstr ""
-
-#: includes/Settings.php:134
-msgid "Only products in the categories or tags below"
-msgstr ""
-
-#: includes/Settings.php:135
-msgid "Every product except those in the categories or tags below"
-msgstr ""
-
-#: includes/Settings.php:142
-msgid "Categories"
-msgstr ""
-
-#: includes/Settings.php:143
-msgid "A category also covers its subcategories."
-msgstr ""
-
-#: includes/Settings.php:151
-msgid "Tags"
-msgstr ""
-
-#: includes/Settings.php:159
-msgid "Exempt customer roles"
-msgstr ""
-
-#: includes/Settings.php:160
-msgid "Orders whose customer account has one of these roles skip the age check. It is the order's customer that counts, not the staff member who creates the order."
-msgstr ""
-
-#: includes/Settings.php:167
-msgid "When a shopper fails"
-msgstr ""
-
-#: includes/Settings.php:168
-msgid "A failed order is never shipped. Automatic refunds need a payment gateway that refunds through its API, and never happen with test keys; other orders are listed under \"AgeCheck: denied, refund required\" on the Orders screen."
-msgstr ""
-
-#: includes/Settings.php:171
-msgid "Refund through the payment gateway when it can, otherwise list for a manual refund"
-msgstr ""
-
-#: includes/Settings.php:172
-msgid "Always list for a manual refund"
-msgstr ""
-
-#: includes/Settings.php:182
-msgid "Webhook"
-msgstr ""
-
-#: includes/Settings.php:183
-msgid "Optional but recommended: AgeCheck tells the store the moment a shopper passes, instead of the store asking every 15 minutes. In the Navexa dashboard, add a webhook endpoint with the URL below for the verification.passed, verification.failed and verification.hold_stale events, and paste its signing secret here."
-msgstr ""
-
-#: includes/Settings.php:188
-msgid "Webhook URL"
-msgstr ""
-
-#: includes/Settings.php:194
-msgid "Signing secret"
-msgstr ""
-
-#: includes/Settings.php:195
-msgid "Shown once when you create the endpoint in the Navexa dashboard."
-msgstr ""
-
-#: includes/Settings.php:205
-msgid "Checkout protection"
-msgstr ""
-
-#: includes/Settings.php:210
-msgid "Express payment buttons"
-msgstr ""
-
-#: includes/Settings.php:211
-msgid "Hide express checkout buttons on age-restricted carts and products"
-msgstr ""
-
-#: includes/Settings.php:212
-msgid "Apple Pay, Google Pay, Link, Amazon Pay, WooPay and PayPal buttons from WooPayments, WooCommerce Stripe Gateway and WooCommerce PayPal Payments skip the checkout form, so the shopper never sees Verify age. Hidden, the shopper pays through the checkout form instead. An express order that still gets through is refused before payment (Before payment mode) or held after payment until the age check clears."
-msgstr ""
-
-#: includes/Settings.php:218
-msgid "Cloudflare Turnstile"
-msgstr ""
-
-#: includes/Settings.php:219
-msgid "Ask for a Turnstile security check before a shopper's age check starts"
-msgstr ""
-
-#: includes/Settings.php:220
-msgid "Keeps bots from starting age checks. The checkout page then loads Cloudflare's Turnstile script, and the shopper's Turnstile token and IP address are sent to Cloudflare to confirm it. When Turnstile is on and cannot confirm the shopper (or its keys are missing), the age check does not start."
-msgstr ""
-
-#: includes/Settings.php:226
-msgid "Turnstile site key"
-msgstr ""
-
-#: includes/Settings.php:227
-msgid "From the Turnstile widget you create for this store's domain in the Cloudflare dashboard."
-msgstr ""
-
-#: includes/Settings.php:234
-msgid "Turnstile secret key"
-msgstr ""
-
-#: includes/Settings.php:235
-msgid "The same widget's secret key."
-msgstr ""
-
-#: includes/Settings.php:245
-msgid "Entry age gate (self-attestation)"
-msgstr ""
-
-#: includes/Settings.php:251
+#: includes/Settings.php:99
+#: includes/Settings.php:353
 msgid "Entry age gate"
 msgstr ""
 
-#: includes/Settings.php:252
-msgid "Ask visitors to confirm their age when they enter the store (self-attestation, not age verification)"
+#: includes/Settings.php:114
+msgid "Age verification for age-restricted orders. AgeCheck verifies orders shipping to US addresses only: an age-restricted order shipping anywhere else is refused."
 msgstr ""
 
-#: includes/Settings.php:253
-msgid "Visitors only click a button; anyone can say they are old enough. The age check at checkout still verifies every age-restricted order. Off by default."
+#: includes/Settings.php:119
+msgid "Connection"
+msgstr ""
+
+#: includes/Settings.php:125
+#: includes/Settings.php:1098
+#: includes/Settings.php:1295
+msgid "Start key"
+msgstr ""
+
+#: includes/Settings.php:126
+msgid "An API key with the agecheck:verify scope. Used only when a shopper starts or refreshes a check, so a flood of starts cannot slow down order fulfilment."
+msgstr ""
+
+#: includes/Settings.php:132
+#: includes/Settings.php:1099
+#: includes/Settings.php:1296
+msgid "Fulfilment key"
+msgstr ""
+
+#: includes/Settings.php:133
+msgid "A second API key with the agecheck:verify and agecheck:clearance scopes. Used to link orders to checks and to release held orders."
+msgstr ""
+
+#: includes/Settings.php:140
+msgid "Before or after payment, a paid age-restricted order that has not passed is held, never released for shipping. Off: nothing is verified or held and no API key is needed; only the entry age gate runs, which is self-attestation, not age verification."
+msgstr ""
+
+#: includes/Settings.php:143
+msgid "Before payment: the shopper verifies at checkout"
+msgstr ""
+
+#: includes/Settings.php:144
+msgid "After payment: the order is held until the shopper verifies"
+msgstr ""
+
+#: includes/Settings.php:145
+msgid "Off: entry age gate only (no age verification, no API key needed)"
+msgstr ""
+
+#: includes/Settings.php:151
+msgid "Client IP address"
+msgstr ""
+
+#: includes/Settings.php:152
+msgid "Where to read the shopper's IP address for the age check rate limits. Choose a header only when your store is behind that proxy or CDN: anyone can send these headers to a store that is not."
+msgstr ""
+
+#: includes/Settings.php:154
+msgid "The connection (REMOTE_ADDR)"
+msgstr ""
+
+#: includes/Settings.php:163
+msgid "Which orders need an age check"
+msgstr ""
+
+#: includes/Settings.php:164
+msgid "A product's own \"Age check\" setting (product editor, General tab) overrides these rules. Local pickup orders never need one: check the buyer's ID at the counter. Orders paid on the \"pay for order\" page are accepted, then held until the shopper verifies."
+msgstr ""
+
+#: includes/Settings.php:169
+msgid "Products"
+msgstr ""
+
+#: includes/Settings.php:172
+msgid "Every product"
+msgstr ""
+
+#: includes/Settings.php:173
+msgid "Only products in the categories or tags below"
+msgstr ""
+
+#: includes/Settings.php:174
+msgid "Every product except those in the categories or tags below"
+msgstr ""
+
+#: includes/Settings.php:181
+msgid "Categories"
+msgstr ""
+
+#: includes/Settings.php:182
+msgid "A category also covers its subcategories."
+msgstr ""
+
+#: includes/Settings.php:190
+msgid "Tags"
+msgstr ""
+
+#: includes/Settings.php:198
+msgid "Exempt customer roles"
+msgstr ""
+
+#: includes/Settings.php:199
+msgid "Orders whose customer account has one of these roles skip the age check. It is the order's customer that counts, not the staff member who creates the order."
+msgstr ""
+
+#: includes/Settings.php:206
+msgid "When a shopper fails"
+msgstr ""
+
+#: includes/Settings.php:207
+msgid "A failed order is never shipped. Automatic refunds need a payment gateway that refunds through its API, and never happen with test keys; other orders are listed under \"AgeCheck: denied, refund required\" on the Orders screen."
+msgstr ""
+
+#: includes/Settings.php:210
+msgid "Refund through the payment gateway when it can, otherwise list for a manual refund"
+msgstr ""
+
+#: includes/Settings.php:211
+msgid "Always list for a manual refund"
+msgstr ""
+
+#: includes/Settings.php:221
+msgid "Webhook"
+msgstr ""
+
+#: includes/Settings.php:222
+msgid "Optional but recommended: AgeCheck tells the store the moment a shopper passes, instead of the store asking every 15 minutes. In the Navexa dashboard, add a webhook endpoint with the URL below for the verification.passed, verification.failed and verification.hold_stale events, and paste its signing secret here."
+msgstr ""
+
+#: includes/Settings.php:227
+msgid "Webhook URL"
+msgstr ""
+
+#: includes/Settings.php:233
+msgid "Signing secret"
+msgstr ""
+
+#: includes/Settings.php:234
+msgid "Shown once when you create the endpoint in the Navexa dashboard."
+msgstr ""
+
+#: includes/Settings.php:244
+msgid "Checkout protection"
+msgstr ""
+
+#: includes/Settings.php:249
+msgid "Express payment buttons"
+msgstr ""
+
+#: includes/Settings.php:250
+msgid "Hide express checkout buttons on age-restricted carts and products"
+msgstr ""
+
+#: includes/Settings.php:251
+msgid "Apple Pay, Google Pay, Link, Amazon Pay, WooPay and PayPal buttons from WooPayments, WooCommerce Stripe Gateway and WooCommerce PayPal Payments skip the checkout form, so the age check at Place order never runs. Hidden, the shopper pays through the checkout form instead. An express order that still gets through is refused before payment (Before payment mode) or held after payment until the age check clears."
+msgstr ""
+
+#: includes/Settings.php:257
+msgid "Cloudflare Turnstile"
+msgstr ""
+
+#: includes/Settings.php:258
+msgid "Ask for a Turnstile security check before a shopper's age check starts"
 msgstr ""
 
 #: includes/Settings.php:259
-msgid "Where the gate shows"
+msgid "Keeps bots from starting age checks. The checkout page then loads Cloudflare's Turnstile script, and the shopper's Turnstile token and IP address are sent to Cloudflare to confirm it. When Turnstile is on and cannot confirm the shopper (or its keys are missing), the age check does not start."
 msgstr ""
 
-#: includes/Settings.php:262
-msgid "Every page of the store"
+#: includes/Settings.php:265
+msgid "Turnstile site key"
 msgstr ""
 
-#: includes/Settings.php:263
-msgid "Only age-restricted product pages and their category and tag pages"
+#: includes/Settings.php:266
+msgid "From the Turnstile widget you create for this store's domain in the Cloudflare dashboard."
 msgstr ""
 
-#: includes/Settings.php:269
-msgid "Remember the answer for (days)"
+#: includes/Settings.php:273
+msgid "Turnstile secret key"
 msgstr ""
 
-#: includes/Settings.php:270
-msgid "Kept in the visitor's own browser. 0 remembers it only in the browser tab where they answered; a new tab or window asks again."
+#: includes/Settings.php:274
+msgid "The same widget's secret key."
 msgstr ""
 
-#: includes/Settings.php:282
-msgid "Send under-age visitors to"
-msgstr ""
-
-#: includes/Settings.php:283
-msgid "An absolute http or https address, such as a page outside the age-restricted part of your store (the gate never shows there). Blank keeps them on the gate with a short message."
-msgstr ""
-
-#: includes/Settings.php:295
+#: includes/Settings.php:284
 msgid "Data"
 msgstr ""
 
-#: includes/Settings.php:300
+#: includes/Settings.php:289
 msgid "Delete data on uninstall"
 msgstr ""
 
-#: includes/Settings.php:301
+#: includes/Settings.php:290
 msgid "Also delete each order's age check details and each product's age check setting when the plugin is deleted"
 msgstr ""
 
-#: includes/Settings.php:302
+#: includes/Settings.php:291
 msgid "Off, they stay as an audit trail. The plugin's settings, keys and scheduled jobs are always deleted, and orders still awaiting an age check are moved to On hold, never released."
 msgstr ""
 
-#: includes/Settings.php:329
+#: includes/Settings.php:318
 msgid "Take and hold accepts the order while AgeCheck cannot run the age check (an outage, or AgeCheck's ID check busy) and holds it, unshipped, until the shopper verifies by the link AgeCheck emails them or from their order page. Never after a failed check. When your store has used its own daily ID checks, orders are refused either way."
 msgstr ""
 
-#: includes/Settings.php:331
+#: includes/Settings.php:320
 msgid "Not in effect now: AgeCheck cannot email verification links for this store yet (they are off at AgeCheck, or your store display name is not set in the AgeCheck dashboard), so checkout refuses orders when AgeCheck is down until it can."
 msgstr ""
 
-#: includes/Settings.php:336
+#: includes/Settings.php:325
 msgid "When AgeCheck is down"
 msgstr ""
 
-#: includes/Settings.php:340
+#: includes/Settings.php:329
 msgid "Refuse the order (the shopper tries again later)"
 msgstr ""
 
-#: includes/Settings.php:341
+#: includes/Settings.php:330
 msgid "Take the order and hold it until the shopper verifies"
 msgstr ""
 
+#: includes/Settings.php:347
+msgid "Entry age gate (self-attestation)"
+msgstr ""
+
+#: includes/Settings.php:354
+msgid "Ask visitors to confirm their age when they enter the store (self-attestation, not age verification)"
+msgstr ""
+
+#: includes/Settings.php:355
+msgid "Anyone can say they are old enough. The age check at checkout, when age verification is on, still verifies every age-restricted order. Off by default."
+msgstr ""
+
+#: includes/Settings.php:361
+msgid "Where the gate shows"
+msgstr ""
+
+#: includes/Settings.php:364
+msgid "Every page of the store"
+msgstr ""
+
+#: includes/Settings.php:365
+msgid "Only age-restricted product pages and their category and tag pages"
+msgstr ""
+
+#: includes/Settings.php:371
+msgid "How visitors answer"
+msgstr ""
+
+#: includes/Settings.php:372
+msgid "Both are self-attestation: anyone can answer. The date of birth is checked in the visitor's browser and never stored or sent."
+msgstr ""
+
+#: includes/Settings.php:375
+msgid "Yes/No buttons (\"I am 21 or older\" / \"I am under 21\")"
+msgstr ""
+
+#: includes/Settings.php:376
+msgid "Date of birth (month, day and year)"
+msgstr ""
+
+#: includes/Settings.php:386
+#: includes/Settings.php:395
+msgid "Minimum age"
+msgstr ""
+
+#. translators: %d: minimum age, e.g. 21.
+#: includes/Settings.php:388
+#, php-format
+msgid "%d, set in the Navexa dashboard (the age checkout verifies)."
+msgstr ""
+
+#: includes/Settings.php:397
+msgid "Used until AgeCheck reports the minimum age set in the Navexa dashboard; from then on the gate asks that age."
+msgstr ""
+
+#: includes/Settings.php:398
+msgid "The age the gate asks about."
+msgstr ""
+
+#: includes/Settings.php:414
+msgid "Remember the answer for (days)"
+msgstr ""
+
+#: includes/Settings.php:415
+msgid "Kept in the visitor's own browser. 0 remembers it only in the browser tab where they answered; a new tab or window asks again."
+msgstr ""
+
+#: includes/Settings.php:427
+msgid "Send under-age visitors to"
+msgstr ""
+
+#: includes/Settings.php:428
+msgid "An absolute http or https address, such as a page outside the age-restricted part of your store (the gate never shows there). Blank keeps them on the gate with a short message."
+msgstr ""
+
+#: includes/Settings.php:440
+msgid "Look and text"
+msgstr ""
+
+#: includes/Settings.php:441
+msgid "Text on the card and button text on the button must reach a contrast of 4.5:1 (WCAG AA); a pair under it is not saved. The backdrop also covers the page until the visitor answers."
+msgstr ""
+
+#: includes/Settings.php:446
+msgid "Logo"
+msgstr ""
+
+#: includes/Settings.php:447
+msgid "An image from your media library, shown above the title. It shows only when your store is served over https."
+msgstr ""
+
+#: includes/Settings.php:452
+msgid "Backdrop"
+msgstr ""
+
+#: includes/Settings.php:453
+msgid "Card"
+msgstr ""
+
+#: includes/Settings.php:454
+msgid "Text"
+msgstr ""
+
+#: includes/Settings.php:455
+msgid "Buttons"
+msgstr ""
+
+#: includes/Settings.php:456
+msgid "Button text"
+msgstr ""
+
+#: includes/Settings.php:469
+msgid "Title"
+msgstr ""
+
+#: includes/Settings.php:470
+msgid "Message"
+msgstr ""
+
+#: includes/Settings.php:471
+msgid "\"Yes\" button"
+msgstr ""
+
+#: includes/Settings.php:472
+msgid "\"No\" button"
+msgstr ""
+
+#: includes/Settings.php:473
+msgid "Date of birth button"
+msgstr ""
+
+#. translators: %d: the longest length allowed, in characters.
+#: includes/Settings.php:482
+#, php-format
+msgid "Blank uses the default shown. Up to %d characters; {age} becomes the minimum age and {site} the store name."
+msgstr ""
+
+#: includes/Settings.php:523
+msgid "Choose a logo"
+msgstr ""
+
+#: includes/Settings.php:524
+msgid "Use this image"
+msgstr ""
+
+#. translators: %s: a contrast ratio, e.g. 4.5.
+#: includes/Settings.php:526
+#, php-format
+msgid "Contrast %s:1"
+msgstr ""
+
+#. translators: %s: a contrast ratio, e.g. 2.9.
+#: includes/Settings.php:528
+#, php-format
+msgid "Contrast %s:1: needs at least 4.5:1, so it will not be saved."
+msgstr ""
+
+#: includes/Settings.php:556
+msgid "Choose image"
+msgstr ""
+
+#: includes/Settings.php:557
+msgid "Remove"
+msgstr ""
+
+#: includes/Settings.php:591
+msgid "The logo must be an image from the media library. The saved logo was kept."
+msgstr ""
+
+#: includes/Settings.php:613
+msgid "Gate colours must be hex colours such as #1e1e1e. The saved colour was kept."
+msgstr ""
+
+#. translators: %d: the longest length allowed, in characters.
+#: includes/Settings.php:639
+#, php-format
+msgid "A gate text is longer than %d characters. The saved text was kept."
+msgstr ""
+
+#: includes/Settings.php:670
+msgid "Text on the card"
+msgstr ""
+
+#: includes/Settings.php:671
+msgid "Button text on the buttons"
+msgstr ""
+
+#. translators: 1: which colours, e.g. "Text on the card"; 2: their contrast ratio, e.g. 2.9.
+#: includes/Settings.php:683
+#, php-format
+msgid "%1$s has a contrast of %2$s:1; it needs at least 4.5:1 (WCAG AA). The saved colours were kept."
+msgstr ""
+
 #. translators: %d: a term id.
-#: includes/Settings.php:382
+#: includes/Settings.php:760
 #, php-format
 msgid "Term #%d"
 msgstr ""
 
-#: includes/Settings.php:485
+#: includes/Settings.php:863
 msgid "That does not look like an AgeCheck API key (txk_…). The saved key was kept."
 msgstr ""
 
-#: includes/Settings.php:513
+#: includes/Settings.php:891
 msgid "That does not look like a webhook signing secret. The saved secret was kept."
 msgstr ""
 
-#: includes/Settings.php:540
+#: includes/Settings.php:918
 msgid "That does not look like a Turnstile secret key. The saved key was kept."
 msgstr ""
 
-#. translators: 1: minimum age, e.g. 21; 2: the store's name.
-#: includes/Settings.php:558
-#, php-format
-msgid "An optional prompt when visitors enter the store: \"I am %1$d or older\" or \"I am under %1$d\", under the store name \"%2$s\". It is self-attestation, not age verification: it only asks, and anyone can answer yes. The age check at checkout still applies to every age-restricted order. The age is the minimum age set in the Navexa dashboard (21 until AgeCheck has answered), and the name is the display name set there, or this site's title. It needs no API key, sends nothing to your server or to Navexa, loads nothing from another site and works with page caching. Never shown in wp-admin, on the login page or to the REST API."
+#: includes/Settings.php:934
+msgid "An optional prompt when visitors enter the store: Yes/No buttons, or their date of birth. It is self-attestation, not age verification: it only asks, and anyone can answer. It needs no API key, sends nothing to your server or to Navexa, loads nothing from another site (only your logo, from your own media library) and works with page caching. Never shown in wp-admin, on the login page or to the REST API."
 msgstr ""
 
-#: includes/Settings.php:595
+#. translators: %s: the store's name.
+#: includes/Settings.php:938
+#, php-format
+msgid "The age check at checkout still applies to every age-restricted order. The store name shown is \"%s\": the display name set in the Navexa dashboard, or this site's title."
+msgstr ""
+
+#. translators: %s: the store's name.
+#: includes/Settings.php:944
+#, php-format
+msgid "Age verification is off, so this gate is the only age prompt. The store name shown is \"%s\"."
+msgstr ""
+
+#: includes/Settings.php:982
 msgid "The under-age address must be an absolute http or https URL. The saved address was kept."
 msgstr ""
 
-#: includes/Settings.php:613
+#: includes/Settings.php:1000
 msgid "That does not look like a Turnstile site key. The saved key was kept."
 msgstr ""
 
-#: includes/Settings.php:637
+#: includes/Settings.php:1024
 msgid "Leave blank to keep the saved key"
 msgstr ""
 
-#: includes/Settings.php:641
+#: includes/Settings.php:1028
 msgid "No secret saved."
 msgstr ""
 
-#: includes/Settings.php:641
+#: includes/Settings.php:1028
 msgid "No key saved."
 msgstr ""
 
-#: includes/Settings.php:644
+#: includes/Settings.php:1031
 msgid "A secret is saved."
 msgstr ""
 
 #. translators: %s: the first characters of the saved API key.
-#: includes/Settings.php:648
+#: includes/Settings.php:1035
 #, php-format
 msgid "Saved key: %s"
 msgstr ""
 
-#: includes/Settings.php:657
+#: includes/Settings.php:1044
 msgid "Remove the saved key"
 msgstr ""
 
-#: includes/Settings.php:657
+#: includes/Settings.php:1044
 msgid "Remove the saved secret"
 msgstr ""
 
 #. translators: %s: link to the Navexa dashboard.
-#: includes/Settings.php:686
+#: includes/Settings.php:1073
 #, php-format
 msgid "Create keys, add allowed origins and set the minimum age in the %s."
 msgstr ""
 
-#: includes/Settings.php:687
+#: includes/Settings.php:1074
 msgid "Navexa dashboard"
 msgstr ""
 
-#: includes/Settings.php:703
+#: includes/Settings.php:1093
 msgid "Paused: this site's address changed. Use \"Confirm this site\" in the notice above."
 msgstr ""
 
-#: includes/Settings.php:720
+#: includes/Settings.php:1110
+#: includes/Settings.php:1306
 msgid "live"
 msgstr ""
 
-#: includes/Settings.php:721
+#: includes/Settings.php:1111
+#: includes/Settings.php:1306
 msgid "TEST MODE (simulator only)"
 msgstr ""
 
 #. translators: %s: comma-separated API key scopes.
-#: includes/Settings.php:730
+#: includes/Settings.php:1120
 #, php-format
 msgid "Missing scope: %s."
 msgstr ""
 
-#: includes/Settings.php:741
+#: includes/Settings.php:1131
 msgid "The start key and the fulfilment key are the same key. Create a separate start key with only the agecheck:verify scope, or a burst of checkout starts can use up the rate limit that releases held orders."
 msgstr ""
 
-#: includes/Settings.php:743
+#: includes/Settings.php:1133
 msgid "The start key also has the agecheck:clearance scope. It needs only agecheck:verify."
 msgstr ""
 
-#: includes/Settings.php:750
+#: includes/Settings.php:1140
 msgid "One key is live and the other is a test key. Use two live keys or two test keys from the same Navexa account."
 msgstr ""
 
 #. translators: 1: account display name of the start key, 2: account display name of the fulfilment key.
-#: includes/Settings.php:761
+#: includes/Settings.php:1151
 #, php-format
 msgid "The keys belong to different Navexa accounts (%1$s and %2$s). Use two keys from the same account."
 msgstr ""
 
-#: includes/Settings.php:765
+#: includes/Settings.php:1155
 msgid "The keys belong to different Navexa accounts. Use two keys from the same account."
 msgstr ""
 
 #. translators: %s: the store origin, e.g. https://shop.example.
-#: includes/Settings.php:775
+#: includes/Settings.php:1165
 #, php-format
 msgid "%s is an allowed origin."
 msgstr ""
 
 #. translators: %s: the store origin, e.g. https://shop.example.
-#: includes/Settings.php:778
+#: includes/Settings.php:1168
 #, php-format
 msgid "Add %s to the allowed origins in the Navexa dashboard, or shoppers cannot verify."
 msgstr ""
 
 #. translators: %d: minimum age, e.g. 21.
-#: includes/Settings.php:782
+#: includes/Settings.php:1172
 #, php-format
 msgid "Minimum age: %d (set in the Navexa dashboard)."
 msgstr ""
 
-#: includes/Settings.php:790
+#: includes/Settings.php:1180
 msgid "No webhook secret: held orders are checked every 15 minutes instead of the moment the shopper passes."
 msgstr ""
 
 #. translators: %s: date and time.
-#: includes/Settings.php:793
+#: includes/Settings.php:1183
 #, php-format
 msgid "Last webhook received %s."
 msgstr ""
 
-#: includes/Settings.php:795
+#: includes/Settings.php:1185
 msgid "No webhook received yet. Check the endpoint URL and secret in the Navexa dashboard."
 msgstr ""
 
-#: includes/Settings.php:798
+#: includes/Settings.php:1188
 msgid "The 15-minute check of held orders has not run in the last hour. WP-Cron may be off: set up a real system cron so held orders are released."
 msgstr ""
 
-#: includes/Settings.php:802
+#: includes/Settings.php:1192
 msgid "Age checks are limited to the categories and tags below, but none is chosen (or they were deleted). Only products set to \"Always needs an age check\" in the product editor are checked."
 msgstr ""
 
-#: includes/Settings.php:806
+#: includes/Settings.php:1196
 msgid "Cloudflare Turnstile is on, but its site key or secret key is missing, so shoppers cannot start age checks. Add both keys or turn Turnstile off."
 msgstr ""
 
-#: includes/Settings.php:812
+#: includes/Settings.php:1202
 msgid "Cloudflare Turnstile uses Cloudflare's test keys, which accept a public dummy token, so it does not stop bots. Enter the site key and secret key of a Turnstile widget for this store's domain before you take live orders."
 msgstr ""
 
-#: includes/Settings.php:814
+#: includes/Settings.php:1204
 msgid "Cloudflare Turnstile checks shoppers before an age check starts."
 msgstr ""
 
-#: includes/Settings.php:818
+#: includes/Settings.php:1208
 msgid "The age check rate-limit table is missing, so shoppers cannot start age checks. Deactivate and reactivate the plugin; if this stays, ask your host to let the database user create tables."
 msgstr ""
 
 #. translators: %s: a proxy header option, e.g. X-Forwarded-For (last address).
-#: includes/Settings.php:828
+#: includes/Settings.php:1218
 #, php-format
 msgid "The latest age checks reached your store through a proxy, load balancer or CDN (they carry the header %s), but the client IP is read from the connection, so shoppers share rate limits. If your store is behind that proxy, choose its header under Client IP address."
 msgstr ""
 
-#: includes/Settings.php:833
+#: includes/Settings.php:1223
 msgid "The latest age checks all came from one IP address or from a private network address, which usually means a proxy, load balancer or CDN in front of your store. If it is, choose its header under Client IP address, or shoppers share rate limits."
 msgstr ""
 
-#: includes/Settings.php:837
+#: includes/Settings.php:1227
 msgid "Your store ships outside the US. AgeCheck verifies US addresses only (including US territories and APO/FPO), so age-restricted orders shipping elsewhere will be refused."
 msgstr ""
 
-#: includes/Settings.php:855
+#: includes/Settings.php:1245
 msgid "Returning customers: reuse is off in Navexa, so every customer is checked each time."
 msgstr ""
 
 #. translators: %d: number of days.
-#: includes/Settings.php:859
+#: includes/Settings.php:1249
 #, php-format
 msgid "%d day"
 msgid_plural "%d days"
@@ -1657,116 +1923,132 @@ msgstr[0] ""
 msgstr[1] ""
 
 #. translators: %s: the reuse window, e.g. "90 days".
-#: includes/Settings.php:867
+#: includes/Settings.php:1257
 #, php-format
 msgid "Returning customers: on (%s) for signed-in customers, matched by their account. Guests need a store name in the Navexa dashboard to get a one-time code."
 msgstr ""
 
 #. translators: %s: the reuse window, e.g. "90 days".
-#: includes/Settings.php:874
+#: includes/Settings.php:1264
 #, php-format
 msgid "Returning customers: on (%s). Signed-in customers are matched by their account, guests by a one-time code AgeCheck emails to their billing address."
 msgstr ""
 
-#: includes/Settings.php:878
+#: includes/Settings.php:1268
 msgid "In test mode, AgeCheck emails codes only to confirmed notification recipients in the Navexa dashboard."
 msgstr ""
 
-#: includes/Settings.php:891
+#: includes/Settings.php:1282
+msgid "Age verification is off: orders are not verified or held. Only the entry age gate (self-attestation) runs."
+msgstr ""
+
+#. translators: %d: number of orders.
+#: includes/Settings.php:1289
+#, php-format
+msgid "%d order is still awaiting an age check; it is released when AgeCheck clears it or with the release action."
+msgid_plural "%d orders are still awaiting an age check; they are released when AgeCheck clears them or with the release action."
+msgstr[0] ""
+msgstr[1] ""
+
+#: includes/Settings.php:1327
 msgid "not set."
 msgstr ""
 
-#: includes/Settings.php:893
+#: includes/Settings.php:1329
 msgid "paused until this site is confirmed."
 msgstr ""
 
-#: includes/Settings.php:895
+#: includes/Settings.php:1331
 msgid "AgeCheck refused this key. Check it was copied in full and has not been revoked."
 msgstr ""
 
-#: includes/Settings.php:897
+#: includes/Settings.php:1333
 msgid "this key is not allowed to use AgeCheck. Check its scopes in the Navexa dashboard."
 msgstr ""
 
-#: includes/Settings.php:899
+#: includes/Settings.php:1335
 msgid "AgeCheck does not offer the connection check this plugin needs yet. Age checks stay off until it does."
 msgstr ""
 
 #. translators: %s: an error code, e.g. unavailable.
-#: includes/Settings.php:902
+#: includes/Settings.php:1338
 #, php-format
 msgid "AgeCheck could not be reached (%s). Age checks fail closed until it answers."
 msgstr ""
 
-#: includes/Settings.php:914
+#: includes/Settings.php:1350
 msgid "CF-Connecting-IP (Cloudflare)"
 msgstr ""
 
-#: includes/Settings.php:915
+#: includes/Settings.php:1351
 msgid "True-Client-IP"
 msgstr ""
 
-#: includes/Settings.php:916
+#: includes/Settings.php:1352
 msgid "X-Real-IP"
 msgstr ""
 
-#: includes/Settings.php:917
+#: includes/Settings.php:1353
 msgid "X-Forwarded-For (last address)"
 msgstr ""
 
-#: includes/Start.php:191
+#: includes/Start.php:217
 msgid "This page is out of date. Reload it and try again."
 msgstr ""
 
-#: includes/Start.php:280
+#: includes/Start.php:314
 msgid "Age verification is unavailable right now. You can place your order; it will be held until you verify your age with the link we send you by email or on your order page."
 msgstr ""
 
-#: includes/Start.php:288
+#: includes/Start.php:322
 msgid "Age verification is not available for this store right now, so this order cannot be placed. Please try again later."
 msgstr ""
 
-#: includes/Start.php:380
+#: includes/Start.php:417
 msgid "Contract version."
 msgstr ""
 
-#: includes/Start.php:386
+#: includes/Start.php:423
 msgid "Whether the cart needs an age check before checkout."
 msgstr ""
 
-#: includes/Start.php:392
+#: includes/Start.php:429
 msgid "Age check status."
 msgstr ""
 
-#: includes/Start.php:399
+#: includes/Start.php:436
 msgid "Where the shopper verifies; only in the response to a start."
 msgstr ""
 
-#: includes/Start.php:405
+#: includes/Start.php:442
 msgid "Text to show the shopper."
 msgstr ""
 
-#: includes/Start.php:531
-msgid "Your age check is being processed. Select Verify age again in a minute to see if it is done."
+#: includes/Start.php:448
+msgid "Why the age check could not start, when it could not."
 msgstr ""
 
-#: includes/Start.php:821
+#: includes/Start.php:575
+msgid "Your age check is being processed. Place your order again in a minute."
+msgstr ""
+
+#: includes/Start.php:865
 msgid "Nothing in your cart needs an age check."
 msgstr ""
 
-#: includes/Start.php:827
+#: includes/Start.php:871
 msgid "Pickup orders are age-checked in store."
 msgstr ""
 
-#: includes/Start.php:939
-msgid "The security check did not pass. Complete it, then select Verify age again."
+#: includes/Start.php:1008
+msgid "The security check did not pass. Complete it, then place your order again."
 msgstr ""
 
 #: includes/Sweep.php:83
 msgid "Every 15 minutes (AgeCheck)"
 msgstr ""
 
-#: includes/Uninstall.php:171
+#: includes/Uninstall.php:173
 msgid "Navexa AgeCheck was uninstalled while this order was awaiting its age check. It was not verified: check the customer's age before you ship it."
 msgstr ""
 
@@ -1794,7 +2076,7 @@ msgstr ""
 
 #: assets/build/verify-age-no-payment/block.json
 msgctxt "block description"
-msgid "Navexa AgeCheck: the Verify age button for age-restricted orders that need no payment, where WooCommerce hides the payment step. Shown only then."
+msgid "Navexa AgeCheck: the age check status for age-restricted orders that need no payment, where WooCommerce hides the payment step. Shown only then."
 msgstr ""
 
 #: assets/build/verify-age-no-payment/block.json
@@ -1822,5 +2104,5 @@ msgstr ""
 
 #: assets/build/verify-age/block.json
 msgctxt "block description"
-msgid "Navexa AgeCheck: the Verify age button for orders with age-restricted items. Shown only when the cart needs it."
+msgid "Navexa AgeCheck: the age check status for orders with age-restricted items; the check opens when the shopper places the order. Shown only when the cart needs it."
 msgstr ""

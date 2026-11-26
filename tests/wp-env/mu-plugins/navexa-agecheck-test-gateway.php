@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Navexa AgeCheck test gateway (wp-env only)
- * Description: A payment method that always declines, for the payment-retry checks (1.0.4) in tests/wp-env/prepayment.mjs and tests/e2e/prepayment-browser.mjs. Never shipped: .wp-env.json maps this directory to wp-content/mu-plugins.
+ * Description: A payment method that always declines, for the payment-retry checks (1.0.4) in tests/wp-env/prepayment.mjs and tests/e2e/checkout-modal-browser.mjs. Never shipped: .wp-env.json maps this directory to wp-content/mu-plugins.
  *
  * The gateway (navexa_test_decline) marks the order failed and answers
  * failure, as a card gateway does on a decline: classic checkout keeps the

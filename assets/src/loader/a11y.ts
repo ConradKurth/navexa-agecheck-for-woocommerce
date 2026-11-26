@@ -11,6 +11,9 @@
  *   focus goes to the status message (tabindex="-1") on a pass, otherwise to
  *   the Verify age button, never to the top of the page. Focus the shopper
  *   moved elsewhere is left alone.
+ * - Focus handed to a control that is disabled for a moment
+ *   (focusWhenEnabled(): the block checkout's Place order after the modal
+ *   closed without a pass).
  */
 
 export const LIVE_REGION_ID = "navexa-agecheck-live"
@@ -33,7 +36,7 @@ export interface ElementLike {
   setAttribute(name: string, value: string): void
   appendChild(child: ElementLike): unknown
   contains?(other: unknown): boolean
-  focus?(): void
+  focus?(options?: { preventScroll?: boolean }): void
 }
 
 /** The page's live region, created once. */
@@ -78,11 +81,12 @@ export function mayRestoreFocus(doc: DocLike, container: ElementLike | null, own
   return !!container && typeof container.contains === "function" && container.contains(active)
 }
 
-/** Focuses $target (the browser scrolls it into view); false when there is none. */
-export function focusElement(target: ElementLike | null | undefined): boolean {
+/** Focuses $target (the browser scrolls it into view unless $options.preventScroll); false when there is none. */
+export function focusElement(target: ElementLike | null | undefined, options?: { preventScroll?: boolean }): boolean {
   if (!target || typeof target.focus !== "function") return false
   try {
-    target.focus()
+    if (options) target.focus(options)
+    else target.focus()
     return true
   } catch {
     return false
@@ -116,4 +120,71 @@ export function focusOnReturn(target: ElementLike | null | undefined, win: WinLi
   }
   win.setTimeout(retry, FOCUS_RETRY_MS)
   return done
+}
+
+/** focusWhenEnabled() looks every FOCUS_RETRY_MS, for ENABLED_WAIT_MS at most. */
+export const ENABLED_WAIT_MS = 5000
+/** focusWhenEnabled() stops once the focus has stayed on the control this long. */
+export const ENABLED_HOLD_MS = 1000
+
+/** A control focusWhenEnabled() hands the focus to. */
+export interface ControlLike extends ElementLike {
+  disabled?: boolean
+  getAttribute?(name: string): string | null
+}
+
+/** Whether $control takes the focus: neither disabled nor aria-disabled. */
+export function isEnabled(control: ControlLike): boolean {
+  return control.disabled !== true && control.getAttribute?.("aria-disabled") !== "true"
+}
+
+/**
+ * Hands the focus to a control that is disabled for a moment. WooCommerce's
+ * block checkout keeps Place order disabled while it awaits its checkout
+ * observers (and while the cart updates), so the modal's own focus return
+ * finds the button disabled and the focus falls to the body.
+ *
+ * Every FOCUS_RETRY_MS, while the focus is lost (on the body, or nowhere),
+ * the control $find() returns is focused once it has been enabled on two
+ * looks in a row, without scrolling: WooCommerce scrolls to its new error
+ * notice only while no button has the focus, and has drawn it by then. Stops
+ * when the focus is anywhere else (the shopper moved it, or a dialog took
+ * it), once it has stayed on the control for ENABLED_HOLD_MS (the button
+ * can be disabled again by a cart update right after), or after
+ * ENABLED_WAIT_MS. Returns a function that stops it.
+ */
+export function focusWhenEnabled(
+  find: () => ControlLike | null,
+  doc: Pick<DocLike, "body" | "activeElement">,
+  win: Pick<WinLike, "setTimeout">,
+): () => void {
+  let stopped = false
+  let waited = 0
+  let held = 0
+  let ready: ControlLike | null = null
+  const look = () => {
+    if (stopped) return
+    const target = find()
+    const active = doc.activeElement
+    if (target !== null && active === target) {
+      held += FOCUS_RETRY_MS
+      if (held >= ENABLED_HOLD_MS) return
+    } else if (active === null || active === undefined || active === doc.body) {
+      held = 0
+      if (target !== null && isEnabled(target)) {
+        if (ready === target) focusElement(target, { preventScroll: true })
+        ready = target
+      } else {
+        ready = null
+      }
+    } else {
+      return
+    }
+    waited += FOCUS_RETRY_MS
+    if (waited < ENABLED_WAIT_MS) win.setTimeout(look, FOCUS_RETRY_MS)
+  }
+  win.setTimeout(look, FOCUS_RETRY_MS)
+  return () => {
+    stopped = true
+  }
 }

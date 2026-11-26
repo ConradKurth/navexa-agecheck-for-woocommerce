@@ -46,10 +46,11 @@ final class FrontendTest extends TestCase {
 		Frontend::register_scripts();
 		Frontend::register_scripts();
 		$this->assertSame( array( Frontend::HANDLE_LOADER, Frontend::HANDLE_CLASSIC, Frontend::HANDLE_BLOCK ), array_keys( $this->registered ) );
-		$this->assertStringEndsWith( '/assets/js/agecheck-' . Frontend::LOADER_VERSION . '.min.js', $this->registered[ Frontend::HANDLE_LOADER ]['src'] );
+		$this->assertStringEndsWith( '/assets/vendor/agecheck-js/agecheck-' . Frontend::LOADER_VERSION . '.js', $this->registered[ Frontend::HANDLE_LOADER ]['src'], 'the vendored shared loader, minified build' );
+		$this->assertSame( Frontend::LOADER_VERSION, $this->registered[ Frontend::HANDLE_LOADER ]['ver'] );
 		$this->assertSame( array(), $this->registered[ Frontend::HANDLE_LOADER ]['deps'], 'zero dependencies' );
 		$this->assertSame( array( Frontend::HANDLE_LOADER ), $this->registered[ Frontend::HANDLE_CLASSIC ]['deps'] );
-		foreach ( array( Frontend::HANDLE_LOADER, 'wc-blocks-checkout', 'wc-blocks-data-store', 'wc-settings', 'wp-data', 'wp-element' ) as $dep ) {
+		foreach ( array( Frontend::HANDLE_LOADER, 'wc-blocks-checkout', 'wc-blocks-checkout-events', 'wc-blocks-data-store', 'wc-settings', 'wp-data', 'wp-element' ) as $dep ) {
 			$this->assertContains( $dep, $this->registered[ Frontend::HANDLE_BLOCK ]['deps'], $dep );
 		}
 		foreach ( $this->registered as $script ) {
@@ -59,23 +60,56 @@ final class FrontendTest extends TestCase {
 
 	public function test_the_built_files_exist(): void {
 		$root = dirname( __DIR__, 3 );
-		foreach ( array( 'agecheck-' . Frontend::LOADER_VERSION . '.js', 'agecheck-' . Frontend::LOADER_VERSION . '.min.js', 'checkout-classic.js', 'checkout-classic.min.js' ) as $file ) {
+		foreach ( array( 'checkout-classic.js', 'checkout-classic.min.js', 'gate-boot.js', 'gate-boot.min.js', 'admin-settings.js', 'admin-settings.min.js' ) as $file ) {
 			$this->assertFileExists( $root . '/assets/js/' . $file );
 		}
+		foreach ( array( 'agecheck-', 'agecheck-gate-' ) as $build ) {
+			foreach ( array( '.js', '.debug.js' ) as $suffix ) {
+				$this->assertFileExists( $root . '/assets/vendor/agecheck-js/' . $build . Frontend::LOADER_VERSION . $suffix );
+			}
+		}
+		$this->assertFileDoesNotExist( $root . '/assets/js/agecheck-1.0.0.min.js', 'the 1.0.x bundled loader is gone' );
+		$builds = array_map( 'basename', (array) glob( $root . '/assets/vendor/agecheck-js/agecheck*.js' ) );
+		sort( $builds );
+		$this->assertSame( array( 'agecheck-' . Frontend::LOADER_VERSION . '.debug.js', 'agecheck-' . Frontend::LOADER_VERSION . '.js', 'agecheck-gate-' . Frontend::LOADER_VERSION . '.debug.js', 'agecheck-gate-' . Frontend::LOADER_VERSION . '.js' ), $builds, 'the plugin ships one loader version' );
 		foreach ( array( 'block.json', 'index.js', 'index.asset.php', 'frontend.js', 'frontend.asset.php' ) as $file ) {
 			$this->assertFileExists( $root . '/assets/build/verify-age/' . $file );
 		}
 		foreach ( array( 'block.json', 'index.js', 'index.asset.php' ) as $file ) {
 			$this->assertFileExists( $root . '/assets/build/verify-age-no-payment/' . $file );
 		}
-		$this->assertStringContainsString( 'LOADER_VERSION = "' . Frontend::LOADER_VERSION . '"', (string) file_get_contents( $root . '/assets/src/loader/agecheck.ts' ) );
+		$manifest = json_decode( (string) file_get_contents( $root . '/assets/vendor/agecheck-js/manifest.json' ), true );
+		$this->assertIsArray( $manifest['versions'][ Frontend::LOADER_VERSION ]['files'], 'the vendored manifest has the pinned version' );
+		$this->assertStringStartsWith( '/*! @navexa/agecheck-js v' . Frontend::LOADER_VERSION . ' | MIT | ', (string) file_get_contents( $root . '/assets/vendor/agecheck-js/agecheck-' . Frontend::LOADER_VERSION . '.js' ) );
+	}
+
+	public function test_loader_url_is_the_minified_build_or_the_debug_build(): void {
+		$this->assertSame( 'https://shop.example/wp-content/plugins/navexa-agecheck-for-woocommerce/assets/vendor/agecheck-js/agecheck-gate-' . Frontend::LOADER_VERSION . '.js', Frontend::loader_url( 'agecheck-gate' ) );
+	}
+
+	public function test_script_data_carries_the_modal_labels_and_no_button_copy(): void {
+		$data = Frontend::script_data();
+		$this->assertSame( array( 'title', 'close', 'loading', 'slow', 'newWindow', 'popup', 'reopen', 'blocked', 'samePage', 'frame', 'verified' ), array_keys( $data['labels'] ), "the loader's VERIFY_LABEL_KEYS" );
+		$this->assertSame( 'Verify your age', $data['labels']['title'] );
+		$this->assertSame( 'Verified', $data['labels']['verified'], 'loader 1.0.1: the pass moment' );
+		// Every key of the vendored loader's DEFAULT_VERIFY_LABELS, so a sync that adds one is noticed.
+		$source = (string) file_get_contents( dirname( __DIR__, 3 ) . '/assets/vendor/agecheck-js/src/verify.ts' );
+		$this->assertSame( 1, preg_match( '/DEFAULT_VERIFY_LABELS: Required<VerifyLabels> = \{(.*?)\n\}/s', $source, $block ) );
+		preg_match_all( '/^\s+(\w+):/m', $block[1], $keys );
+		$this->assertSame( $keys[1], array_keys( $data['labels'] ), 'the vendored loader\'s label keys, in order' );
+		foreach ( array( 'verify', 'verifying', 'opening', 'required' ) as $gone ) {
+			$this->assertArrayNotHasKey( $gone, $data['i18n'], $gone );
+		}
+		$this->assertStringContainsString( 'When you place it', $data['i18n']['prompt'] );
+		$this->assertArrayHasKey( 'unlocked', $data['i18n'] );
+		$this->assertArrayHasKey( 'edited', $data['i18n'] );
 	}
 
 	public function test_classic_data_has_a_rest_nonce_only_when_signed_in(): void {
 		$data = Frontend::classic_data();
 		$this->assertSame( 'https://shop.example/wp-json/wc/store/v1/', $data['storeApi'] );
 		$this->assertArrayNotHasKey( 'restNonce', $data );
-		$this->assertSame( 'Verify age', $data['i18n']['verify'] );
+		$this->assertSame( 'Age verified.', $data['i18n']['passed'] );
 
 		$this->logged_in = true;
 		$this->assertSame( 'nonce-wp_rest', Frontend::classic_data()['restNonce'] );

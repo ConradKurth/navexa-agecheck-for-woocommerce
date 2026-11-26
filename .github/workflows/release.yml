@@ -1,8 +1,9 @@
 name: Release
 
 # Pushing a v* tag (on a commit on main) builds the distributable zip,
-# installs it in wp-env on the oldest and the latest supported stack, and
-# drafts a GitHub Release with the zip and SHA256SUMS. Publishing the draft
+# installs it in wp-env on the oldest and the latest supported stack, runs
+# wordpress.org's Plugin Check on it, and drafts a GitHub Release with the
+# zip and SHA256SUMS. Publishing the draft
 # is a person's step; so is wordpress.org (README.md, "Releasing").
 on:
   push:
@@ -97,9 +98,32 @@ jobs:
           PHP: ${{ matrix.php }}
         run: bin/verify-zip.sh dist/navexa-agecheck-for-woocommerce-*.zip --core "$CORE" --wc "$WC" --php "$PHP"
 
+  # wordpress.org's Plugin Check on the zip, in a throwaway wp-env: any ERROR
+  # fails the release (warnings are printed). Plugin Check is the version
+  # wordpress.org serves that day.
+  plugin-check:
+    name: Plugin Check
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release
+          path: dist
+      - name: Checksum
+        run: cd dist && sha256sum -c SHA256SUMS
+      - name: Plugin Check finds no errors
+        run: bin/plugin-check.sh dist/navexa-agecheck-for-woocommerce-*.zip
+
   release:
     name: Draft the GitHub Release
-    needs: [build, assets, verify]
+    needs: [build, assets, verify, plugin-check]
     runs-on: ubuntu-latest
     permissions:
       contents: write

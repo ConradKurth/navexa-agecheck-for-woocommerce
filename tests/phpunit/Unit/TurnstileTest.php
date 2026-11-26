@@ -139,6 +139,20 @@ final class TurnstileTest extends TestCase {
 		$this->assertSame( array(), $this->http_requests );
 	}
 
+	public function test_starts_turnstile_refuses_do_not_spend_the_store_wide_cap(): void {
+		$this->turn_on();
+		\Brain\Monkey\Filters\expectApplied( 'navexa_agecheck_rate_limits' )->andReturn( array( 'start_store' => 1 ) );
+		$this->respond( 200, array( 'success' => false, 'error-codes' => array( 'invalid-input-response' ) ) );
+		$this->assertSame( 'refused', $this->start( self::TOKEN )['status'] );
+		$this->respond( 200, array( 'success' => true, 'action' => Turnstile::ACTION, 'hostname' => 'shop.example' ) );
+		$this->respond_created();
+		$this->assertSame( 'pending', $this->start( self::TOKEN )['status'], 'the refused start was not counted' );
+		$this->respond( 200, array( 'success' => true, 'action' => Turnstile::ACTION, 'hostname' => 'shop.example' ) );
+		$this->session()->customer_id = 't_another';
+		$answer                       = $this->start( self::TOKEN );
+		$this->assertSame( Start::CODE_RATE_LIMITED, $answer['code'], 'the store\'s one start is spent' );
+	}
+
 	public function test_the_rate_limit_comes_first(): void {
 		$this->turn_on();
 		$this->wpdb->fail = true;

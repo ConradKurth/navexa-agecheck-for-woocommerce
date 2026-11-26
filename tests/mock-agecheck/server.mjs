@@ -99,6 +99,18 @@
 //   POST    /v/<token>          decision=pass|fail: decides, then 303 to the signed return URL;
 //                               decision=identity|use_id on AWAITING_IDENTITY: the data match or the ID check
 //   GET     /v/<token>/status   the page's own poll (no CORS)
+//   GET     /v/<token>?embed=1  the embedded page of brief C1 v2 (TAX-1872), served by the shared mock of the
+//                               hosted page (hosted-engine.mjs: agecheck-js/mock/server.mjs, vendored unchanged by
+//                               bin/sync-loader.mjs) through its createMockEngine().handle(): CSP frame-ancestors
+//                               'self' + org.allowedOrigins, no COOP; posts {type:'navexa-agecheck', v:2, event:
+//                               ready|resize|decided|close_requested} to parent_origin (or the return URL's origin)
+//                               when allowed; a decision renders a done view in the frame, never the return URL;
+//                               "Continue on this device" opens the plain page. Bridge: the first embed GET of a
+//                               session token gets an engine session whose status IS this verification's (reads
+//                               and writes go to it, so a Pass in the frame decides it here: doc_only, or
+//                               data_verified for a data-match AWAITING_IDENTITY answer); the frame's POST back to
+//                               its own URL and the engine's own page and status requests go to the engine. config embed:
+//                               "serve" (default), "refuse" (frame-ancestors 'none') or "silent" (no messages).
 //
 // Control endpoints for tests (never part of the engine):
 //   GET  /__mock/health    {ok: true}
@@ -107,7 +119,7 @@
 //                          confirmedRecipients, allowedOrigins), integrationInfo?: "served"|"absent",
 //                          links?: "on"|"off"|"absent" ("served" = "on"), reuse?: "on"|"off",
 //                          awaitingIdentity?: "served"|"absent", dataConsent?: "required"|"off",
-//                          keys?, createOutcome?, hostedBase?,
+//                          keys?, createOutcome?, hostedBase?, embed?: "serve"|"refuse"|"silent",
 //                          availability?: "available"|"org_daily_limit"|"service_unavailable"|"absent",
 //                          down?: true|false (every RPC answers a bodiless 503, read as unavailable: AgeCheck down)}
 //   POST /__mock/faults    queue {rpc?: "*"|Rpc, status?, code?, message?, retryAfter?, delayMs?, times?}
@@ -125,6 +137,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import path from "node:path"
+import { createMockEngine } from "./hosted-engine.mjs"
 
 export const SERVICE = "agecheck.v1.VerificationService"
 
@@ -242,6 +255,10 @@ function defaultState() {
     availability: "available",
     // AgeCheck down: every RPC answers a bodiless 503 (the hosted surface still serves).
     down: false,
+    // The embedded page (C1 v2): "serve", "refuse" (the browser refuses the frame) or "silent" (no messages).
+    embed: "serve",
+    // Embedded page GETs: {vid, parentOrigin} per request (never the token).
+    embedPages: [],
     faults: [],
     requests: [],
     verifications: new Map(),
@@ -1012,6 +1029,49 @@ ${code}${step}
  */
 export function createMockAgeCheck() {
   let state = defaultState()
+  // The shared mock of the hosted page, for embed mode; its /js/ serves the vendored loader.
+  const engine = createMockEngine({ jsDir: path.resolve(here, "../../assets/vendor/agecheck-js") })
+  // Session token -> the engine's session token for the same verification.
+  let embedLinks = new Map()
+  const engineToken = (token) => [...embedLinks.values()].includes(token)
+
+  /**
+   * Serves an embedded page (and the engine's own requests) through the
+   * shared mock; false when the plugin mock's own hosted surface answers.
+   */
+  function bridge(req, res, url) {
+    engine.state.config.allowedOrigins = [...(state.org.allowedOrigins ?? [])]
+    engine.state.config.embed = state.embed
+    if (url.pathname === "/hosted/v1/status") {
+      const bearer = /^Bearer (\S+)$/.exec(req.headers.authorization ?? "")
+      if (req.method === "OPTIONS" || !bearer || !engineToken(bearer[1])) return false
+      return engine.handle(req, res)
+    }
+    const page = /^\/v\/([^/]+)$/.exec(url.pathname)
+    if (!page) return false
+    if (engineToken(page[1])) return engine.handle(req, res)
+    const claims = readToken(page[1])
+    if (!claims) return false
+    // The embedded page's form has no action: it posts back to the frame's own URL.
+    if (url.searchParams.get("embed") !== "1" || (req.method !== "GET" && req.method !== "POST")) return false
+    const v = state.verifications.get(claims.vid)
+    if (!v) return false
+    let link = embedLinks.get(page[1])
+    if (!link) {
+      const session = engine.start(`http://${req.headers.host}`, claims.ru || "")
+      const shadow = engine.state.verifications.get(session.verificationId)
+      Object.defineProperty(shadow, "status", {
+        enumerable: true,
+        get: () => v.status,
+        set: (next) => decide(state, v, next, next === "passed" ? (v.status === "awaiting_identity" && v.dataAnswer === "match" ? "data_verified" : "doc_only") : undefined),
+      })
+      link = new URL(session.url).pathname.slice(3)
+      embedLinks.set(page[1], link)
+    }
+    if (req.method === "GET") state.embedPages.push({ vid: v.id, parentOrigin: url.searchParams.get("parent_origin") || "" })
+    req.url = `/v/${link}${url.search}`
+    return engine.handle(req, res)
+  }
 
   function keyFor(req) {
     const header = req.headers.authorization ?? ""
@@ -1027,12 +1087,14 @@ export function createMockAgeCheck() {
     if (req.method === "GET" && url.pathname === "/__mock/health") return sendJSON(res, 200, { ok: true })
     if (req.method === "GET" && url.pathname === "/__mock/requests") return sendJSON(res, 200, state.requests)
     if (req.method === "GET" && url.pathname === "/__mock/verifications") {
-      return sendJSON(res, 200, { verifications: [...state.verifications.values()], shipments: state.shipments, links: state.linkRows })
+      return sendJSON(res, 200, { verifications: [...state.verifications.values()], shipments: state.shipments, links: state.linkRows, embedPages: state.embedPages })
     }
     if (req.method !== "POST") return sendNotFound(res)
     const text = await readBody(req)
     if (url.pathname === "/__mock/reset") {
       state = defaultState()
+      engine.reset()
+      embedLinks = new Map()
       return sendJSON(res, 200, { ok: true })
     }
     const body = parseJSONObject(text)
@@ -1064,6 +1126,10 @@ export function createMockAgeCheck() {
           state.availability = body.availability
         }
         if (body.down !== undefined) state.down = Boolean(body.down)
+        if (body.embed !== undefined) {
+          if (!["serve", "refuse", "silent"].includes(body.embed)) return sendJSON(res, 400, { error: "embed: serve, refuse or silent" })
+          state.embed = body.embed
+        }
         return sendJSON(res, 200, { ok: true })
       case "/__mock/verifications":
       case "/__mock/decide": {
@@ -1143,7 +1209,10 @@ export function createMockAgeCheck() {
     try {
       const url = new URL(req.url ?? "/", "http://mock.invalid")
       if (url.pathname.startsWith("/__mock/")) return await handleControl(req, res, url)
-      if (url.pathname === "/hosted/v1/status" || url.pathname.startsWith("/v/")) return await handleHosted(state, req, res, url)
+      if (url.pathname === "/hosted/v1/status" || url.pathname.startsWith("/v/")) {
+        if (bridge(req, res, url)) return
+        return await handleHosted(state, req, res, url)
+      }
       const prefix = `/${SERVICE}/`
       if (req.method === "POST" && url.pathname.startsWith(prefix)) {
         const rpc = url.pathname.slice(prefix.length)

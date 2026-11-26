@@ -24,6 +24,10 @@ defined( 'ABSPATH' ) || exit;
  *   gate (Checkout\Gate, for the session cart) reads it too, so a pickup
  *   order is neither verified nor held.
  * - Orders created before the plugin was first activated are left alone.
+ * - With age verification off (Options::MODE_GATE_ONLY, the merchant's
+ *   explicit choice) nothing needs a check: evaluate() answers
+ *   REASON_VERIFICATION_OFF and cart_required() false. A stored 'yes' stays,
+ *   so orders already held stay held until AgeCheck clears them.
  *
  * There is no minimum-total, payment-method or other shipping-method
  * exemption, and no fail-open switch. A line item whose product cannot be
@@ -59,6 +63,13 @@ final class Requirement {
 	const REASON_BEFORE_ACTIVATION = 'before_activation';
 
 	/**
+	 * Age verification is off (Options::MODE_GATE_ONLY): no order needs a
+	 * check. A stored 'yes' stays (is_required() is sticky), so an order held
+	 * before the switch stays held.
+	 */
+	const REASON_VERIFICATION_OFF = 'verification_off';
+
+	/**
 	 * Whether $order needs an age check. A stored 'yes' is final; otherwise the
 	 * rules are evaluated and the answer is recorded on the order (unsaved: the
 	 * caller's save persists it).
@@ -90,6 +101,9 @@ final class Requirement {
 	 * @return array{required: bool, reason: string}
 	 */
 	public static function evaluate( \WC_Order $order ): array {
+		if ( ! Options::verification_enabled() ) {
+			return self::answer( false, self::REASON_VERIFICATION_OFF );
+		}
 		try {
 			$created   = $order->get_date_created();
 			$activated = Install::activated_at();
@@ -188,6 +202,9 @@ final class Requirement {
 	 * @param \WC_Cart $cart Cart.
 	 */
 	public static function cart_required( \WC_Cart $cart ): bool {
+		if ( ! Options::verification_enabled() ) {
+			return false; // Age verification off: only the entry gate runs.
+		}
 		try {
 			if ( $cart->is_empty() || self::user_exempt( get_current_user_id() ) ) {
 				return false;

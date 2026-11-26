@@ -241,7 +241,7 @@ final class Mode {
 	 * a network call to an admin page.
 	 */
 	public static function test_mode_notice(): void {
-		if ( ! current_user_can( 'manage_woocommerce' ) || ! self::is_test_mode() ) {
+		if ( ! Options::verification_enabled() || ! current_user_can( 'manage_woocommerce' ) || ! self::is_test_mode() ) {
 			return;
 		}
 		$settings = Notices::on_settings_tab();

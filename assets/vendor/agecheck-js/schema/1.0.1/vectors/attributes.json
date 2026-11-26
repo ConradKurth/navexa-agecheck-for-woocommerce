@@ -1,0 +1,84 @@
+{
+  "description": "A gate script tag's data- attributes in, the resolved configuration out (agecheck-js gateOptionsFrom + gateConfig). Values are trimmed; an empty attribute is not set; data-min-age and data-remember-days become numbers when they are 1 to 3 digits; data-theme-<key> and data-label-<key> take kebab-case keys. warnings and config as in options.json. Attributes other than data-theme-*, data-label-* and the named ones (data-navexa-gate, data-cfasync, ...) are not read.",
+  "cases": [
+    {
+      "name": "the free gate generator's default snippet",
+      "attributes": { "data-navexa-gate": "", "data-mode": "dob", "data-min-age": "21", "data-remember-days": "30" },
+      "warnings": [],
+      "config": { "mode": "dob", "minAge": 21, "rememberDays": 30, "title": "Welcome" }
+    },
+    {
+      "name": "every attribute",
+      "attributes": {
+        "data-navexa-gate": "",
+        "data-mode": "attest",
+        "data-min-age": "19",
+        "data-remember-days": "0",
+        "data-exit-url": "https://example.com/sorry",
+        "data-site-name": "Example Goods",
+        "data-title": "Welcome!",
+        "data-message": "Adults only.",
+        "data-logo-url": "https://example.com/logo.svg",
+        "data-theme-backdrop": "#000",
+        "data-theme-card": "#ffffff",
+        "data-theme-text": "#111111",
+        "data-theme-accent": "#0A6B3D",
+        "data-theme-accent-text": "#fff",
+        "data-theme-font": "Georgia, serif",
+        "data-label-yes": "Enter",
+        "data-label-no": "Leave",
+        "data-label-submit": "Enter site",
+        "data-label-dob": "Your birthday",
+        "data-label-month": "MM",
+        "data-label-day": "DD",
+        "data-label-year": "YYYY",
+        "data-label-invalid": "Check the date.",
+        "data-label-denied": "Not yet.",
+        "data-label-leaving": "Bye."
+      },
+      "warnings": [],
+      "config": {
+        "mode": "attest",
+        "minAge": 19,
+        "rememberDays": 0,
+        "exitUrl": "https://example.com/sorry",
+        "siteName": "Example Goods",
+        "title": "Welcome!",
+        "message": "Adults only.",
+        "logoUrl": "https://example.com/logo.svg",
+        "theme": { "backdrop": "#000", "card": "#ffffff", "text": "#111111", "accent": "#0a6b3d", "accentText": "#fff", "font": "Georgia, serif" },
+        "labels": { "yes": "Enter", "no": "Leave", "submit": "Enter site", "dob": "Your birthday", "month": "MM", "day": "DD", "year": "YYYY", "invalid": "Check the date.", "denied": "Not yet.", "leaving": "Bye." }
+      }
+    },
+    {
+      "name": "hand-edited spaces are trimmed",
+      "attributes": { "data-navexa-gate": "", "data-min-age": " 18 ", "data-exit-url": " https://example.com/sorry ", "data-theme-accent": " #0A6B3D " },
+      "warnings": [],
+      "config": { "minAge": 18, "exitUrl": "https://example.com/sorry", "theme": { "accent": "#0a6b3d" } }
+    },
+    {
+      "name": "empty attributes are not set",
+      "attributes": { "data-navexa-gate": "", "data-min-age": "", "data-remember-days": "", "data-theme-accent": "" },
+      "warnings": [],
+      "config": { "minAge": 21, "rememberDays": 30, "theme": { "accent": "#1e1e1e" } }
+    },
+    {
+      "name": "hand-edited junk",
+      "attributes": { "data-navexa-gate": "", "data-mode": "DOB", "data-min-age": "21abc", "data-remember-days": "1000", "data-theme-accent": "blue", "data-exit-url": "javascript:alert(1)" },
+      "warnings": ["mode", "minAge", "rememberDays", "theme.accent", "exitUrl"],
+      "config": { "mode": "attest", "minAge": 21, "rememberDays": 30, "exitUrl": "", "theme": { "accent": "#1e1e1e" } }
+    },
+    {
+      "name": "unknown theme and label keys",
+      "attributes": { "data-navexa-gate": "", "data-theme-bg": "#000000", "data-label-cancel": "No", "data-cfasync": "false" },
+      "warnings": ["theme.bg", "labels.cancel"],
+      "config": { "theme": { "backdrop": "#1e1e1e" } }
+    },
+    {
+      "name": "multi-line message folds",
+      "attributes": { "data-navexa-gate": "", "data-message": "Adults only.\n    Please confirm." },
+      "warnings": [],
+      "config": { "message": "Adults only.     Please confirm." }
+    }
+  ]
+}

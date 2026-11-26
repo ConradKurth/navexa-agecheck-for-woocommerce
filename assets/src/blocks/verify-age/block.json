@@ -4,7 +4,7 @@
 	"name": "navexa-agecheck/verify-age",
 	"version": "0.1.0",
 	"title": "Age verification",
-	"description": "Navexa AgeCheck: the Verify age button for orders with age-restricted items. Shown only when the cart needs it.",
+	"description": "Navexa AgeCheck: the age check status for orders with age-restricted items; the check opens when the shopper places the order. Shown only when the cart needs it.",
 	"category": "woocommerce",
 	"keywords": [ "age", "verification", "navexa" ],
 	"textdomain": "navexa-agecheck-for-woocommerce",

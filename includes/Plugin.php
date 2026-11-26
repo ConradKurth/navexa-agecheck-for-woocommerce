@@ -63,6 +63,20 @@ final class Plugin {
 		add_action( 'before_woocommerce_init', array( self::class, 'declare_compatibility' ) );
 		add_action( 'woocommerce_loaded', array( self::class, 'wire' ) );
 		add_action( 'admin_notices', array( self::class, 'woocommerce_notice' ) );
+		add_filter( 'plugin_action_links_' . plugin_basename( $file ), array( self::class, 'action_links' ) );
+	}
+
+	/**
+	 * Adds "Settings" to the plugin's row on the Plugins screen.
+	 *
+	 * @param mixed $links Action links.
+	 * @return mixed
+	 */
+	public static function action_links( $links ) {
+		if ( ! is_array( $links ) ) {
+			return $links;
+		}
+		return array_merge( array( 'settings' => '<a href="' . esc_url( self::settings_url() ) . '">' . esc_html__( 'Settings', 'navexa-agecheck-for-woocommerce' ) . '</a>' ), $links );
 	}
 
 	/**

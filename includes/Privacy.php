@@ -98,6 +98,9 @@ final class Privacy {
 	 * The suggested policy section (HTML).
 	 */
 	public static function policy_text(): string {
+		if ( ! Options::verification_enabled() ) {
+			return self::gate_only_policy_text();
+		}
 		$paragraphs = array(
 			'<p class="privacy-policy-tutorial">' . esc_html__( 'Navexa AgeCheck for WooCommerce checks the age of shoppers who order age-restricted products. The text below says what the plugin sends to Navexa AgeCheck and what it keeps in your store. Adjust it to your store\'s settings (for example, whether Cloudflare Turnstile is on).', 'navexa-agecheck-for-woocommerce' ) . '</p>',
 			'<p><strong class="privacy-policy-tutorial">' . esc_html__( 'Suggested text:', 'navexa-agecheck-for-woocommerce' ) . ' </strong>'
@@ -105,13 +108,41 @@ final class Privacy {
 			'<p>' . esc_html__( 'We keep, with your order, the AgeCheck verification reference, whether your age check passed or failed and when, and a one-way hash of the shipping address that was checked. While you check out, your shopping session holds the verification reference. To stop abuse, we count age check attempts per session and per IP address for one hour, stored only as keyed hashes. Navexa\'s privacy policy explains how Navexa handles your data: https://navexa.co/privacy', 'navexa-agecheck-for-woocommerce' ) . '</p>',
 		);
 		if ( Options::entry_gate_enabled() ) {
-			$paragraphs[] = '<p>' . esc_html__( 'When you enter the store, we ask you to confirm that you are old enough. Your answer is remembered only in your own browser (local storage), so that we do not ask again for a while; it is not sent to us or to Navexa, and it is not an age verification.', 'navexa-agecheck-for-woocommerce' ) . '</p>';
+			$paragraphs[] = self::gate_paragraph();
 		}
 		if ( Options::turnstile_enabled() ) {
 			// phpcs:ignore PluginCheck.CodeAnalysis.Offloading.OffloadedContent -- privacy policy text that names Cloudflare's domain; nothing is loaded here.
 			$paragraphs[] = '<p>' . esc_html__( 'Before an age check starts, the checkout page runs a Cloudflare Turnstile security check, which loads a script from Cloudflare (challenges.cloudflare.com) and sends Cloudflare information about your browser; we send Cloudflare the check\'s result token and your IP address to confirm it. Cloudflare\'s Turnstile privacy addendum: https://www.cloudflare.com/turnstile-privacy-policy/', 'navexa-agecheck-for-woocommerce' ) . '</p>';
 		}
 		return implode( "\n", $paragraphs );
+	}
+
+	/**
+	 * The suggested policy with age verification off (Options::MODE_GATE_ONLY):
+	 * nothing about new orders goes to Navexa, so only the entry gate is
+	 * described, when it is on. The guidance says that orders held before the
+	 * switch stay held and are still checked with AgeCheck (release runs, the
+	 * sweep, the webhook, link withdrawal), and that earlier orders keep their
+	 * age check details, so the verification section stays while any remain.
+	 */
+	private static function gate_only_policy_text(): string {
+		$paragraphs = array( '<p class="privacy-policy-tutorial">' . esc_html__( 'Age verification is off in Navexa AgeCheck for WooCommerce: new orders are not age-checked, and nothing about them is sent to Navexa AgeCheck. Orders placed while it was on keep their age check details, and orders still on hold from before the switch are still checked with Navexa AgeCheck until they are released, cancelled or refunded. While any remain, keep the age verification part of your privacy policy. Only the entry age gate runs for new visitors when you turn it on, and the text below describes it.', 'navexa-agecheck-for-woocommerce' ) . '</p>' );
+		if ( Options::entry_gate_enabled() ) {
+			$paragraphs[] = '<p><strong class="privacy-policy-tutorial">' . esc_html__( 'Suggested text:', 'navexa-agecheck-for-woocommerce' ) . ' </strong></p>';
+			$paragraphs[] = self::gate_paragraph();
+		}
+		return implode( "\n", $paragraphs );
+	}
+
+	/**
+	 * The entry gate's paragraph: what it asks (a Yes/No answer or a date of
+	 * birth) and that only the answer stays, in the visitor's own browser.
+	 */
+	private static function gate_paragraph(): string {
+		if ( Options::GATE_MODE_DOB === Options::entry_gate_mode() ) {
+			return '<p>' . esc_html__( 'When you enter the store, we ask for your date of birth to confirm that you are old enough. Your date of birth is checked in your own browser and is never stored or sent to us or to Navexa. Only the fact that you confirmed is remembered in your browser (local storage), so that we do not ask again for a while. This is not an age verification.', 'navexa-agecheck-for-woocommerce' ) . '</p>';
+		}
+		return '<p>' . esc_html__( 'When you enter the store, we ask you to confirm that you are old enough. Your answer is remembered only in your own browser (local storage), so that we do not ask again for a while; it is not sent to us or to Navexa, and it is not an age verification.', 'navexa-agecheck-for-woocommerce' ) . '</p>';
 	}
 
 	/**

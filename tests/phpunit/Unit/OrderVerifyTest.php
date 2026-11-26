@@ -353,6 +353,20 @@ final class OrderVerifyTest extends TestCase {
 		$this->assertArrayHasKey( 'redirect', OrderVerify::respond( 'POST', $this->start_fields( $order ) ), 'another IP' );
 	}
 
+	public function test_start_shares_the_store_wide_cap_with_the_checkout(): void {
+		\Brain\Monkey\Filters\expectApplied( 'navexa_agecheck_rate_limits' )->andReturn( array( 'start_store' => 1 ) );
+		$order = $this->restricted_order( 'processing' ); // Nothing to verify: no AgeCheck call.
+		Binding::external_id( $order );
+		$this->assertArrayHasKey( 'redirect', OrderVerify::respond( 'POST', $this->start_fields( $order ) ) );
+		$_SERVER['REMOTE_ADDR'] = '198.51.100.9';
+		$order                  = $this->restricted_order( 'processing' );
+		Binding::external_id( $order );
+		$answer = OrderVerify::respond( 'POST', $this->start_fields( $order ) );
+		$this->assertSame( 429, $answer['status'], 'another order and IP, but the store\'s hour is spent' );
+		$this->assertStringContainsString( 'Too many age check attempts', $answer['message'] );
+		$this->assertStringContainsString( 'agecheck start store limit reached limit=1', $this->all_logs() );
+	}
+
 	public function test_the_box_says_a_link_was_emailed_only_when_one_was(): void {
 		foreach ( array( 'links_off', 'no_email', 'refused', 'not_eligible', 'withdrawn', '' ) as $state ) {
 			$order = $this->waiting_order();

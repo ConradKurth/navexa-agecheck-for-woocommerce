@@ -6,6 +6,10 @@
 /bin export-ignore
 /tests export-ignore
 /assets/src/**/*.test.ts export-ignore
+# The vendored loader ships its builds, LICENSE, manifest.json and TypeScript
+# source; its GateOptions schema and vectors are for the tests only.
+/assets/vendor/agecheck-js/schema export-ignore
+/assets/vendor/agecheck-js/src/**/*.test.ts export-ignore
 /.wp-env.json export-ignore
 /.gitattributes export-ignore
 /.gitignore export-ignore

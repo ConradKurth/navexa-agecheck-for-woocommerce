@@ -31,6 +31,18 @@ final class Settings extends \WC_Settings_Page {
 	const FIELD_SECRET = 'navexa_agecheck_secret';
 	const FIELD_STATUS = 'navexa_agecheck_status';
 	const FIELD_INFO   = 'navexa_agecheck_info';
+	const FIELD_MEDIA  = 'navexa_agecheck_media';
+	const FIELD_NOTE   = 'navexa_agecheck_note';
+
+	/**
+	 * The entry age gate's section of the tab.
+	 */
+	const SECTION_GATE = 'entry_gate';
+
+	/**
+	 * Admin script of the entry gate section (logo picker, contrast readout).
+	 */
+	const HANDLE_ADMIN = 'navexa-agecheck-admin-settings';
 
 	/**
 	 * Where merchants manage keys, allowed origins, minimum age and branding.
@@ -42,6 +54,14 @@ final class Settings extends \WC_Settings_Page {
 	 * always listed too).
 	 */
 	const TERM_LIMIT = 500;
+
+	/**
+	 * Gate colour keys refused in this save for low contrast (null: not
+	 * worked out yet; refused_gate_colors()).
+	 *
+	 * @var string[]|null
+	 */
+	private $refused_colors = null;
 
 	/**
 	 * Constructor.
@@ -60,6 +80,24 @@ final class Settings extends \WC_Settings_Page {
 		add_filter( 'woocommerce_admin_settings_sanitize_option_' . Options::TURNSTILE_SITE_KEY, array( $this, 'sanitize_turnstile_site_key' ), 10, 3 );
 		add_filter( 'woocommerce_admin_settings_sanitize_option_' . Options::ENTRY_GATE_DAYS, array( $this, 'sanitize_gate_days' ), 10, 3 );
 		add_filter( 'woocommerce_admin_settings_sanitize_option_' . Options::ENTRY_GATE_EXIT_URL, array( $this, 'sanitize_gate_exit_url' ), 10, 3 );
+		add_filter( 'woocommerce_admin_settings_sanitize_option_' . Options::ENTRY_GATE_LOGO, array( $this, 'sanitize_gate_logo' ), 10, 3 );
+		add_filter( 'woocommerce_admin_settings_sanitize_option_' . Options::ENTRY_GATE_THEME, array( $this, 'sanitize_gate_color' ), 10, 3 );
+		add_filter( 'woocommerce_admin_settings_sanitize_option_' . Options::ENTRY_GATE_TEXT, array( $this, 'sanitize_gate_text' ), 10, 3 );
+		add_action( 'woocommerce_admin_field_' . self::FIELD_MEDIA, array( $this, 'output_media_field' ) );
+		add_action( 'woocommerce_admin_field_' . self::FIELD_NOTE, array( $this, 'output_note_field' ) );
+		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin' ) );
+	}
+
+	/**
+	 * The tab's sections: age verification (the default) and the entry age gate.
+	 *
+	 * @return array<string, string>
+	 */
+	protected function get_own_sections() {
+		return array(
+			''                 => __( 'Age verification', 'navexa-agecheck-for-woocommerce' ),
+			self::SECTION_GATE => __( 'Entry age gate', 'navexa-agecheck-for-woocommerce' ),
+		);
 	}
 
 	/**
@@ -98,12 +136,13 @@ final class Settings extends \WC_Settings_Page {
 			array(
 				'id'      => Options::MODE,
 				'type'    => 'select',
-				'title'   => __( 'When shoppers verify', 'navexa-agecheck-for-woocommerce' ),
-				'desc'    => __( 'In both modes, a paid age-restricted order that has not passed is held, never released for shipping.', 'navexa-agecheck-for-woocommerce' ),
+				'title'   => __( 'Age verification', 'navexa-agecheck-for-woocommerce' ),
+				'desc'    => __( 'Before or after payment, a paid age-restricted order that has not passed is held, never released for shipping. Off: nothing is verified or held and no API key is needed; only the entry age gate runs, which is self-attestation, not age verification.', 'navexa-agecheck-for-woocommerce' ),
 				'default' => Options::DEFAULT_MODE,
 				'options' => array(
 					Options::MODE_PRE_PAYMENT     => __( 'Before payment: the shopper verifies at checkout', 'navexa-agecheck-for-woocommerce' ),
 					Options::MODE_ACCEPT_AND_HOLD => __( 'After payment: the order is held until the shopper verifies', 'navexa-agecheck-for-woocommerce' ),
+					Options::MODE_GATE_ONLY       => __( 'Off: entry age gate only (no age verification, no API key needed)', 'navexa-agecheck-for-woocommerce' ),
 				),
 			),
 			array(
@@ -209,7 +248,7 @@ final class Settings extends \WC_Settings_Page {
 				'type'     => 'checkbox',
 				'title'    => __( 'Express payment buttons', 'navexa-agecheck-for-woocommerce' ),
 				'desc'     => __( 'Hide express checkout buttons on age-restricted carts and products', 'navexa-agecheck-for-woocommerce' ),
-				'desc_tip' => __( 'Apple Pay, Google Pay, Link, Amazon Pay, WooPay and PayPal buttons from WooPayments, WooCommerce Stripe Gateway and WooCommerce PayPal Payments skip the checkout form, so the shopper never sees Verify age. Hidden, the shopper pays through the checkout form instead. An express order that still gets through is refused before payment (Before payment mode) or held after payment until the age check clears.', 'navexa-agecheck-for-woocommerce' ),
+				'desc_tip' => __( 'Apple Pay, Google Pay, Link, Amazon Pay, WooPay and PayPal buttons from WooPayments, WooCommerce Stripe Gateway and WooCommerce PayPal Payments skip the checkout form, so the age check at Place order never runs. Hidden, the shopper pays through the checkout form instead. An express order that still gets through is refused before payment (Before payment mode) or held after payment until the age check clears.', 'navexa-agecheck-for-woocommerce' ),
 				'default'  => 'yes',
 			),
 			array(
@@ -237,56 +276,6 @@ final class Settings extends \WC_Settings_Page {
 			),
 			array(
 				'id'   => 'navexa_agecheck_protection_section',
-				'type' => 'sectionend',
-			),
-			array(
-				'id'    => 'navexa_agecheck_gate_section',
-				'type'  => 'title',
-				'title' => __( 'Entry age gate (self-attestation)', 'navexa-agecheck-for-woocommerce' ),
-				'desc'  => self::gate_section_text(),
-			),
-			array(
-				'id'       => Options::ENTRY_GATE,
-				'type'     => 'checkbox',
-				'title'    => __( 'Entry age gate', 'navexa-agecheck-for-woocommerce' ),
-				'desc'     => __( 'Ask visitors to confirm their age when they enter the store (self-attestation, not age verification)', 'navexa-agecheck-for-woocommerce' ),
-				'desc_tip' => __( 'Visitors only click a button; anyone can say they are old enough. The age check at checkout still verifies every age-restricted order. Off by default.', 'navexa-agecheck-for-woocommerce' ),
-				'default'  => 'no',
-			),
-			array(
-				'id'      => Options::ENTRY_GATE_SCOPE,
-				'type'    => 'select',
-				'title'   => __( 'Where the gate shows', 'navexa-agecheck-for-woocommerce' ),
-				'default' => Options::GATE_SCOPE_SITE,
-				'options' => array(
-					Options::GATE_SCOPE_SITE       => __( 'Every page of the store', 'navexa-agecheck-for-woocommerce' ),
-					Options::GATE_SCOPE_RESTRICTED => __( 'Only age-restricted product pages and their category and tag pages', 'navexa-agecheck-for-woocommerce' ),
-				),
-			),
-			array(
-				'id'                => Options::ENTRY_GATE_DAYS,
-				'type'              => 'number',
-				'title'             => __( 'Remember the answer for (days)', 'navexa-agecheck-for-woocommerce' ),
-				'desc'              => __( 'Kept in the visitor\'s own browser. 0 remembers it only in the browser tab where they answered; a new tab or window asks again.', 'navexa-agecheck-for-woocommerce' ),
-				'default'           => (string) Options::DEFAULT_GATE_DAYS,
-				'custom_attributes' => array(
-					'min'  => '0',
-					'max'  => (string) Options::MAX_GATE_DAYS,
-					'step' => '1',
-				),
-				'css'               => 'width:6em',
-			),
-			array(
-				'id'          => Options::ENTRY_GATE_EXIT_URL,
-				'type'        => 'url',
-				'title'       => __( 'Send under-age visitors to', 'navexa-agecheck-for-woocommerce' ),
-				'desc'        => __( 'An absolute http or https address, such as a page outside the age-restricted part of your store (the gate never shows there). Blank keeps them on the gate with a short message.', 'navexa-agecheck-for-woocommerce' ),
-				'default'     => '',
-				'placeholder' => 'https://',
-				'class'       => 'regular-text',
-			),
-			array(
-				'id'   => 'navexa_agecheck_gate_section',
 				'type' => 'sectionend',
 			),
 			array(
@@ -341,6 +330,395 @@ final class Settings extends \WC_Settings_Page {
 				Options::OUTAGE_HOLD   => __( 'Take the order and hold it until the shopper verifies', 'navexa-agecheck-for-woocommerce' ),
 			),
 		);
+	}
+
+	/**
+	 * Fields of the entry age gate section. Option names are unchanged from
+	 * 1.0.x (they lived in the default section); the new ones default to the
+	 * 1.0.x gate (Yes/No buttons, its colours and copy, no logo).
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
+	protected function get_settings_for_entry_gate_section() {
+		$fields   = array(
+			array(
+				'id'    => 'navexa_agecheck_gate_section',
+				'type'  => 'title',
+				'title' => __( 'Entry age gate (self-attestation)', 'navexa-agecheck-for-woocommerce' ),
+				'desc'  => self::gate_section_text(),
+			),
+			array(
+				'id'       => Options::ENTRY_GATE,
+				'type'     => 'checkbox',
+				'title'    => __( 'Entry age gate', 'navexa-agecheck-for-woocommerce' ),
+				'desc'     => __( 'Ask visitors to confirm their age when they enter the store (self-attestation, not age verification)', 'navexa-agecheck-for-woocommerce' ),
+				'desc_tip' => __( 'Anyone can say they are old enough. The age check at checkout, when age verification is on, still verifies every age-restricted order. Off by default.', 'navexa-agecheck-for-woocommerce' ),
+				'default'  => 'no',
+			),
+			array(
+				'id'      => Options::ENTRY_GATE_SCOPE,
+				'type'    => 'select',
+				'title'   => __( 'Where the gate shows', 'navexa-agecheck-for-woocommerce' ),
+				'default' => Options::GATE_SCOPE_SITE,
+				'options' => array(
+					Options::GATE_SCOPE_SITE       => __( 'Every page of the store', 'navexa-agecheck-for-woocommerce' ),
+					Options::GATE_SCOPE_RESTRICTED => __( 'Only age-restricted product pages and their category and tag pages', 'navexa-agecheck-for-woocommerce' ),
+				),
+			),
+			array(
+				'id'      => Options::ENTRY_GATE_MODE,
+				'type'    => 'select',
+				'title'   => __( 'How visitors answer', 'navexa-agecheck-for-woocommerce' ),
+				'desc'    => __( 'Both are self-attestation: anyone can answer. The date of birth is checked in the visitor\'s browser and never stored or sent.', 'navexa-agecheck-for-woocommerce' ),
+				'default' => Options::GATE_MODE_ATTEST,
+				'options' => array(
+					Options::GATE_MODE_ATTEST => __( 'Yes/No buttons ("I am 21 or older" / "I am under 21")', 'navexa-agecheck-for-woocommerce' ),
+					Options::GATE_MODE_DOB    => __( 'Date of birth (month, day and year)', 'navexa-agecheck-for-woocommerce' ),
+				),
+			),
+		);
+		$reported = Options::reported_minimum_age();
+		if ( Options::verification_enabled() && null !== $reported ) {
+			// The gate asks the age checkout verifies; the local value is kept, unposted.
+			$fields[] = array(
+				'id'        => Options::ENTRY_GATE_MIN_AGE,
+				'type'      => self::FIELD_NOTE,
+				'title'     => __( 'Minimum age', 'navexa-agecheck-for-woocommerce' ),
+				/* translators: %d: minimum age, e.g. 21. */
+				'desc'      => sprintf( __( '%d, set in the Navexa dashboard (the age checkout verifies).', 'navexa-agecheck-for-woocommerce' ), $reported ),
+				'is_option' => false,
+			);
+		} else {
+			$fields[] = array(
+				'id'      => Options::ENTRY_GATE_MIN_AGE,
+				'type'    => 'select',
+				'title'   => __( 'Minimum age', 'navexa-agecheck-for-woocommerce' ),
+				'desc'    => Options::verification_enabled()
+					? __( 'Used until AgeCheck reports the minimum age set in the Navexa dashboard; from then on the gate asks that age.', 'navexa-agecheck-for-woocommerce' )
+					: __( 'The age the gate asks about.', 'navexa-agecheck-for-woocommerce' ),
+				'default' => (string) Options::DEFAULT_MINIMUM_AGE,
+				'options' => array(
+					'18' => '18',
+					'19' => '19',
+					'21' => '21',
+				),
+				'css'     => 'width:6em',
+			);
+		}
+		$fields = array_merge(
+			$fields,
+			array(
+				array(
+					'id'                => Options::ENTRY_GATE_DAYS,
+					'type'              => 'number',
+					'title'             => __( 'Remember the answer for (days)', 'navexa-agecheck-for-woocommerce' ),
+					'desc'              => __( 'Kept in the visitor\'s own browser. 0 remembers it only in the browser tab where they answered; a new tab or window asks again.', 'navexa-agecheck-for-woocommerce' ),
+					'default'           => (string) Options::DEFAULT_GATE_DAYS,
+					'custom_attributes' => array(
+						'min'  => '0',
+						'max'  => (string) Options::MAX_GATE_DAYS,
+						'step' => '1',
+					),
+					'css'               => 'width:6em',
+				),
+				array(
+					'id'          => Options::ENTRY_GATE_EXIT_URL,
+					'type'        => 'url',
+					'title'       => __( 'Send under-age visitors to', 'navexa-agecheck-for-woocommerce' ),
+					'desc'        => __( 'An absolute http or https address, such as a page outside the age-restricted part of your store (the gate never shows there). Blank keeps them on the gate with a short message.', 'navexa-agecheck-for-woocommerce' ),
+					'default'     => '',
+					'placeholder' => 'https://',
+					'class'       => 'regular-text',
+				),
+				array(
+					'id'   => 'navexa_agecheck_gate_section',
+					'type' => 'sectionend',
+				),
+				array(
+					'id'    => 'navexa_agecheck_gate_look_section',
+					'type'  => 'title',
+					'title' => __( 'Look and text', 'navexa-agecheck-for-woocommerce' ),
+					'desc'  => __( 'Text on the card and button text on the button must reach a contrast of 4.5:1 (WCAG AA); a pair under it is not saved. The backdrop also covers the page until the visitor answers.', 'navexa-agecheck-for-woocommerce' ),
+				),
+				array(
+					'id'    => Options::ENTRY_GATE_LOGO,
+					'type'  => self::FIELD_MEDIA,
+					'title' => __( 'Logo', 'navexa-agecheck-for-woocommerce' ),
+					'desc'  => __( 'An image from your media library, shown above the title. It shows only when your store is served over https.', 'navexa-agecheck-for-woocommerce' ),
+				),
+			)
+		);
+		$colors = array(
+			'backdrop'    => __( 'Backdrop', 'navexa-agecheck-for-woocommerce' ),
+			'card'        => __( 'Card', 'navexa-agecheck-for-woocommerce' ),
+			'text'        => __( 'Text', 'navexa-agecheck-for-woocommerce' ),
+			'accent'      => __( 'Buttons', 'navexa-agecheck-for-woocommerce' ),
+			'accent_text' => __( 'Button text', 'navexa-agecheck-for-woocommerce' ),
+		);
+		foreach ( $colors as $key => $title ) {
+			$fields[] = array(
+				'id'      => Options::ENTRY_GATE_THEME . '[' . $key . ']',
+				'type'    => 'color',
+				'title'   => $title,
+				'default' => Options::GATE_THEME_DEFAULTS[ $key ],
+				'css'     => 'width:6em',
+			);
+		}
+		$defaults = EntryGate::default_text();
+		$texts    = array(
+			'title'   => __( 'Title', 'navexa-agecheck-for-woocommerce' ),
+			'message' => __( 'Message', 'navexa-agecheck-for-woocommerce' ),
+			'yes'     => __( '"Yes" button', 'navexa-agecheck-for-woocommerce' ),
+			'no'      => __( '"No" button', 'navexa-agecheck-for-woocommerce' ),
+			'submit'  => __( 'Date of birth button', 'navexa-agecheck-for-woocommerce' ),
+		);
+		foreach ( $texts as $key => $title ) {
+			$fields[] = array(
+				'id'                => Options::ENTRY_GATE_TEXT . '[' . $key . ']',
+				'type'              => 'message' === $key ? 'textarea' : 'text',
+				'title'             => $title,
+				'desc'              => sprintf(
+					/* translators: %d: the longest length allowed, in characters. */
+					__( 'Blank uses the default shown. Up to %d characters; {age} becomes the minimum age and {site} the store name.', 'navexa-agecheck-for-woocommerce' ),
+					Options::GATE_TEXT_LIMITS[ $key ]
+				),
+				'default'           => '',
+				'placeholder'       => $defaults[ $key ],
+				'class'             => 'regular-text',
+				'custom_attributes' => array( 'maxlength' => (string) Options::GATE_TEXT_LIMITS[ $key ] ),
+			);
+		}
+		$fields[] = array(
+			'id'   => 'navexa_agecheck_gate_look_section',
+			'type' => 'sectionend',
+		);
+		return $fields;
+	}
+
+	/**
+	 * Loads the entry gate section's script (logo picker, contrast readout)
+	 * and the media library on that section only.
+	 *
+	 * @param mixed $hook Admin page hook.
+	 */
+	public function enqueue_admin( $hook ): void {
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- read-only screen check.
+		$tab     = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : '';
+		$section = isset( $_GET['section'] ) ? sanitize_key( wp_unslash( $_GET['section'] ) ) : '';
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+		if ( 'woocommerce_page_wc-settings' !== $hook || Plugin::SETTINGS_TAB !== $tab || self::SECTION_GATE !== $section ) {
+			return;
+		}
+		wp_enqueue_media();
+		$min = defined( 'SCRIPT_DEBUG' ) && SCRIPT_DEBUG ? '' : '.min';
+		wp_enqueue_script( self::HANDLE_ADMIN, plugins_url( 'assets/js/admin-settings' . $min . '.js', NAVEXA_AGECHECK_FILE ), array( 'jquery' ), NAVEXA_AGECHECK_VERSION, array( 'in_footer' => true ) );
+		wp_add_inline_script(
+			self::HANDLE_ADMIN,
+			'window.navexaAgeCheckSettings = ' . wp_json_encode(
+				array(
+					'theme'       => Options::ENTRY_GATE_THEME,
+					'pairs'       => Options::GATE_CONTRAST_PAIRS,
+					'minContrast' => Options::MIN_CONTRAST,
+					'i18n'        => array(
+						'choose'   => __( 'Choose a logo', 'navexa-agecheck-for-woocommerce' ),
+						'use'      => __( 'Use this image', 'navexa-agecheck-for-woocommerce' ),
+						/* translators: %s: a contrast ratio, e.g. 4.5. */
+						'contrast' => __( 'Contrast %s:1', 'navexa-agecheck-for-woocommerce' ),
+						/* translators: %s: a contrast ratio, e.g. 2.9. */
+						'tooLow'   => __( 'Contrast %s:1: needs at least 4.5:1, so it will not be saved.', 'navexa-agecheck-for-woocommerce' ),
+					),
+				),
+				JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_SLASHES
+			) . ';',
+			'before'
+		);
+	}
+
+	/**
+	 * Renders the logo field: the attachment id in a hidden input, a
+	 * thumbnail, and Choose / Remove buttons (assets/src/admin/settings.ts).
+	 * Prints nothing of an attachment that is not an image.
+	 *
+	 * @param array<string, mixed> $field Field definition.
+	 */
+	public function output_media_field( $field ): void {
+		$id    = isset( $field['id'] ) ? (string) $field['id'] : '';
+		$title = isset( $field['title'] ) ? (string) $field['title'] : '';
+		$desc  = isset( $field['desc'] ) ? (string) $field['desc'] : '';
+		$logo  = Options::entry_gate_logo_id();
+		echo '<tr valign="top"><th scope="row" class="titledesc">' . esc_html( $title ) . '</th><td class="forminp" data-navexa-agecheck-media>';
+		printf( '<input type="hidden" name="%1$s" id="%1$s" value="%2$s" data-navexa-agecheck-media-id />', esc_attr( $id ), esc_attr( $logo > 0 ? (string) $logo : '' ) );
+		echo '<span data-navexa-agecheck-media-preview style="display:inline-block;vertical-align:middle;margin-right:8px">';
+		if ( $logo > 0 ) {
+			echo wp_get_attachment_image( $logo, array( 80, 80 ), false, array( 'style' => 'max-width:80px;height:auto' ) );
+		}
+		echo '</span>';
+		printf( '<button type="button" class="button" data-navexa-agecheck-media-choose>%s</button> ', esc_html__( 'Choose image', 'navexa-agecheck-for-woocommerce' ) );
+		printf( '<button type="button" class="button-link button-link-delete" data-navexa-agecheck-media-remove%2$s>%1$s</button>', esc_html__( 'Remove', 'navexa-agecheck-for-woocommerce' ), $logo > 0 ? '' : ' hidden' );
+		echo '<p class="description">' . esc_html( $desc ) . '</p>';
+		echo '</td></tr>';
+	}
+
+	/**
+	 * Renders a read-only line: the field's title and its text.
+	 *
+	 * @param array<string, mixed> $field Field definition.
+	 */
+	public function output_note_field( $field ): void {
+		$title = isset( $field['title'] ) ? (string) $field['title'] : '';
+		$desc  = isset( $field['desc'] ) ? (string) $field['desc'] : '';
+		echo '<tr valign="top"><th scope="row" class="titledesc">' . esc_html( $title ) . '</th><td class="forminp"><p>' . esc_html( $desc ) . '</p></td></tr>';
+	}
+
+	/**
+	 * Saves the logo: blank removes it; an attachment id is kept only when it
+	 * is an image, otherwise the saved logo stays with an error.
+	 *
+	 * @param mixed $value     Value after wc_clean().
+	 * @param mixed $option    Field definition.
+	 * @param mixed $raw_value Unslashed posted value.
+	 * @return string|null
+	 */
+	public function sanitize_gate_logo( $value, $option, $raw_value ) {
+		$raw = is_string( $raw_value ) ? trim( $raw_value ) : '';
+		if ( '' === $raw || '0' === $raw ) {
+			return '';
+		}
+		$id = 1 === preg_match( '/^[0-9]{1,20}$/', $raw ) ? absint( $raw ) : 0;
+		if ( $id > 0 && wp_attachment_is_image( $id ) ) {
+			return (string) $id;
+		}
+		\WC_Admin_Settings::add_error( __( 'The logo must be an image from the media library. The saved logo was kept.', 'navexa-agecheck-for-woocommerce' ) );
+		return null;
+	}
+
+	/**
+	 * Saves one gate colour (an Options::ENTRY_GATE_THEME[key] field). Blank
+	 * is the default; anything but #rgb or #rrggbb keeps the saved colour with
+	 * an error; a pair of the posted colours under Options::MIN_CONTRAST keeps
+	 * both saved colours of that pair (refuse_gate_pairs()).
+	 *
+	 * @param mixed $value     Value after wc_clean().
+	 * @param mixed $option    Field definition.
+	 * @param mixed $raw_value Unslashed posted value.
+	 * @return string|null Null keeps the saved value.
+	 */
+	public function sanitize_gate_color( $value, $option, $raw_value ) {
+		$key = self::array_key( $option );
+		if ( ! isset( Options::GATE_THEME_DEFAULTS[ $key ] ) ) {
+			return null;
+		}
+		$color = self::posted_color( $key, $raw_value );
+		if ( '' === $color ) {
+			\WC_Admin_Settings::add_error( __( 'Gate colours must be hex colours such as #1e1e1e. The saved colour was kept.', 'navexa-agecheck-for-woocommerce' ) );
+			return null;
+		}
+		return in_array( $key, $this->refused_gate_colors(), true ) ? null : $color;
+	}
+
+	/**
+	 * Saves one gate text (an Options::ENTRY_GATE_TEXT[key] field) as plain
+	 * text; longer than its limit keeps the saved text with an error.
+	 *
+	 * @param mixed $value     Value after WooCommerce's own cleaning.
+	 * @param mixed $option    Field definition.
+	 * @param mixed $raw_value Unslashed posted value.
+	 * @return string|null Null keeps the saved value.
+	 */
+	public function sanitize_gate_text( $value, $option, $raw_value ) {
+		$key = self::array_key( $option );
+		if ( ! isset( Options::GATE_TEXT_LIMITS[ $key ] ) ) {
+			return null;
+		}
+		$raw  = is_string( $raw_value ) ? $raw_value : '';
+		$text = Options::gate_text( 'message' === $key ? sanitize_textarea_field( $raw ) : sanitize_text_field( $raw ) );
+		if ( Options::text_length( $text ) > Options::GATE_TEXT_LIMITS[ $key ] ) {
+			\WC_Admin_Settings::add_error(
+				sprintf(
+					/* translators: %d: the longest length allowed, in characters. */
+					__( 'A gate text is longer than %d characters. The saved text was kept.', 'navexa-agecheck-for-woocommerce' ),
+					Options::GATE_TEXT_LIMITS[ $key ]
+				)
+			);
+			return null;
+		}
+		return $text;
+	}
+
+	/**
+	 * Colour keys of the posted gate theme whose pair is under
+	 * Options::MIN_CONTRAST, worked out once per save (each refused pair adds
+	 * one error naming its ratio). Unposted or invalid colours count as the
+	 * saved ones.
+	 *
+	 * @return string[]
+	 */
+	private function refused_gate_colors(): array {
+		if ( null !== $this->refused_colors ) {
+			return $this->refused_colors;
+		}
+		// phpcs:disable WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- WC_Admin_Settings::save() checked the woocommerce-settings nonce; each value goes through posted_color(), which keeps only a hex colour.
+		$posted = isset( $_POST[ Options::ENTRY_GATE_THEME ] ) && is_array( $_POST[ Options::ENTRY_GATE_THEME ] ) ? wp_unslash( $_POST[ Options::ENTRY_GATE_THEME ] ) : array();
+		// phpcs:enable WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$saved = Options::entry_gate_theme();
+		$theme = array();
+		foreach ( Options::GATE_THEME_DEFAULTS as $key => $default ) {
+			$color         = array_key_exists( $key, $posted ) ? self::posted_color( $key, $posted[ $key ] ) : '';
+			$theme[ $key ] = '' === $color ? $saved[ $key ] : $color;
+		}
+		$labels               = array(
+			'text'        => __( 'Text on the card', 'navexa-agecheck-for-woocommerce' ),
+			'accent_text' => __( 'Button text on the buttons', 'navexa-agecheck-for-woocommerce' ),
+		);
+		$this->refused_colors = array();
+		foreach ( Options::GATE_CONTRAST_PAIRS as $pair ) {
+			$ratio = Options::contrast_ratio( $theme[ $pair[0] ], $theme[ $pair[1] ] );
+			if ( $ratio >= Options::MIN_CONTRAST ) {
+				continue;
+			}
+			$this->refused_colors = array_merge( $this->refused_colors, $pair );
+			\WC_Admin_Settings::add_error(
+				sprintf(
+					/* translators: 1: which colours, e.g. "Text on the card"; 2: their contrast ratio, e.g. 2.9. */
+					__( '%1$s has a contrast of %2$s:1; it needs at least 4.5:1 (WCAG AA). The saved colours were kept.', 'navexa-agecheck-for-woocommerce' ),
+					isset( $labels[ $pair[0] ] ) ? $labels[ $pair[0] ] : $pair[0],
+					self::ratio_text( $ratio )
+				)
+			);
+		}
+		return $this->refused_colors;
+	}
+
+	/**
+	 * A contrast ratio for people: rounded down to two decimals, so a ratio
+	 * just under 4.5 never reads 4.50.
+	 *
+	 * @param float $ratio Ratio.
+	 */
+	public static function ratio_text( float $ratio ): string {
+		return number_format_i18n( floor( $ratio * 100 ) / 100, 2 );
+	}
+
+	/**
+	 * A posted gate colour: blank is the key's default, a hex colour is
+	 * lower-cased, anything else ''.
+	 *
+	 * @param string $key       Options::GATE_THEME_DEFAULTS key.
+	 * @param mixed  $raw_value Posted value.
+	 */
+	private static function posted_color( string $key, $raw_value ): string {
+		$raw = is_string( $raw_value ) ? trim( $raw_value ) : '';
+		return '' === $raw ? Options::GATE_THEME_DEFAULTS[ $key ] : Options::hex_color( $raw );
+	}
+
+	/**
+	 * The key of an array option's field (option[key]), or ''.
+	 *
+	 * @param mixed $option Field definition.
+	 */
+	private static function array_key( $option ): string {
+		$id = is_array( $option ) && isset( $option['id'] ) ? (string) $option['id'] : '';
+		return 1 === preg_match( '/\[([a-z_]+)\]$/', $id, $m ) ? $m[1] : '';
 	}
 
 	/**
@@ -553,12 +931,21 @@ final class Settings extends \WC_Settings_Page {
 	 * and where its age and store name come from. Reads stored values only.
 	 */
 	private static function gate_section_text(): string {
-		return sprintf(
-			/* translators: 1: minimum age, e.g. 21; 2: the store's name. */
-			__( 'An optional prompt when visitors enter the store: "I am %1$d or older" or "I am under %1$d", under the store name "%2$s". It is self-attestation, not age verification: it only asks, and anyone can answer yes. The age check at checkout still applies to every age-restricted order. The age is the minimum age set in the Navexa dashboard (21 until AgeCheck has answered), and the name is the display name set there, or this site\'s title. It needs no API key, sends nothing to your server or to Navexa, loads nothing from another site and works with page caching. Never shown in wp-admin, on the login page or to the REST API.', 'navexa-agecheck-for-woocommerce' ),
-			Options::store_minimum_age(),
-			Options::store_display_name()
-		);
+		$text = __( 'An optional prompt when visitors enter the store: Yes/No buttons, or their date of birth. It is self-attestation, not age verification: it only asks, and anyone can answer. It needs no API key, sends nothing to your server or to Navexa, loads nothing from another site (only your logo, from your own media library) and works with page caching. Never shown in wp-admin, on the login page or to the REST API.', 'navexa-agecheck-for-woocommerce' );
+		if ( Options::verification_enabled() ) {
+			$text .= ' ' . sprintf(
+				/* translators: %s: the store's name. */
+				__( 'The age check at checkout still applies to every age-restricted order. The store name shown is "%s": the display name set in the Navexa dashboard, or this site\'s title.', 'navexa-agecheck-for-woocommerce' ),
+				Options::store_display_name()
+			);
+		} else {
+			$text .= ' ' . sprintf(
+				/* translators: %s: the store's name. */
+				__( 'Age verification is off, so this gate is the only age prompt. The store name shown is "%s".', 'navexa-agecheck-for-woocommerce' ),
+				Options::store_display_name()
+			);
+		}
+		return $text;
 	}
 
 	/**
@@ -698,6 +1085,9 @@ final class Settings extends \WC_Settings_Page {
 	 * @return array<int, array{level: string, text: string}>
 	 */
 	public function status_lines(): array {
+		if ( ! Options::verification_enabled() ) {
+			return $this->gate_only_status_lines();
+		}
 		$lines = array();
 		if ( Install::is_paused() ) {
 			$lines[] = self::line( 'error', __( 'Paused: this site\'s address changed. Use "Confirm this site" in the notice above.', 'navexa-agecheck-for-woocommerce' ) );
@@ -878,6 +1268,52 @@ final class Settings extends \WC_Settings_Page {
 			$text .= ' ' . __( 'In test mode, AgeCheck emails codes only to confirmed notification recipients in the Navexa dashboard.', 'navexa-agecheck-for-woocommerce' );
 		}
 		return self::line( 'ok', $text );
+	}
+
+	/**
+	 * The status with age verification off (Options::MODE_GATE_ONLY): that it
+	 * is off, the orders still awaiting an age check (held before the switch;
+	 * they stay held), and only the keys that are saved: a missing key is
+	 * not a problem in this mode.
+	 *
+	 * @return array<int, array{level: string, text: string}>
+	 */
+	private function gate_only_status_lines(): array {
+		$lines = array( self::line( 'warning', __( 'Age verification is off: orders are not verified or held. Only the entry age gate (self-attestation) runs.', 'navexa-agecheck-for-woocommerce' ) ) );
+		$held  = self::held_count();
+		if ( $held > 0 ) {
+			$lines[] = self::line(
+				'warning',
+				sprintf(
+					/* translators: %d: number of orders. */
+					_n( '%d order is still awaiting an age check; it is released when AgeCheck clears it or with the release action.', '%d orders are still awaiting an age check; they are released when AgeCheck clears them or with the release action.', $held, 'navexa-agecheck-for-woocommerce' ),
+					$held
+				)
+			);
+		}
+		$kinds = array(
+			Client::KEY_START      => __( 'Start key', 'navexa-agecheck-for-woocommerce' ),
+			Client::KEY_FULFILMENT => __( 'Fulfilment key', 'navexa-agecheck-for-woocommerce' ),
+		);
+		foreach ( $kinds as $kind => $label ) {
+			if ( '' === Options::api_key( $kind ) ) {
+				continue;
+			}
+			$result  = Mode::lookup( $kind, null, true );
+			$info    = $result['info'];
+			$lines[] = null === $info
+				? self::line( 'error', $label . ': ' . self::error_text( $result['error'] ) )
+				: self::line( 'ok', $label . ': ' . ( $info->livemode ? __( 'live', 'navexa-agecheck-for-woocommerce' ) : __( 'TEST MODE (simulator only)', 'navexa-agecheck-for-woocommerce' ) ) );
+		}
+		return $lines;
+	}
+
+	/**
+	 * Orders in "Awaiting age check" (Hold::STATUS), held before age
+	 * verification was turned off.
+	 */
+	private static function held_count(): int {
+		return function_exists( 'wc_orders_count' ) ? (int) wc_orders_count( Hold::STATUS ) : 0;
 	}
 
 	/**

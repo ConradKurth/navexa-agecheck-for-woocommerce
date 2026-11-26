@@ -12,7 +12,7 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Express payment buttons (Apple Pay, Google Pay, Amazon Pay, Link, WooPay,
  * PayPal) let a shopper pay from a product or cart page without the checkout
- * form, so without the Verify age button. With Options::HIDE_EXPRESS on (the
+ * form, so without the age check at Place order. With Options::HIDE_EXPRESS on (the
  * default) this class hides them through each gateway's own documented
  * filters wherever the product or cart needs an age check. Hiding is a
  * convenience, not the enforcement: an express order that still gets through

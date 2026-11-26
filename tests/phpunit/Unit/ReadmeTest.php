@@ -56,6 +56,61 @@ final class ReadmeTest extends TestCase {
 		$this->assertStringContainsString( sprintf( 'asks about it again after %d hours', intdiv( Release::REVIEW_RECHECK, 3600 ) ), $readme );
 	}
 
+	/**
+	 * The listing's Description fits 2,500 characters, and every section
+	 * fits wordpress.org's readme parser, which trims a section past its
+	 * limit in words (WordPressdotorg\Plugin_Directory\Readme\Parser:
+	 * trim_length( ..., 'words' ); Plugin Check bundles the same rule and
+	 * reports it as "characters"): 5,000 for the FAQ and the Changelog,
+	 * 2,500 for every other section, and the Description is measured with
+	 * every section the parser does not know (External services, Source
+	 * code and build) appended to it as other notes.
+	 */
+	public function test_readme_txt_sections_fit_the_directory_limits(): void {
+		$sections = array();
+		$current  = '';
+		foreach ( preg_split( '/\R/', self::read( 'readme.txt' ) ) as $line ) {
+			if ( 1 === preg_match( '/^==\s*(.+?)\s*==\s*$/', $line, $m ) ) {
+				$current              = $m[1];
+				$sections[ $current ] = '';
+				continue;
+			}
+			if ( '' !== $current ) {
+				$sections[ $current ] .= $line . "\n";
+			}
+		}
+		$this->assertArrayHasKey( 'Description', $sections );
+		$this->assertLessThanOrEqual( 2500, mb_strlen( trim( $sections['Description'] ) ), 'the Description fits 2,500 characters: details go in the FAQ' );
+
+		$known  = array(
+			'Description'                => 'description',
+			'Installation'               => 'installation',
+			'Frequently Asked Questions' => 'faq',
+			'Screenshots'                => 'screenshots',
+			'Changelog'                  => 'changelog',
+			'Upgrade Notice'             => 'upgrade_notice',
+		);
+		$parsed = array( 'other_notes' => '' );
+		foreach ( $sections as $title => $content ) {
+			if ( isset( $known[ $title ] ) ) {
+				$parsed[ $known[ $title ] ] = trim( $content );
+			} else {
+				$parsed['other_notes'] .= '<h3>' . $title . '</h3>' . trim( $content );
+			}
+		}
+		$parsed['description'] .= "\n" . $parsed['other_notes'];
+		unset( $parsed['other_notes'], $parsed['upgrade_notice'] );
+		$limits = array(
+			'faq'       => 5000,
+			'changelog' => 5000,
+		);
+		foreach ( $parsed as $section => $content ) {
+			$words = count( preg_split( '/(\s+)/u', $content, -1, PREG_SPLIT_DELIM_CAPTURE ) );
+			$limit = isset( $limits[ $section ] ) ? $limits[ $section ] : 2500;
+			$this->assertLessThan( $limit * 2, $words, "the parser would trim {$section} ({$words} words and spaces, limit {$limit} words)" );
+		}
+	}
+
 	public function test_readme_md_states_the_outage_numbers_the_code_uses(): void {
 		$readme = self::read( 'README.md' );
 		$this->assertStringContainsString( sprintf( 'the %d s timeout (`Client::TIMEOUT_SECONDS`)', Client::TIMEOUT_SECONDS ), $readme );

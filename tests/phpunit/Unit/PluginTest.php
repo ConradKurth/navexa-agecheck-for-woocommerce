@@ -33,11 +33,21 @@ final class PluginTest extends TestCase {
 			->once()
 			->with( '/plugins/navexa-agecheck-for-woocommerce/navexa-agecheck-for-woocommerce.php', array( RateLimit::class, 'install' ) );
 
+		Functions\when( 'plugin_basename' )->justReturn( 'navexa-agecheck-for-woocommerce/navexa-agecheck-for-woocommerce.php' );
+
 		Plugin::boot( '/plugins/navexa-agecheck-for-woocommerce/navexa-agecheck-for-woocommerce.php' );
 
+		$this->assertNotFalse( has_filter( 'plugin_action_links_navexa-agecheck-for-woocommerce/navexa-agecheck-for-woocommerce.php', array( Plugin::class, 'action_links' ) ), 'a Settings link on the Plugins row' );
 		$this->assertNotFalse( has_action( 'before_woocommerce_init', array( Plugin::class, 'declare_compatibility' ) ) );
 		$this->assertNotFalse( has_action( 'woocommerce_loaded', array( Plugin::class, 'wire' ) ) );
 		$this->assertSame( '/plugins/navexa-agecheck-for-woocommerce/navexa-agecheck-for-woocommerce.php', Plugin::file() );
+	}
+
+	public function test_action_links_put_settings_first(): void {
+		$links = Plugin::action_links( array( 'deactivate' => '<a href="#">Deactivate</a>' ) );
+		$this->assertSame( array( 'settings', 'deactivate' ), array_keys( $links ) );
+		$this->assertStringContainsString( 'page=wc-settings&tab=navexa_agecheck', $links['settings'] );
+		$this->assertSame( 'x', Plugin::action_links( 'x' ) );
 	}
 
 	public function test_declares_hpos_and_block_checkout_compatibility(): void {
@@ -78,7 +88,8 @@ final class PluginTest extends TestCase {
 		$this->assertNotFalse( has_action( 'woocommerce_blocks_loaded', array( Start::class, 'register_store_api' ) ) );
 		$this->assertNotFalse( has_action( 'woocommerce_api_navexa_agecheck_return', array( ReturnPage::class, 'render' ) ) );
 		$this->assertNotFalse( has_action( 'woocommerce_after_checkout_validation', array( Classic::class, 'validate' ) ) );
-		$this->assertNotFalse( has_action( 'woocommerce_review_order_before_submit', array( Classic::class, 'render_button' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_review_order_before_submit', array( Classic::class, 'render_status' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_checkout_before_customer_details', array( Classic::class, 'render_lock_bar' ) ) );
 		$this->assertNotFalse( has_action( 'woocommerce_checkout_validate_order_before_payment', array( Blocks::class, 'validate' ) ) );
 		$this->assertNotFalse( has_action( 'woocommerce_store_api_checkout_update_order_meta', array( Blocks::class, 'mark_cart_checkout' ) ) );
 		$this->assertNotFalse( has_action( 'woocommerce_blocks_checkout_block_registration', array( Blocks::class, 'register_integration' ) ) );

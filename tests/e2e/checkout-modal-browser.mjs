@@ -141,7 +141,17 @@ async function openBlock(context) {
   const page = await context.newPage()
   const urls = trackNavigation(page)
   await page.goto(`${SITE}/?page_id=${BLOCK}`)
-  await page.locator('.navexa-agecheck[data-navexa-agecheck="1"]').waitFor({ timeout: 60000 })
+  try {
+    await page.locator('.navexa-agecheck[data-navexa-agecheck="1"]').waitFor({ timeout: 60000 })
+  } catch (err) {
+    const state = await page.evaluate(() => ({
+      url: location.href,
+      cart: window.wp?.data?.select("wc/store/cart")?.getCartData?.()?.extensions?.["navexa-agecheck"] ?? null,
+      items: window.wp?.data?.select("wc/store/cart")?.getCartData?.()?.items?.length ?? null,
+      notices: [...document.querySelectorAll(".wc-block-components-notice-banner")].map((n) => n.textContent.trim()).slice(0, 3),
+    })).catch(() => null)
+    throw new Error(`${err.message.split("\n")[0]}; page state: ${JSON.stringify(state)}`)
+  }
   return { page, urls }
 }
 

@@ -727,6 +727,15 @@ test("GetCheckAvailability answers the configured availability; a test key reads
   assert.equal(bad.status, 400)
 })
 
+test("GetIntegrationInfo says links are enabled only with links on and a display name (TAX-1841)", async () => {
+  const read = async () => (await (await call("GetIntegrationInfo", {})).json()).linksEnabled
+  assert.equal(await read(), undefined, "links off by default: omitted (false)")
+  await control("config", { links: "on" })
+  assert.equal(await read(), true)
+  await control("config", { org: { displayName: "  " } })
+  assert.equal(await read(), undefined, "no display name: no link would go out")
+})
+
 test("down makes every RPC a bodiless 503 until it is turned off (TAX-1841)", async () => {
   await control("config", { down: true })
   for (const rpc of ["GetIntegrationInfo", "CreateVerification", "GetCheckAvailability"]) {

@@ -54,8 +54,9 @@ final class OutageFallbackTest extends TestCase {
 	private function hold_on_outage(): void {
 		$this->options[ Options::OUTAGE_FALLBACK ] = Options::OUTAGE_HOLD;
 		$this->options[ Options::STORE_PROFILE ]   = array(
-			'minimum_age'  => 21,
-			'display_name' => 'Pat\'s Shop',
+			'minimum_age'   => 21,
+			'display_name'  => 'Pat\'s Shop',
+			'links_enabled' => true,
 		);
 	}
 
@@ -97,22 +98,67 @@ final class OutageFallbackTest extends TestCase {
 		$this->assertSame( Options::OUTAGE_REFUSE, Options::outage_fallback(), 'before payment only' );
 		unset( $this->options[ Options::MODE ] );
 
+		// AgeCheck must say it sends links: an engine without the field (or
+		// links off at AgeCheck) never opens the fallback, though no link was
+		// ever refused (a pre-payment store rarely asks for one).
+		$this->assertSame( array(), Links::store_block() );
+		$this->options[ Options::STORE_PROFILE ] = array(
+			'minimum_age'  => 21,
+			'display_name' => 'Pat\'s Shop',
+		);
+		$this->assertSame( Options::OUTAGE_REFUSE, Options::outage_fallback(), 'links_enabled not reported' );
+		$this->options[ Options::STORE_PROFILE ]['links_enabled'] = false;
+		$this->assertSame( Options::OUTAGE_REFUSE, Options::outage_fallback(), 'links off at AgeCheck' );
+		$this->options[ Options::STORE_PROFILE ]['links_enabled'] = 'true';
+		$this->assertSame( Options::OUTAGE_REFUSE, Options::outage_fallback(), 'only a boolean true counts' );
+		$this->hold_on_outage();
+
+		// A refusal recorded within BLOCK_TTL still stands, whatever was reported.
 		foreach ( Links::BLOCKING_STATES as $reason ) {
 			$this->options[ Links::OPTION_BLOCK ] = array(
 				'reason' => $reason,
-				'at'     => time() - 30 * DAY_IN_SECONDS,
+				'at'     => time() - 60,
 			);
-			$this->assertSame( Options::OUTAGE_REFUSE, Options::outage_fallback(), $reason . ': no link could reach the shopper' );
+			$expected = Links::STATE_NO_DISPLAY_NAME === $reason ? Options::OUTAGE_HOLD : Options::OUTAGE_REFUSE;
+			$this->assertSame( $expected, Options::outage_fallback(), $reason . ' (a reported display name lifts a no-display-name refusal)' );
 			$this->assertSame( Options::OUTAGE_HOLD, Options::stored_outage_fallback() );
+
+			// Older than BLOCK_TTL it no longer stands: links reported on since
+			// reopen the fallback, though no live send cleared the record.
+			$this->options[ Links::OPTION_BLOCK ]['at'] = time() - Links::BLOCK_TTL - 1;
+			$this->assertSame( Options::OUTAGE_HOLD, Options::outage_fallback(), $reason . ': an old refusal' );
 		}
 		unset( $this->options[ Links::OPTION_BLOCK ] );
 
-		$this->options[ Options::STORE_PROFILE ] = array( 'minimum_age' => 21 );
+		$this->options[ Options::STORE_PROFILE ] = array(
+			'minimum_age'   => 21,
+			'links_enabled' => true,
+		);
 		$this->assertSame( Options::OUTAGE_REFUSE, Options::outage_fallback(), 'no display name: AgeCheck sends no link' );
 
 		$this->hold_on_outage();
 		Filters\expectApplied( 'navexa_agecheck_link_sender' )->andReturn( new DisabledLinkSender() );
 		$this->assertSame( Options::OUTAGE_REFUSE, Options::outage_fallback(), 'emails turned off in wp-config.php' );
+	}
+
+	public function test_integration_info_reports_links_enabled_into_the_store_profile(): void {
+		// An engine before the field: links_enabled reads false.
+		Mode::flush();
+		$this->respond( 200, $this->live_info( array( 'scopes' => array( 'agecheck:verify' ) ) ) );
+		Mode::info( Client::KEY_START );
+		$this->assertFalse( Options::reported_links_enabled(), 'omitted: no links' );
+		$this->assertSame( Options::OUTAGE_REFUSE, Options::outage_fallback() );
+
+		Mode::flush();
+		$this->options[ Options::OUTAGE_FALLBACK ] = Options::OUTAGE_HOLD;
+		$this->respond( 200, $this->live_info( array( 'scopes' => array( 'agecheck:verify' ), 'linksEnabled' => true ) ) );
+		$info = Mode::info( Client::KEY_START );
+		$this->assertNotNull( $info );
+		$this->assertTrue( $info->links_enabled );
+		$this->assertTrue( \Navexa\AgeCheck\IntegrationInfo::from_array( $info->to_array() )->links_enabled, 'survives the cache' );
+		$this->assertTrue( Options::reported_links_enabled() );
+		$this->assertSame( Options::OUTAGE_HOLD, Options::outage_fallback() );
+		$this->assertFalse( \Navexa\AgeCheck\IntegrationInfo::from_response( array( 'linksEnabled' => 'true' ) )->links_enabled, 'only a boolean true' );
 	}
 
 	public function test_only_unavailable_and_deadline_exceeded_are_an_outage(): void {
@@ -160,11 +206,33 @@ final class OutageFallbackTest extends TestCase {
 		$this->assertSame( Availability::UNKNOWN, Availability::read() );
 		$this->assertArrayNotHasKey( $this->availability_transient(), $this->transients );
 
-		$this->respond( 200, array( 'idCheck' => 'ID_CHECK_AVAILABILITY_SOMETHING_NEW' ) );
-		$this->assertSame( Availability::SERVICE_UNAVAILABLE, Availability::read(), 'a value this plugin does not know reads unavailable' );
+		$this->respond( 200, $this->availability_body( 'SERVICE_UNAVAILABLE' ) );
+		$this->assertSame( Availability::SERVICE_UNAVAILABLE, Availability::read() );
 		unset( $this->transients[ $this->availability_transient() ] );
-		$this->respond( 200, array() );
-		$this->assertSame( Availability::SERVICE_UNAVAILABLE, Availability::read(), 'no value reads unavailable' );
+		$this->assertSame( Availability::SERVICE_UNAVAILABLE, Availability::from_body( array( 'idCheck' => 3 ) ) );
+
+		// An answer this plugin cannot read never opens the fallback: as before.
+		foreach ( array(
+			'a value this plugin does not know' => array( 'idCheck' => 'ID_CHECK_AVAILABILITY_SOMETHING_NEW' ),
+			'UNSPECIFIED'                       => array( 'idCheck' => 'ID_CHECK_AVAILABILITY_UNSPECIFIED' ),
+			'no value (UNSPECIFIED omitted)'    => array( 'livemode' => true ),
+			'an empty answer'                   => array(),
+			'a number this plugin does not know' => array( 'idCheck' => 9 ),
+		) as $why => $body ) {
+			$this->respond( 200, $body );
+			$this->assertSame( Availability::UNKNOWN, Availability::read(), $why );
+			$this->assertFalse( Availability::is_down( Availability::UNKNOWN ) );
+			$this->assertArrayNotHasKey( $this->availability_transient(), $this->transients, $why . ' is not cached' );
+		}
+	}
+
+	public function test_an_unreadable_availability_answer_sends_the_hosted_link(): void {
+		unset( $this->transients[ $this->availability_transient() ] );
+		$this->respond( 200, array( 'verification' => $this->verification( 'acv_1', 'NEEDS_DOC' ) ) );
+		$this->respond( 200, array( 'livemode' => true ) );
+		$this->respond( 200, array( 'hostedUrl' => self::HOSTED ) );
+		$this->assertSame( self::HOSTED, $this->start()['hosted_url'] );
+		$this->assertFalse( Session::fallback_for( $this->ship_to->mac() ) );
 	}
 
 	public function test_a_daily_limit_records_when_it_resets(): void {
@@ -222,6 +290,56 @@ final class OutageFallbackTest extends TestCase {
 		$this->assertSame( Gate::REFUSE_FAILED, Gate::check( $this->ship_to, 'US' )['code'] );
 		$this->assertFalse( Gate::admitted_fallback() );
 		$this->assertNotSame( 'hold', Start::state()['status'] );
+	}
+
+	public function test_a_failed_check_never_falls_back_after_a_restart(): void {
+		// The shopper fails (a declared minor, an ID under age).
+		$this->respond( 200, array( 'verification' => $this->verification( 'acv_1', 'FAILED' ) ) );
+		$this->assertSame( 'failed', $this->start()['status'] );
+
+		// Verify age again: a new verification, which AgeCheck sends to the ID
+		// check (a reuse block, say), while it cannot run ID checks. The new
+		// record replaces the FAILED one, yet no fallback opens.
+		// (The second round re-reads acv_2, the session's record by then.)
+		foreach ( array( 'SERVICE_UNAVAILABLE', 'OUTAGE' ) as $down ) {
+			Session::forget_fallback();
+			$this->http_requests = array();
+			$this->respond( 200, array( 'verification' => $this->verification( 'acv_2', 'NEEDS_DOC' ) ) );
+			if ( 'OUTAGE' === $down ) {
+				$this->cache_availability( Availability::OUTAGE );
+			} else {
+				unset( $this->transients[ $this->availability_transient() ] );
+				$this->respond( 200, $this->availability_body( $down ) );
+			}
+			$this->respond( 200, array( 'hostedUrl' => self::HOSTED ) );
+			$answer = $this->start();
+			$this->assertNotSame( 'hold', $answer['status'], $down );
+			$this->assertSame( self::HOSTED, $answer['hosted_url'], $down . ': the ID check, as without the setting' );
+			$this->assertSame( Session::STATUS_PENDING, Session::record()['status'], 'the FAILED record was replaced' );
+			$this->assertTrue( Session::has_failed(), $down . ': the session still failed' );
+			$this->assertFalse( Session::fallback_for( $this->ship_to->mac() ), $down );
+			$this->assertFalse( Session::set_fallback( $this->ship_to->mac() ), $down );
+
+			// Nor does the gate admit the paid order, even with a fallback set
+			// before the failure.
+			$this->session()->set(
+				Session::KEY_FALLBACK,
+				array(
+					'shipto_mac' => $this->ship_to->mac(),
+					'until'      => time() + 600,
+				)
+			);
+			Gate::reset();
+			$this->assertNotNull( Gate::check( $this->ship_to, 'US' ), $down );
+			$this->assertFalse( Gate::admitted_fallback(), $down );
+		}
+
+		// Nor once the record left the session (bound to an order, forgotten).
+		Session::forget_verification();
+		$this->assertTrue( Session::has_failed() );
+		$this->assertFalse( Session::fallback_for( $this->ship_to->mac() ) );
+		$this->respond( 503, '' );
+		$this->assertSame( 'unavailable', $this->start()['status'] );
 	}
 
 	public function test_needs_doc_refuses_on_the_stores_limit_and_falls_back_when_down(): void {

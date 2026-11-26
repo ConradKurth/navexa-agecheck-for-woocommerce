@@ -19,15 +19,16 @@ defined( 'ABSPATH' ) || exit;
  *
  * - AVAILABLE, ORG_DAILY_LIMIT, SERVICE_UNAVAILABLE: AgeCheck's answer,
  *   cached store-wide for SUCCESS_TTL. ORG_DAILY_LIMIT also stores when it
- *   resets (Options::CAPPED_UNTIL) for the admin notice. An unknown value
- *   reads SERVICE_UNAVAILABLE, as the proto says.
+ *   resets (Options::CAPPED_UNTIL) for the admin notice.
  * - OUTAGE: AgeCheck did not answer (ConnectError::is_outage()); cached for
  *   OUTAGE_TTL only, so one blip does not send every shopper of a minute to
  *   the fallback.
  * - REFUSED: FAILED_PRECONDITION or PERMISSION_DENIED (no card, live mode
  *   paused, AgeCheck not enabled); not cached.
  * - UNKNOWN: anything else, an engine without the RPC (UNIMPLEMENTED: a
- *   plain 404) included: carry on as before this read existed; not cached.
+ *   plain 404) and an answer without a value this plugin knows (none,
+ *   UNSPECIFIED, or one a later engine adds) included: carry on as before
+ *   this read existed; not cached.
  *
  * Logs codes only.
  */
@@ -75,6 +76,10 @@ final class Availability {
 			return self::UNKNOWN;
 		}
 		$answer = self::from_body( $body );
+		if ( self::UNKNOWN === $answer ) {
+			Client::log( 'warning', 'agecheck availability answer=unknown' );
+			return self::UNKNOWN;
+		}
 		set_transient( $name, $answer, self::SUCCESS_TTL );
 		if ( self::ORG_DAILY_LIMIT === $answer ) {
 			$resumes = isset( $body['resumesAt'] ) && is_string( $body['resumesAt'] ) ? strtotime( $body['resumesAt'] ) : false;
@@ -88,8 +93,11 @@ final class Availability {
 	}
 
 	/**
-	 * The answer in a GetCheckAvailability body. A value this plugin does
-	 * not know (or none) reads SERVICE_UNAVAILABLE.
+	 * The answer in a GetCheckAvailability body: AVAILABLE, ORG_DAILY_LIMIT
+	 * or SERVICE_UNAVAILABLE for those values only; anything else (no value,
+	 * UNSPECIFIED, which proto3 JSON omits, or a value a later engine adds)
+	 * reads UNKNOWN, so an answer this plugin cannot read never opens the
+	 * outage fallback.
 	 *
 	 * @param array<string, mixed> $body Response (proto3 JSON).
 	 */
@@ -101,7 +109,10 @@ final class Availability {
 		if ( in_array( $value, array( 'ID_CHECK_AVAILABILITY_ORG_DAILY_LIMIT', 2 ), true ) ) {
 			return self::ORG_DAILY_LIMIT;
 		}
-		return self::SERVICE_UNAVAILABLE;
+		if ( in_array( $value, array( 'ID_CHECK_AVAILABILITY_SERVICE_UNAVAILABLE', 3 ), true ) ) {
+			return self::SERVICE_UNAVAILABLE;
+		}
+		return self::UNKNOWN;
 	}
 
 	/**

@@ -26,6 +26,12 @@
 // always-pass secret; only the interactive-challenge checks run: the popup
 // closes at once, the status says to complete the check shown, the focus is
 // on the challenge, and once it is solved the next click opens the age check.
+//
+// --outage-hold (TAX-1841; run tests/wp-env/outage-fallback-setup.php first,
+// with the mock's links on): only the "hold" checks run. AgeCheck is down
+// (the mock's down knob); Verify age answers hold on block and classic
+// checkout: the copy is announced in the polite live region, the focus goes
+// back to the button, and Place order goes through.
 
 import assert from "node:assert/strict"
 import { chromium, firefox, webkit } from "playwright-core"
@@ -43,6 +49,8 @@ const CLASSIC = Number(arg("--classic", "0"))
 const FREE = Number(arg("--free-product", "0"))
 const BROWSERS = arg("--browsers", "chromium,webkit").split(",")
 const TURNSTILE_INTERACTIVE = process.argv.includes("--turnstile-interactive")
+const OUTAGE_HOLD = process.argv.includes("--outage-hold")
+const HOLD_COPY = /Age verification is unavailable right now\. You can place your order/
 const ENGINES = { chromium, firefox, webkit }
 
 const ADDRESS = {
@@ -216,6 +224,48 @@ for (const name of BROWSERS) {
           await page.waitForSelector(`${container}[data-status="passed"]`, { timeout: 30000 })
           await context.close()
           return `popup closed after ${closedAfter} ms; challenge solved by ${how}`
+        })
+      }
+      continue
+    }
+
+    if (OUTAGE_HOLD) {
+      await mock("config", { links: "on", org: { allowedOrigins: [SITE], displayName: "Mock Store" } })
+      const OUTAGE_ADDRESS = { ...ADDRESS, email: "outage@example.com" }
+      for (const [checkout, pageId, container, button, live, place] of [
+        ["block", BLOCK, ".navexa-agecheck", ".navexa-agecheck__verify", ".navexa-agecheck__message", ".wc-block-components-checkout-place-order-button"],
+        ["classic", CLASSIC, "[data-navexa-agecheck]", "[data-navexa-agecheck-verify]", "#navexa-agecheck-live", "#place_order"],
+      ]) {
+        await check(`${name}: ${checkout} checkout, AgeCheck down: Verify age answers hold, announced politely, the focus back on the button, Place order goes through`, async () => {
+          await mock("config", { down: true })
+          try {
+            const context = await browser.newContext()
+            await prepareCart(context, PRODUCT, "flat_rate", OUTAGE_ADDRESS)
+            const page = await context.newPage()
+            await page.goto(`${SITE}/?page_id=${pageId}`)
+            await page.locator(button).waitFor({ timeout: 20000 })
+            await page.waitForFunction(() => !document.querySelector(".blockUI"), null, { timeout: 15000 })
+            await page.waitForFunction((b) => !document.querySelector(b)?.disabled, button, { timeout: 15000 })
+            await page.focus(button)
+            await page.keyboard.press("Enter")
+            await page.waitForSelector(`${container}[data-status="hold"]`, { timeout: 30000 })
+            await page.waitForFunction((l) => /Age verification is unavailable right now/.test(document.querySelector(l)?.textContent ?? ""), live, { timeout: 10000 })
+            const region = await page.evaluate((l) => {
+              const el = document.querySelector(l)
+              return { live: el?.getAttribute("aria-live"), text: el?.textContent ?? "" }
+            }, live)
+            assert.equal(region.live, "polite")
+            assert.match(region.text, HOLD_COPY)
+            await page.waitForFunction((b) => document.activeElement?.matches?.(b), button, { timeout: 8000 })
+            assert.equal(await page.locator(`${container} .wc-block-components-validation-error`).count(), 0, "Place order is not blocked")
+            await page.waitForFunction(() => !document.querySelector(".blockUI"), null, { timeout: 15000 })
+            if (checkout === "classic") await page.check("#terms").catch(() => {})
+            await page.click(place)
+            await page.waitForURL(/order-received/, { timeout: 30000 })
+            await context.close()
+          } finally {
+            await mock("config", { down: false })
+          }
         })
       }
       continue

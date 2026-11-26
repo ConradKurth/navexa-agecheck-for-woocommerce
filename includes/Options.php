@@ -294,6 +294,17 @@ final class Options {
 	}
 
 	/**
+	 * Whether AgeCheck last reported that it would email the store's shoppers
+	 * a verification link (GetIntegrationInfo links_enabled, TAX-1841): false
+	 * until it says so, and from an engine without the field. Never asks
+	 * AgeCheck.
+	 */
+	public static function reported_links_enabled(): bool {
+		$profile = get_option( self::STORE_PROFILE, array() );
+		return is_array( $profile ) && isset( $profile['links_enabled'] ) && true === $profile['links_enabled'];
+	}
+
+	/**
 	 * Whether express payment buttons are hidden on age-restricted products
 	 * and carts. Anything but a stored 'no' reads as on.
 	 */
@@ -484,18 +495,26 @@ final class Options {
 	/**
 	 * What pre-payment checkout does while AgeCheck cannot run the ID check:
 	 * OUTAGE_HOLD only when the merchant chose it, the store verifies before
-	 * payment, and a held order's shopper can be reached by link: AgeCheck
-	 * reported the store's display name (a link needs one), no store-wide
-	 * link refusal is on record (Links::store_block(): links off, no display
-	 * name, no link RPC) and wp-config.php has not turned the emails off
-	 * (NAVEXA_AGECHECK_EMAIL_LINKS false: DisabledLinkSender). Otherwise
+	 * payment, and a held order's shopper can be reached by link, on positive
+	 * evidence: AgeCheck reported that it would email the store's shoppers a
+	 * link (reported_links_enabled(): links on at AgeCheck and a display
+	 * name; an engine without the field never says so) and the store's
+	 * display name, no store-wide link refusal still stands
+	 * (Links::blocked(): younger than BLOCK_TTL, a no-display-name one lifted
+	 * once a name is reported) and wp-config.php has not turned the emails
+	 * off (NAVEXA_AGECHECK_EMAIL_LINKS false: DisabledLinkSender). Otherwise
 	 * OUTAGE_REFUSE: a held order nobody can verify would only end refunded.
 	 */
 	public static function outage_fallback(): string {
 		if ( self::OUTAGE_HOLD !== self::stored_outage_fallback() || self::MODE_PRE_PAYMENT !== self::mode() ) {
 			return self::OUTAGE_REFUSE;
 		}
-		if ( array() !== Links::store_block() || '' === self::reported_display_name() || Links::sender() instanceof DisabledLinkSender ) {
+		if ( ! self::reported_links_enabled() || '' === self::reported_display_name() || Links::sender() instanceof DisabledLinkSender ) {
+			return self::OUTAGE_REFUSE;
+		}
+		$reported               = new IntegrationInfo();
+		$reported->display_name = self::reported_display_name();
+		if ( '' !== Links::blocked( $reported ) ) {
 			return self::OUTAGE_REFUSE;
 		}
 		return self::OUTAGE_HOLD;

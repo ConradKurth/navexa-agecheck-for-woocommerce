@@ -60,6 +60,16 @@ final class Session {
 	const KEY_FALLBACK = 'navexa_agecheck_fallback';
 
 	/**
+	 * Set (true) once any check of this session failed, whatever happened to
+	 * its record since (TAX-1841, owner decision #22): a restart replaces the
+	 * FAILED record with the new verification's, and binding and
+	 * forget_verification() drop records, so the record alone cannot say a
+	 * failure happened. Only the session's end clears it; has_failed() reads
+	 * it, so no outage fallback is set or honoured for the rest of the session.
+	 */
+	const KEY_FAILED = 'navexa_agecheck_failed';
+
+	/**
 	 * Seconds a fallback stays valid after the outage was seen.
 	 */
 	const FALLBACK_TTL = 900;
@@ -179,7 +189,8 @@ final class Session {
 
 	/**
 	 * Stores the session's verification record. A new verification drops the
-	 * guard of the previous one.
+	 * guard of the previous one. A failed one also marks the session failed
+	 * for good (KEY_FAILED).
 	 *
 	 * @param string $vid        Verification id.
 	 * @param string $shipto_mac ShipTo::mac() it was created for.
@@ -195,6 +206,9 @@ final class Session {
 		if ( null !== $previous && $previous['vid'] !== $vid ) {
 			$session->set( self::KEY_GUARD, null );
 			$session->set( self::KEY_VID, null );
+		}
+		if ( self::STATUS_FAILED === $status ) {
+			$session->set( self::KEY_FAILED, true );
 		}
 		$session->set(
 			self::KEY_RECORD,
@@ -255,12 +269,18 @@ final class Session {
 	}
 
 	/**
-	 * Whether the session's record is a failed check, for any ship-to: no
+	 * Whether a check of this session failed, for any ship-to: its record is
+	 * a failed check, or one was (KEY_FAILED), even after a restart replaced
+	 * that record with a new verification's or binding dropped it. No
 	 * fallback is ever set or honoured then, so an outage never opens a
 	 * retry after a failure (owner decision #22). (The gate also refuses a
 	 * record for another ship-to before it reads the fallback.)
 	 */
 	public static function has_failed(): bool {
+		$session = self::wc_session();
+		if ( null !== $session && true === $session->get( self::KEY_FAILED ) ) {
+			return true;
+		}
 		$record = self::record();
 		return null !== $record && self::STATUS_FAILED === $record['status'];
 	}

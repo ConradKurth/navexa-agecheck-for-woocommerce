@@ -13,8 +13,9 @@
 // only with config awaitingIdentity: "served"; E12a per-store reuse and E8c
 // verification links at tax d6dead63). Served RPCs:
 //   GetIntegrationInfo {livemode, scopes, originAllowed, minimumAge, displayName, organizationId, docRetry,
-//     reuseWindowDays, guestReuseCode} (TAX-1839: the window while reuse is on for the org, i.e. config reuse
-//     "on", a policy other than default and a window above 0; the code while that holds and displayName is set)
+//     reuseWindowDays, guestReuseCode, linksEnabled} (TAX-1839: the window while reuse is on for the org, i.e.
+//     config reuse "on", a policy other than default and a window above 0; the code while that holds and
+//     displayName is set; TAX-1841: linksEnabled = links "on" and a display name)
 //   GetCheckAvailability (TAX-1841) {idCheck, resumesAt (ORG_DAILY_LIMIT only), livemode}: config
 //     availability "available" (default), "org_daily_limit", "service_unavailable", or "absent" (the
 //     plain 404 of an engine without the RPC); a test key always reads AVAILABLE
@@ -861,6 +862,8 @@ const RPCS = {
         docRetry: state.docRetry === "on",
         reuseWindowDays: reuseWindow(state),
         guestReuseCode: guestReuseCode(state),
+        // TAX-1841: links on and a display name (the engine's two store-wide refusals).
+        linksEnabled: state.links === "on" && String(state.org.displayName ?? "").trim() !== "",
       }),
     ]
   },

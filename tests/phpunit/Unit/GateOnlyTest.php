@@ -158,6 +158,29 @@ final class GateOnlyTest extends TestCase {
 		$this->assertSame( array(), $this->http_requests );
 	}
 
+	public function test_in_after_payment_mode_the_setup_notice_says_orders_are_held_not_refused(): void {
+		$this->options[ Options::MODE ] = Options::MODE_ACCEPT_AND_HOLD;
+		$this->screen( 'woocommerce_page_wc-orders' );
+		ob_start();
+		Notices::render();
+		$html = ob_get_clean();
+		$this->assertStringNotContainsString( 'refuses age-restricted checkouts', $html, 'checkouts are not refused after payment' );
+		$this->assertStringContainsString( 'places age-restricted orders on hold until they pass an age check, and it needs both API keys to check and release them', $html );
+		$this->assertStringContainsString( 'set Age verification to Off', $html );
+		$this->assertStringContainsString( 'setup=' . Notices::SETUP_REASON_HOLD, $html );
+
+		$this->current_user = 5;
+		$this->user_meta[ '5:' . Notices::USER_META_SETUP ] = Notices::SETUP_REASON_HOLD;
+		ob_start();
+		Notices::render();
+		$this->assertStringNotContainsString( 'API keys', ob_get_clean(), 'dismissed in this mode' );
+
+		$this->options[ Options::MODE ] = Options::MODE_PRE_PAYMENT;
+		ob_start();
+		Notices::render();
+		$this->assertStringContainsString( 'refuses age-restricted checkouts until you add your API keys', ob_get_clean(), 'a switch to Before payment shows it again' );
+	}
+
 	public function test_setup_notice_needs_a_missing_key_and_verification_on(): void {
 		$this->assertTrue( Notices::needs_setup() );
 		$this->install_with_keys();

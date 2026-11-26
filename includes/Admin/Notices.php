@@ -25,11 +25,13 @@ defined( 'ABSPATH' ) || exit;
  *   need a refund and orders held for more than 30 days. Dismissing hides it
  *   until the counts change.
  * - A setup notice on the same screens while age verification is on and
- *   either API key is missing: the plugin then refuses every age-restricted
- *   checkout (fail closed), and a merchant who wants only the entry gate
- *   should set Age verification to Off (Options::MODE_GATE_ONLY). It is
- *   never inferred from a missing key. Always shown on the settings tab
- *   (not dismissible there), as the test-mode notice is.
+ *   either API key is missing (fail closed): in "Before payment" mode the
+ *   plugin refuses every age-restricted checkout; in "After payment" mode it
+ *   takes those orders and holds them, and needs both keys to check and
+ *   release them. A merchant who wants only the entry gate should set Age
+ *   verification to Off (Options::MODE_GATE_ONLY); that is never inferred
+ *   from a missing key. Always shown on the settings tab (not dismissible
+ *   there), as the test-mode notice is; dismissed per mode.
  * - A notice on the same screens while AgeCheck refuses to email
  *   verification links for the whole store (Links::store_block(): AgeCheck
  *   not sending them yet, which is one switch for every store, no store
@@ -62,9 +64,16 @@ final class Notices {
 	const USER_META_SETUP  = 'navexa_agecheck_dismissed_setup';
 
 	/**
-	 * The setup notice's one reason (dismissed until it shows for another).
+	 * The setup notice's reason in "Before payment" mode, where checkouts are
+	 * refused (dismissed until it shows for another).
 	 */
 	const SETUP_REASON = 'keys';
+
+	/**
+	 * The setup notice's reason in "After payment" mode, where orders are
+	 * taken and held: a switch to "Before payment" shows the notice again.
+	 */
+	const SETUP_REASON_HOLD = 'keys_hold';
 
 	/**
 	 * Dismissable notices: the dismiss URL's parameter and the user meta that
@@ -198,25 +207,40 @@ final class Notices {
 	}
 
 	/**
-	 * The setup notice: age verification on and a key missing, so every
-	 * age-restricted checkout is refused until the keys are added.
+	 * The setup notice: age verification on and a key missing. In "Before
+	 * payment" mode every age-restricted checkout is refused until the keys
+	 * are added; in "After payment" mode those orders are taken and held, and
+	 * checking and releasing them needs both keys.
 	 */
 	private static function render_setup(): void {
 		if ( ! self::needs_setup() ) {
 			return;
 		}
+		$reason   = self::setup_reason();
 		$settings = self::on_settings_tab();
-		if ( ! $settings && self::is_dismissed( 'setup', self::SETUP_REASON ) ) {
+		if ( ! $settings && self::is_dismissed( 'setup', $reason ) ) {
 			return;
 		}
 		echo '<div class="notice notice-warning"><p><strong>' . esc_html__( 'Navexa AgeCheck', 'navexa-agecheck-for-woocommerce' ) . '</strong> ';
-		esc_html_e( 'Navexa AgeCheck refuses age-restricted checkouts until you add your API keys. To use only the entry age gate, set Age verification to Off.', 'navexa-agecheck-for-woocommerce' );
+		if ( self::SETUP_REASON_HOLD === $reason ) {
+			esc_html_e( 'Navexa AgeCheck places age-restricted orders on hold until they pass an age check, and it needs both API keys to check and release them. To use only the entry age gate, set Age verification to Off.', 'navexa-agecheck-for-woocommerce' );
+		} else {
+			esc_html_e( 'Navexa AgeCheck refuses age-restricted checkouts until you add your API keys. To use only the entry age gate, set Age verification to Off.', 'navexa-agecheck-for-woocommerce' );
+		}
 		echo '</p>';
 		if ( ! $settings ) {
 			printf( '<p><a href="%1$s">%2$s</a></p>', esc_url( Plugin::settings_url() ), esc_html__( 'AgeCheck settings', 'navexa-agecheck-for-woocommerce' ) );
-			echo self::dismiss_link( 'setup', self::SETUP_REASON ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- dismiss_link() escapes.
+			echo self::dismiss_link( 'setup', $reason ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- dismiss_link() escapes.
 		}
 		echo '</div>';
+	}
+
+	/**
+	 * What the setup notice is about: SETUP_REASON_HOLD in "After payment"
+	 * mode (orders are taken and held), else SETUP_REASON (checkouts refused).
+	 */
+	public static function setup_reason(): string {
+		return Options::MODE_ACCEPT_AND_HOLD === Options::mode() ? self::SETUP_REASON_HOLD : self::SETUP_REASON;
 	}
 
 	/**
@@ -362,7 +386,7 @@ final class Notices {
 			update_user_meta( get_current_user_id(), self::USER_META_CAPPED, $capped );
 		}
 		$setup = isset( $_GET['setup'] ) ? sanitize_key( wp_unslash( $_GET['setup'] ) ) : '';
-		if ( self::SETUP_REASON === $setup ) {
+		if ( in_array( $setup, array( self::SETUP_REASON, self::SETUP_REASON_HOLD ), true ) ) {
 			update_user_meta( get_current_user_id(), self::USER_META_SETUP, $setup );
 		}
 		foreach ( array( 'test', 'paused' ) as $kind ) {

@@ -231,6 +231,26 @@ final class OrdersFilterTest extends TestCase {
 		$this->assertArrayNotHasKey( '3:' . Notices::USER_META_PAUSED, $this->user_meta );
 	}
 
+	public function test_dismiss_handler_stores_either_setup_reason_and_nothing_else(): void {
+		Functions\when( 'check_admin_referer' )->justReturn( 1 );
+		Functions\when( 'wp_get_referer' )->justReturn( false );
+		Functions\when( 'wp_safe_redirect' )->alias(
+			static function () {
+				throw new \RuntimeException( 'redirect' );
+			}
+		);
+		foreach ( array( Notices::SETUP_REASON_HOLD, 'bogus', Notices::SETUP_REASON ) as $reason ) {
+			$_GET['setup'] = $reason;
+			try {
+				Notices::handle_dismiss();
+			} catch ( \RuntimeException $e ) {
+				$this->assertSame( 'redirect', $e->getMessage() );
+			}
+			$this->assertSame( 'bogus' === $reason ? Notices::SETUP_REASON_HOLD : $reason, $this->user_meta[ '3:' . Notices::USER_META_SETUP ], $reason );
+		}
+		unset( $_GET['setup'] );
+	}
+
 	public function test_dismiss_handler_refuses_non_managers(): void {
 		$this->caps = array();
 		Functions\expect( 'wp_die' )->once()->andThrow( new \RuntimeException( 'die' ) );

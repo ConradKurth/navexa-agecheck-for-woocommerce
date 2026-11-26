@@ -82,11 +82,13 @@ A guest who passed here recently can skip a new check by typing a one-time code 
 
 = What happens when AgeCheck is down? =
 
-By default, "Before payment" checkout refuses age-restricted orders while AgeCheck cannot run the check, and the shopper tries again later. With "When AgeCheck is down" set to "Take the order and hold it", a shopper whose check could not run (AgeCheck not answering, or its ID check unavailable) may place the order; it stays "Awaiting age check", unshipped, until they verify with the link AgeCheck emails them or from their order page. It is never offered after a failed check. The setting stays refusing while AgeCheck cannot email your shoppers a link (verification emails off at AgeCheck, or no store display name in the AgeCheck dashboard). When your store has used its own daily ID checks, orders are refused either way.
+By default, "Before payment" checkout refuses age-restricted orders while AgeCheck cannot run the check, and the shopper tries again later. With "When AgeCheck is down" set to "Take the order and hold it", a shopper whose check could not run (AgeCheck not answering, or its ID check unavailable) may place the order: Place order opens no age check window, the checkout says the order will be held, and it stays "Awaiting age check", unshipped, until they verify with the link AgeCheck emails them or from their order page. It is never offered after a failed check. The setting stays refusing while AgeCheck cannot email your shoppers a link (verification emails off at AgeCheck, or no store display name in the AgeCheck dashboard). When your store has used its own daily ID checks, orders are refused either way.
 
 = What if a shopper fails the age check? =
 
 The order is never released. Depending on your setting (refund, by default), it is refunded through the payment gateway (when the gateway can refund by API) or listed under "AgeCheck: denied, refund required" for you to refund.
+
+While AgeCheck's document retry is on for your account, a shopper whose ID check of a placed order was declined, or whose ID's name did not match the order's, can try again on the same order for 7 days after the first failure, from Try again on their order page or a new link you email from Order actions; the order stays held and any refund waits meanwhile. An under-age result is never retried. At checkout, before an order exists, a shopper whose check failed can start a new one with the next Place order.
 
 = What happens when AgeCheck can't be reached? =
 
@@ -246,10 +248,10 @@ The plugin sends no telemetry.
 * Uses Navexa's shared AgeCheck loader 1.0.0 (MIT), bundled with the plugin.
 * A shopper whose ID check was declined, or whose ID's name did not match the order's, can try again on the same order for 7 days after the first failure (never after an under-age result: that order is denied at once). AgeCheck confirms each time that the retry is still open, and while it is the order stays held and any refund waits; the order page offers Try again, staff can email a new link from Order actions, and the panel says "Failed: the shopper may try again until ..." or "Retrying". Needs AgeCheck's document retry to be on; until then failed orders are handled as before. An order already denied whose shopper passes later is never released on its own: it stays held for staff to check the refund and release or cancel it.
 * Subscribe your AgeCheck webhook to verification.needs_doc as well, so a retry in progress is noted on the order right away.
-* Returning guests: while AgeCheck's returning-customer check is on for your account and your store has a name in the AgeCheck dashboard, the Verify age start sends a guest's billing email, so a guest who passed here recently can skip a new check with a one-time code AgeCheck emails them. Signed-in customers are still matched by their account. If AgeCheck refuses the email, the check starts without it.
+* Returning guests: while AgeCheck's returning-customer check is on for your account and your store has a name in the AgeCheck dashboard, the age check start at Place order sends a guest's billing email, so a guest who passed here recently can skip a new check with a one-time code AgeCheck emails them. Signed-in customers are still matched by their account. If AgeCheck refuses the email, the check starts without it.
 * The AgeCheck settings tab shows whether returning customers are reused, and for how many days.
 * The suggested privacy policy text mentions the guest email.
-* New setting "When AgeCheck is down" (Before payment mode; refuses by default): "Take the order and hold it" lets a shopper whose age check could not run, because AgeCheck was not answering or its ID check was unavailable, place the order. It stays "Awaiting age check", unshipped, until they verify with the emailed link or from their order page. It is never offered after a failed check, and stays off while AgeCheck cannot email your shoppers a link. When your store has used its daily ID checks, orders are refused with a generic message.
+* New setting "When AgeCheck is down" (Before payment mode; refuses by default): "Take the order and hold it" lets Place order take the order of a shopper whose age check could not run, because AgeCheck was not answering or its ID check was unavailable, with no age check window and a line saying why. The order stays "Awaiting age check", unshipped, until they verify with the emailed link or from their order page. It is never offered after a failed check, and stays off while AgeCheck cannot email your shoppers a link. When your store has used its daily ID checks, orders are refused with a generic message.
 
 = 1.0.4 =
 * Fix: after a declined payment, checkout no longer asks the shopper to verify their age again. The order is already tied to their age check, so retrying the payment (for example with another card) places it without a second check, which AgeCheck would have billed. Changing the shipping address or the cart after a declined payment still needs a new age check.
@@ -278,14 +280,14 @@ The plugin sends no telemetry.
 * Uninstall removes all plugin settings and data, keeps order audit data unless "Delete data on uninstall" is on, and moves orders awaiting an age check to On hold.
 * Verification emails for held orders (pay for order, "After payment" mode): AgeCheck emails the shopper a 7-day link; resend and withdraw from Order actions; the order panel shows the email's state; a notice says when AgeCheck is not sending the emails yet or the store name is missing. The NAVEXA_AGECHECK_EMAIL_LINKS constant set to false turns them off on a site.
 * "Verify now" on the order-received page and My account's order page for a held order.
-* Returning customers: a keyed account reference on every signed-in customer's age check, for AgeCheck's returning-customer check (reused passes clear like any pass). Guests: the billing email on the Verify age start while AgeCheck offers the emailed returning-guest code.
+* Returning customers: a keyed account reference on every signed-in customer's age check, for AgeCheck's returning-customer check (reused passes clear like any pass).
 * Test keys: held orders show the shopper's latest check result and a note when it passes or fails (test keys never release or refund orders).
 * Verification links of orders that will not ship (cancelled, refunded in full, failed, trashed or deleted) are withdrawn automatically in the background, with the result noted on the order (in the WooCommerce log for a deleted one).
 
 == Upgrade Notice ==
 
 = 1.1.0 =
-Age check in a window on the checkout page at Place order, entry gate date of birth and branding, gate-only mode. Clear your page cache after updating.
+Age check in a window on the checkout page at Place order, entry gate date of birth and branding, gate-only mode, ID check retry on the same order, returning-guest codes, and an opt-in to hold orders while AgeCheck is down. Clear your page cache after updating.
 
 = 1.0.4 =
 Fixes a second age check (billed by AgeCheck) after a declined payment. Recommended for every store.

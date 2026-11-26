@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-11-26T12:48:36+00:00\n"
+"POT-Creation-Date: 2026-11-26T12:59:29+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: navexa-agecheck-for-woocommerce\n"
@@ -434,28 +434,28 @@ msgstr ""
 msgid "AgeCheck: the shopper's earlier age check cannot be used for this order (%s). A new age check is needed."
 msgstr ""
 
-#: includes/Checkout/Classic.php:159
+#: includes/Checkout/Classic.php:187
 #: includes/Frontend.php:144
 msgid "Age verified."
 msgstr ""
 
-#: includes/Checkout/Classic.php:160
+#: includes/Checkout/Classic.php:188
 #: includes/Frontend.php:142
 #: assets/build/verify-age-no-payment/index.js:1
 #: assets/build/verify-age/index.js:1
 msgid "This order contains age-restricted items. When you place it, you'll confirm your age in a secure window on this page."
 msgstr ""
 
-#: includes/Checkout/Classic.php:175
+#: includes/Checkout/Classic.php:203
 #: includes/Frontend.php:151
 msgid "Security check"
 msgstr ""
 
-#: includes/Checkout/Classic.php:192
+#: includes/Checkout/Classic.php:220
 msgid "Your name and address are locked to your age check."
 msgstr ""
 
-#: includes/Checkout/Classic.php:193
+#: includes/Checkout/Classic.php:221
 msgid "Change details"
 msgstr ""
 

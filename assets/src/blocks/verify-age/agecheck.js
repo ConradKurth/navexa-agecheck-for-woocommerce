@@ -4,6 +4,10 @@
  * (assets/src/loader/checkout-observer.ts, registered with WooCommerce's
  * onCheckoutValidation) and the settings the block reads.
  *
+ * After an error answer the focus goes back to Place order once WooCommerce
+ * enables it again (restoreFocus, a11y.ts focusWhenEnabled()), as the
+ * modal's own focus return would have done had the button not been disabled.
+ *
  * The cart response's extensions['navexa-agecheck'] is the server's state:
  * {v, required, status, hosted_url?, message?, code?}. The browser never
  * holds a verification id, a guard or a key, and never decides:
@@ -11,6 +15,7 @@
  */
 import { dispatch, select } from '@wordpress/data';
 import { createCheckoutObserver } from '../../loader/checkout-observer.ts';
+import { focusWhenEnabled } from '../../loader/a11y.ts';
 import { originOf } from '../../loader/types.ts';
 
 export const NAMESPACE = 'navexa-agecheck';
@@ -18,6 +23,7 @@ export const CART_STORE = 'wc/store/cart';
 const VALIDATION_STORE = 'wc/store/validation';
 const PAYMENT_STORE = 'wc/store/payment';
 const TURNSTILE = '[data-navexa-agecheck-turnstile]';
+const PLACE_ORDER = '.wc-block-components-checkout-place-order-button';
 
 /** The block's data (wc.wcSettings 'navexa-agecheck_data', Frontend::script_data()). */
 export function settings() {
@@ -116,6 +122,9 @@ async function pushCustomerData() {
 	}
 }
 
+/** Stops the last hand-back of the focus to Place order, or null. */
+let stopFocus = null;
+
 /** The Place order observer: one run at a time (concurrent emits share it). */
 export const observer = createCheckoutObserver( {
 	state: cartState,
@@ -143,6 +152,16 @@ export const observer = createCheckoutObserver( {
 		if ( widget && typeof widget.focus === 'function' ) {
 			widget.focus();
 		}
+	},
+	restoreFocus: () => {
+		if ( stopFocus ) {
+			stopFocus();
+		}
+		stopFocus = focusWhenEnabled(
+			() => document.querySelector( PLACE_ORDER ),
+			document,
+			window
+		);
 	},
 } );
 

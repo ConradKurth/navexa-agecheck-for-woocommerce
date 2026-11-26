@@ -19,6 +19,10 @@
  *   by default).
  * - Pushes the customer data first: WooCommerce sends address edits to the
  *   session debounced (1.5 s), and the start binds the session's ship-to.
+ * - An error answer hands the focus back to Place order (restoreFocus) unless
+ *   a Turnstile challenge takes it: WooCommerce keeps the button disabled
+ *   while it awaits the observer, so the modal's own focus return finds it
+ *   disabled and the focus would fall to the body.
  *
  * The browser never decides: Checkout\Blocks::validate() refuses an order
  * that has not passed on the server.
@@ -47,6 +51,11 @@ export interface ObserverDeps {
   /** Whether Turnstile shows an interactive challenge (then focus it). */
   challenging(): boolean
   onChallenge?(): void
+  /**
+   * The run answers an error (other than a Turnstile challenge): hand the
+   * focus back to Place order once WooCommerce enables it again.
+   */
+  restoreFocus?(): void
 }
 
 export function createCheckoutObserver(deps: ObserverDeps): () => Promise<ObserverAnswer> {
@@ -77,8 +86,10 @@ export function createCheckoutObserver(deps: ObserverDeps): () => Promise<Observ
       }
       if (answer.status === "passed") return true
       if (answer.status === "refused" && deps.challenging()) deps.onChallenge?.()
+      else deps.restoreFocus?.()
       return { type: "error", errorMessage: failureMessage(answer, closed, deps.t) || deps.t(statusKey(answer.status)) }
     } catch {
+      deps.restoreFocus?.()
       return { type: "error", errorMessage: deps.t("unavailable") }
     }
   }

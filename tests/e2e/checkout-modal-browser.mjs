@@ -25,10 +25,10 @@
 // devtools edit of a locked field refused by the server; an order the server
 // refuses while the page says passed brings the status back from the server,
 // so the next Place order opens the modal; the modal's dialog semantics, its
-// focus trap, and the focus on the classic refusal notice after it closes (the
-// block leaves it where WooCommerce leaves it after its own Place order errors:
-// Place order is disabled while WooCommerce awaits the observer, so the
-// loader's return to it fails); another plugin's false from a
+// focus trap, and where the focus goes when it closes without a pass (classic:
+// the refusal notice; block: back to Place order, which WooCommerce keeps
+// disabled while it awaits the observer, after Escape, the close button and a
+// fail); another plugin's false from a
 // checkout_place_order handler bound before the glue still stops WooCommerce
 // (a cart that needs no check, and the resubmit after a pass); a second Place
 // order while the start is in flight starts nothing more (one modal, one
@@ -257,6 +257,17 @@ async function solveTurnstile(page) {
   throw new Error("the Turnstile challenge was not solved")
 }
 
+/**
+ * Waits for the keyboard focus on the block checkout's Place order: the glue
+ * hands it back once WooCommerce enables the button again.
+ */
+async function focusOnPlaceOrder(page, when) {
+  await page.waitForFunction((sel) => !!document.activeElement?.closest?.(sel), PLACE_BLOCK, { timeout: 10000 }).catch(async () => {
+    const at = await page.evaluate(() => document.activeElement?.tagName.toLowerCase() ?? "none").catch(() => "unknown")
+    throw new Error(`the focus goes back to Place order ${when}; it is on ${at}`)
+  })
+}
+
 /** Waits for the modal's frame, checks it is the embedded page on the mock (cross-site), and answers in it. */
 async function answerInFrame(page, decision) {
   await page.waitForSelector(FRAME, { timeout: 30000 })
@@ -382,17 +393,35 @@ for (const name of BROWSERS) {
       await page.waitForSelector(".wc-block-components-notice-banner.is-error", { timeout: 30000 })
       assert.match(await page.locator(".wc-block-components-notice-banner.is-error").first().textContent(), /closed before it finished/)
       assert.equal(await page.locator(MODAL).count(), 0)
-      // WooCommerce keeps Place order disabled while it awaits the observer, so
-      // the loader's focus return to it finds it disabled: the focus is where
-      // WooCommerce leaves it after its own Place order errors (reported, not asserted).
-      const focusAfter = await page.evaluate(() => document.activeElement?.tagName.toLowerCase() ?? "none")
+      await focusOnPlaceOrder(page, "after Escape")
       await page.click(PLACE_BLOCK)
       await answerInFrame(page, "pass")
       await page.waitForURL(/order-received/, { timeout: 45000 })
       assert.equal((await requests("CreateVerification")) - creates, 1, "one verification for both attempts")
       assert.equal((await requests("CreateHostedSession")) - sessions, 2, "two hosted sessions")
       await context.close()
-      return `focus on ${focusAfter} after Escape`
+    })
+
+    await check(`${name}: block checkout: the modal's close button, then a fail in the frame: no order, each says so, and the focus goes back to Place order both times`, async () => {
+      const context = await newContext(browser)
+      await prepareCart(context, { ...ADDRESS, email: "block-close-fail@example.com" })
+      const { page } = await openBlock(context)
+      const notices = ".wc-block-components-notice-banner.is-error"
+      const shows = (text) => page.waitForFunction(([sel, re]) => [...document.querySelectorAll(sel)].some((n) => new RegExp(re).test(n.textContent ?? "")), [notices, text], { timeout: 30000 })
+      await page.focus(PLACE_BLOCK)
+      await page.keyboard.press("Enter")
+      await page.waitForSelector(FRAME, { timeout: 30000 })
+      await page.click(`${MODAL} .nac-x`)
+      await shows("closed before it finished")
+      await focusOnPlaceOrder(page, "after the close button")
+      // From the keyboard again: Enter on the focused Place order.
+      await page.keyboard.press("Enter")
+      await answerInFrame(page, "fail")
+      await shows("could not verify your age")
+      assert.equal(await page.locator(MODAL).count(), 0, "the modal is gone")
+      await focusOnPlaceOrder(page, "after a fail")
+      assert.ok(!/order-received/.test(page.url()))
+      await context.close()
     })
 
     await check(`${name}: classic checkout: keyboard: Enter on Place order opens the modal with the focus trapped in it; its close button ends the attempt with the closed message announced and focused`, async () => {

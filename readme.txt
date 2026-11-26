@@ -129,7 +129,7 @@ Turn on Cloudflare Turnstile under WooCommerce > Settings > AgeCheck > Checkout 
 
 = Is the age check accessible? =
 
-The age check window is an accessible dialog: it is labelled, keyboard focus stays in it while it is open, Escape or its close button closes it, and the rest of the page is hidden from screen readers meanwhile. A refusal, including a window closed before the check finished, shows where WooCommerce shows its own checkout errors and is announced to screen readers. On the classic checkout the focus then moves to it; on the block checkout it stays where WooCommerce leaves it after its own checkout errors. The entry age gate is an accessible dialog too, and its settings refuse text and button colours under a 4.5:1 contrast ratio (WCAG AA).
+The age check window is an accessible dialog: it is labelled, keyboard focus stays in it while it is open, Escape or its close button closes it, and the rest of the page is hidden from screen readers meanwhile. A refusal, including a window closed before the check finished, shows where WooCommerce shows its own checkout errors and is announced to screen readers. On the classic checkout the focus then moves to it; on the block checkout it goes back to the Place order button. The entry age gate is an accessible dialog too, and its settings refuse text and button colours under a 4.5:1 contrast ratio (WCAG AA).
 
 = Is the entry age gate an age verification? =
 

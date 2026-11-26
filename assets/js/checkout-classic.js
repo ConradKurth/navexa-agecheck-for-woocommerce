@@ -85,10 +85,11 @@
     });
     return text;
   }
-  function focusElement(target) {
+  function focusElement(target, options) {
     if (!target || typeof target.focus !== "function") return false;
     try {
-      target.focus();
+      if (options) target.focus(options);
+      else target.focus();
       return true;
     } catch {
       return false;

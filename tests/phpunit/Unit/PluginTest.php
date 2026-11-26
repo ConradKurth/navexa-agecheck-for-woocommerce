@@ -33,11 +33,21 @@ final class PluginTest extends TestCase {
 			->once()
 			->with( '/plugins/navexa-agecheck-for-woocommerce/navexa-agecheck-for-woocommerce.php', array( RateLimit::class, 'install' ) );
 
+		Functions\when( 'plugin_basename' )->justReturn( 'navexa-agecheck-for-woocommerce/navexa-agecheck-for-woocommerce.php' );
+
 		Plugin::boot( '/plugins/navexa-agecheck-for-woocommerce/navexa-agecheck-for-woocommerce.php' );
 
+		$this->assertNotFalse( has_filter( 'plugin_action_links_navexa-agecheck-for-woocommerce/navexa-agecheck-for-woocommerce.php', array( Plugin::class, 'action_links' ) ), 'a Settings link on the Plugins row' );
 		$this->assertNotFalse( has_action( 'before_woocommerce_init', array( Plugin::class, 'declare_compatibility' ) ) );
 		$this->assertNotFalse( has_action( 'woocommerce_loaded', array( Plugin::class, 'wire' ) ) );
 		$this->assertSame( '/plugins/navexa-agecheck-for-woocommerce/navexa-agecheck-for-woocommerce.php', Plugin::file() );
+	}
+
+	public function test_action_links_put_settings_first(): void {
+		$links = Plugin::action_links( array( 'deactivate' => '<a href="#">Deactivate</a>' ) );
+		$this->assertSame( array( 'settings', 'deactivate' ), array_keys( $links ) );
+		$this->assertStringContainsString( 'page=wc-settings&tab=navexa_agecheck', $links['settings'] );
+		$this->assertSame( 'x', Plugin::action_links( 'x' ) );
 	}
 
 	public function test_declares_hpos_and_block_checkout_compatibility(): void {

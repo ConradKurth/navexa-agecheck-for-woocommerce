@@ -95,6 +95,14 @@ final class Options {
 	 */
 	const MODE_ACCEPT_AND_HOLD = 'accept_and_hold';
 
+	/**
+	 * Age verification off: only the entry age gate (self-attestation) runs.
+	 * Nothing is verified or held, and no API key is needed. Only an explicit
+	 * choice sets it: a missing key in the two verification modes still
+	 * refuses and holds (fail closed).
+	 */
+	const MODE_GATE_ONLY = 'gate_only';
+
 	const DEFAULT_MODE = self::MODE_PRE_PAYMENT;
 
 	/**
@@ -306,10 +314,12 @@ final class Options {
 
 	/**
 	 * Whether express payment buttons are hidden on age-restricted products
-	 * and carts. Anything but a stored 'no' reads as on.
+	 * and carts. Anything but a stored 'no' reads as on, except with age
+	 * verification off (MODE_GATE_ONLY): nothing is verified then, so there
+	 * is no reason to hide them.
 	 */
 	public static function hide_express(): bool {
-		return 'no' !== get_option( self::HIDE_EXPRESS, 'yes' );
+		return self::verification_enabled() && 'no' !== get_option( self::HIDE_EXPRESS, 'yes' );
 	}
 
 	/**
@@ -415,11 +425,23 @@ final class Options {
 	}
 
 	/**
-	 * The checkout mode: MODE_PRE_PAYMENT or MODE_ACCEPT_AND_HOLD.
+	 * The checkout mode: MODE_PRE_PAYMENT, MODE_ACCEPT_AND_HOLD or
+	 * MODE_GATE_ONLY. An unknown stored value reads as MODE_PRE_PAYMENT, the
+	 * strictest (a downgrade to a version without MODE_GATE_ONLY fails closed
+	 * the same way).
 	 */
 	public static function mode(): string {
 		$mode = get_option( self::MODE, self::DEFAULT_MODE );
-		return in_array( $mode, array( self::MODE_PRE_PAYMENT, self::MODE_ACCEPT_AND_HOLD ), true ) ? $mode : self::DEFAULT_MODE;
+		return in_array( $mode, array( self::MODE_PRE_PAYMENT, self::MODE_ACCEPT_AND_HOLD, self::MODE_GATE_ONLY ), true ) ? $mode : self::DEFAULT_MODE;
+	}
+
+	/**
+	 * Whether age verification runs at all: false only when the merchant chose
+	 * MODE_GATE_ONLY (the entry age gate alone). Never inferred from a
+	 * missing key.
+	 */
+	public static function verification_enabled(): bool {
+		return self::MODE_GATE_ONLY !== self::mode();
 	}
 
 	/**

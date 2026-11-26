@@ -98,12 +98,13 @@ final class Settings extends \WC_Settings_Page {
 			array(
 				'id'      => Options::MODE,
 				'type'    => 'select',
-				'title'   => __( 'When shoppers verify', 'navexa-agecheck-for-woocommerce' ),
-				'desc'    => __( 'In both modes, a paid age-restricted order that has not passed is held, never released for shipping.', 'navexa-agecheck-for-woocommerce' ),
+				'title'   => __( 'Age verification', 'navexa-agecheck-for-woocommerce' ),
+				'desc'    => __( 'Before or after payment, a paid age-restricted order that has not passed is held, never released for shipping. Off: nothing is verified or held and no API key is needed; only the entry age gate runs, which is self-attestation, not age verification.', 'navexa-agecheck-for-woocommerce' ),
 				'default' => Options::DEFAULT_MODE,
 				'options' => array(
 					Options::MODE_PRE_PAYMENT     => __( 'Before payment: the shopper verifies at checkout', 'navexa-agecheck-for-woocommerce' ),
 					Options::MODE_ACCEPT_AND_HOLD => __( 'After payment: the order is held until the shopper verifies', 'navexa-agecheck-for-woocommerce' ),
+					Options::MODE_GATE_ONLY       => __( 'Off: entry age gate only (no age verification, no API key needed)', 'navexa-agecheck-for-woocommerce' ),
 				),
 			),
 			array(
@@ -698,6 +699,9 @@ final class Settings extends \WC_Settings_Page {
 	 * @return array<int, array{level: string, text: string}>
 	 */
 	public function status_lines(): array {
+		if ( ! Options::verification_enabled() ) {
+			return $this->gate_only_status_lines();
+		}
 		$lines = array();
 		if ( Install::is_paused() ) {
 			$lines[] = self::line( 'error', __( 'Paused: this site\'s address changed. Use "Confirm this site" in the notice above.', 'navexa-agecheck-for-woocommerce' ) );
@@ -878,6 +882,52 @@ final class Settings extends \WC_Settings_Page {
 			$text .= ' ' . __( 'In test mode, AgeCheck emails codes only to confirmed notification recipients in the Navexa dashboard.', 'navexa-agecheck-for-woocommerce' );
 		}
 		return self::line( 'ok', $text );
+	}
+
+	/**
+	 * The status with age verification off (Options::MODE_GATE_ONLY): that it
+	 * is off, the orders still awaiting an age check (held before the switch;
+	 * they stay held), and only the keys that are saved: a missing key is
+	 * not a problem in this mode.
+	 *
+	 * @return array<int, array{level: string, text: string}>
+	 */
+	private function gate_only_status_lines(): array {
+		$lines = array( self::line( 'warning', __( 'Age verification is off: orders are not verified or held. Only the entry age gate (self-attestation) runs.', 'navexa-agecheck-for-woocommerce' ) ) );
+		$held  = self::held_count();
+		if ( $held > 0 ) {
+			$lines[] = self::line(
+				'warning',
+				sprintf(
+					/* translators: %d: number of orders. */
+					_n( '%d order is still awaiting an age check; it is released when AgeCheck clears it or with the release action.', '%d orders are still awaiting an age check; they are released when AgeCheck clears them or with the release action.', $held, 'navexa-agecheck-for-woocommerce' ),
+					$held
+				)
+			);
+		}
+		$kinds = array(
+			Client::KEY_START      => __( 'Start key', 'navexa-agecheck-for-woocommerce' ),
+			Client::KEY_FULFILMENT => __( 'Fulfilment key', 'navexa-agecheck-for-woocommerce' ),
+		);
+		foreach ( $kinds as $kind => $label ) {
+			if ( '' === Options::api_key( $kind ) ) {
+				continue;
+			}
+			$result  = Mode::lookup( $kind, null, true );
+			$info    = $result['info'];
+			$lines[] = null === $info
+				? self::line( 'error', $label . ': ' . self::error_text( $result['error'] ) )
+				: self::line( 'ok', $label . ': ' . ( $info->livemode ? __( 'live', 'navexa-agecheck-for-woocommerce' ) : __( 'TEST MODE (simulator only)', 'navexa-agecheck-for-woocommerce' ) ) );
+		}
+		return $lines;
+	}
+
+	/**
+	 * Orders in "Awaiting age check" (Hold::STATUS), held before age
+	 * verification was turned off.
+	 */
+	private static function held_count(): int {
+		return function_exists( 'wc_orders_count' ) ? (int) wc_orders_count( Hold::STATUS ) : 0;
 	}
 
 	/**

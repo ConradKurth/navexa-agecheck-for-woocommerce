@@ -7,6 +7,7 @@
 
 namespace Navexa\AgeCheck\Admin;
 
+use Navexa\AgeCheck\Client;
 use Navexa\AgeCheck\Hold;
 use Navexa\AgeCheck\Install;
 use Navexa\AgeCheck\Links;
@@ -23,6 +24,12 @@ defined( 'ABSPATH' ) || exit;
  * - A dismissible notice on WooCommerce screens counting denied orders that
  *   need a refund and orders held for more than 30 days. Dismissing hides it
  *   until the counts change.
+ * - A setup notice on the same screens while age verification is on and
+ *   either API key is missing: the plugin then refuses every age-restricted
+ *   checkout (fail closed), and a merchant who wants only the entry gate
+ *   should set Age verification to Off (Options::MODE_GATE_ONLY). It is
+ *   never inferred from a missing key. Always shown on the settings tab
+ *   (not dismissible there), as the test-mode notice is.
  * - A notice on the same screens while AgeCheck refuses to email
  *   verification links for the whole store (Links::store_block(): AgeCheck
  *   not sending them yet, which is one switch for every store, no store
@@ -52,6 +59,12 @@ final class Notices {
 	const USER_META_TEST   = 'navexa_agecheck_dismissed_test';
 	const USER_META_PAUSED = 'navexa_agecheck_dismissed_paused';
 	const USER_META_CAPPED = 'navexa_agecheck_dismissed_capped';
+	const USER_META_SETUP  = 'navexa_agecheck_dismissed_setup';
+
+	/**
+	 * The setup notice's one reason (dismissed until it shows for another).
+	 */
+	const SETUP_REASON = 'keys';
 
 	/**
 	 * Dismissable notices: the dismiss URL's parameter and the user meta that
@@ -63,6 +76,7 @@ final class Notices {
 		'test'   => self::USER_META_TEST,
 		'paused' => self::USER_META_PAUSED,
 		'capped' => self::USER_META_CAPPED,
+		'setup'  => self::USER_META_SETUP,
 	);
 
 	/**
@@ -121,6 +135,7 @@ final class Notices {
 		if ( ! self::on_store_screen() ) {
 			return;
 		}
+		self::render_setup();
 		$links = self::links_text();
 		$block = Links::store_block();
 		if ( '' !== $links && array() !== $block && ! self::is_dismissed( 'links', $block['reason'] ) ) {
@@ -180,6 +195,35 @@ final class Notices {
 		}
 		$dismiss = self::dismiss_url( 'counts', $signature );
 		printf( '</ul><p><a href="%1$s">%2$s</a></p></div>', esc_url( $dismiss ), esc_html__( 'Dismiss until this changes', 'navexa-agecheck-for-woocommerce' ) );
+	}
+
+	/**
+	 * The setup notice: age verification on and a key missing, so every
+	 * age-restricted checkout is refused until the keys are added.
+	 */
+	private static function render_setup(): void {
+		if ( ! self::needs_setup() ) {
+			return;
+		}
+		$settings = self::on_settings_tab();
+		if ( ! $settings && self::is_dismissed( 'setup', self::SETUP_REASON ) ) {
+			return;
+		}
+		echo '<div class="notice notice-warning"><p><strong>' . esc_html__( 'Navexa AgeCheck', 'navexa-agecheck-for-woocommerce' ) . '</strong> ';
+		esc_html_e( 'Navexa AgeCheck refuses age-restricted checkouts until you add your API keys. To use only the entry age gate, set Age verification to Off.', 'navexa-agecheck-for-woocommerce' );
+		echo '</p>';
+		if ( ! $settings ) {
+			printf( '<p><a href="%1$s">%2$s</a></p>', esc_url( Plugin::settings_url() ), esc_html__( 'AgeCheck settings', 'navexa-agecheck-for-woocommerce' ) );
+			echo self::dismiss_link( 'setup', self::SETUP_REASON ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- dismiss_link() escapes.
+		}
+		echo '</div>';
+	}
+
+	/**
+	 * Whether age verification is on with either API key missing.
+	 */
+	public static function needs_setup(): bool {
+		return Options::verification_enabled() && ( '' === Options::api_key( Client::KEY_START ) || '' === Options::api_key( Client::KEY_FULFILMENT ) );
 	}
 
 	/**
@@ -316,6 +360,10 @@ final class Notices {
 		$capped = isset( $_GET['capped'] ) ? sanitize_key( wp_unslash( $_GET['capped'] ) ) : '';
 		if ( 1 === preg_match( '/^\d{1,12}$/', $capped ) ) {
 			update_user_meta( get_current_user_id(), self::USER_META_CAPPED, $capped );
+		}
+		$setup = isset( $_GET['setup'] ) ? sanitize_key( wp_unslash( $_GET['setup'] ) ) : '';
+		if ( self::SETUP_REASON === $setup ) {
+			update_user_meta( get_current_user_id(), self::USER_META_SETUP, $setup );
 		}
 		foreach ( array( 'test', 'paused' ) as $kind ) {
 			$reason = isset( $_GET[ $kind ] ) ? sanitize_key( wp_unslash( $_GET[ $kind ] ) ) : '';

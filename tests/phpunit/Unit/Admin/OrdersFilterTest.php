@@ -20,6 +20,7 @@ final class OrdersFilterTest extends TestCase {
 
 	protected function setUp(): void {
 		parent::setUp();
+		$this->install_with_keys(); // Keys saved: no setup notice in the way.
 		$this->is_admin     = true;
 		$this->current_user = 3;
 		$_GET               = array();

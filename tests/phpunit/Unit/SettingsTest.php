@@ -51,7 +51,8 @@ final class SettingsTest extends TestCase {
 		}
 		$mode = $fields[ Options::MODE . ':select' ];
 		$this->assertSame( Options::MODE_PRE_PAYMENT, $mode['default'] );
-		$this->assertSame( array( Options::MODE_PRE_PAYMENT, Options::MODE_ACCEPT_AND_HOLD ), array_keys( $mode['options'] ) );
+		$this->assertSame( array( Options::MODE_PRE_PAYMENT, Options::MODE_ACCEPT_AND_HOLD, Options::MODE_GATE_ONLY ), array_keys( $mode['options'] ) );
+		$this->assertSame( 'Age verification', $mode['title'] );
 		$this->assertFalse( $fields[ 'navexa_agecheck_status:' . Settings::FIELD_STATUS ]['is_option'] );
 		$this->assertStringContainsString( 'US addresses only', $fields['navexa_agecheck_section:title']['desc'] );
 

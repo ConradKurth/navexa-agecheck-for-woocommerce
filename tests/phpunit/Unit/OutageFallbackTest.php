@@ -252,7 +252,7 @@ final class OutageFallbackTest extends TestCase {
 		$this->assertSame( 'hold', $answer['status'] );
 		$this->assertSame( Start::hold_message(), $answer['message'] );
 		$this->assertTrue( Session::fallback_for( $this->ship_to->mac() ) );
-		$this->assertSame( 'hold', Start::state()['status'], 'the cart data says so while it lasts' );
+		$this->assertSame( 'hold', Start::state( Gate::ROUTE_STORE_API )['status'], 'the cart data says so while it lasts' );
 
 		Session::forget_fallback();
 		$this->options[ Options::OUTAGE_FALLBACK ] = Options::OUTAGE_REFUSE;
@@ -289,7 +289,7 @@ final class OutageFallbackTest extends TestCase {
 		$this->assertFalse( Session::fallback_for( $this->ship_to->mac() ) );
 		$this->assertSame( Gate::REFUSE_FAILED, Gate::check( $this->ship_to, 'US' )['code'] );
 		$this->assertFalse( Gate::admitted_fallback() );
-		$this->assertNotSame( 'hold', Start::state()['status'] );
+		$this->assertNotSame( 'hold', Start::state( Gate::ROUTE_STORE_API )['status'] );
 	}
 
 	public function test_a_failed_check_never_falls_back_after_a_restart(): void {

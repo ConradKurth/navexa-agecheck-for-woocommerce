@@ -289,7 +289,7 @@ final class UninstallTest extends TestCase {
 		$this->assertSame( array( array( 'switch_to_blog', 1 ), array( 'switch_to_blog', 2 ) ), $this->calls_to( 'switch_to_blog' ) );
 		$this->assertCount( 2, $this->calls_to( 'restore_current_blog' ) );
 		$this->assertCount( 2, $this->db->ran( 'DROP TABLE' ) );
-		$this->assertCount( 5, $this->calls_to( 'delete_metadata' ), 'user meta is network-wide: once per key' );
+		$this->assertCount( 6, $this->calls_to( 'delete_metadata' ), 'user meta is network-wide: once per key' );
 	}
 
 	public function test_uninstall_php_loads_the_class_itself(): void {

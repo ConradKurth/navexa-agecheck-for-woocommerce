@@ -187,10 +187,10 @@ async function decideOnHostedPage(hostedUrl, decision) {
   return res.headers.get("location")
 }
 
-/** The "Verify now" form's fields on an order page, or null. */
-function verifyForm(html) {
+/** The "Verify now" form's fields on an order page (or the form labelled $label), or null. */
+function verifyForm(html, label = "Verify now") {
   const form = /<form method="post" action="([^"]+)">(.*?)<\/form>/s.exec(html)
-  if (!form || !/Verify now/.test(form[2])) return null
+  if (!form || !form[2].includes(label)) return null
   const fields = {}
   for (const m of form[2].matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)"/g)) fields[m[1]] = m[2].replace(/&amp;/g, "&")
   return { action: form[1].replace(/&#038;|&amp;/g, "&"), fields }
@@ -443,6 +443,47 @@ await group("PR 12: Verify now on the order-received page: start, hosted page, r
   const emailed = await http(links.at(-1).returnUrl, { redirect: "manual" })
   assert.equal(emailed.status, 200, "the emailed link's return, in a browser without the session: the finished page")
   assert.match(await emailed.text(), /Your age check is finished/)
+})
+
+await group("TAX-1838: a declined ID check on a held order: Try again on the order page retries the same verification, and a pass releases it", async () => {
+  await mock("reset", {})
+  await mock("config", { hostedBase: MOCK, org: { allowedOrigins: [SITE] }, links: "on", docRetry: "on" })
+  await setup("mode", "hold") // flushes the cached GetIntegrationInfo (docRetry)
+  const s = new Shopper()
+  await s.addProduct({ ...US, email: "retry@example.com" })
+  const placed = await s.checkout({ ...US, email: "retry@example.com" })
+  assert.equal(placed.status, 200, `checkout: ${JSON.stringify(placed.json).slice(0, 300)}`)
+  const { order_id: id } = placed.json
+  const orderPage = placed.json.payment_result.redirect_url
+  const form = verifyForm(await (await s.fetch(orderPage)).text())
+  assert.ok(form, "the order-received page shows Verify now")
+  const post = (f) => s.fetch(f.action, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(f.fields).toString() })
+  const start = await post(form)
+  assert.equal(start.status, 303)
+  const bound = await setup("order", id)
+  const creates = await calls("CreateVerification")
+  assert.equal(creates.at(-1).allowDocRetry, true, "the order-bound create asks for the retry")
+  await s.fetch(await decideOnHostedPage(start.headers.get("location"), "fail"))
+  const deferred = await setup("run", id)
+  assert.equal(deferred.status, "agecheck-hold", `the failure waits for the retry, no refund: ${JSON.stringify(deferred)}`)
+
+  const failedPage = await (await s.fetch(orderPage)).text()
+  assert.match(failedPage, /Your ID check didn(&#039;|')t pass/)
+  const again = verifyForm(failedPage, "Try again")
+  assert.ok(again, "the order page offers Try again")
+  const retried = await post(again)
+  assert.equal(retried.status, 303, "Try again goes to AgeCheck's page")
+  const hosted = retried.headers.get("location")
+  assert.ok(hosted.startsWith(`${MOCK}/v/`), `AgeCheck's page: ${hosted}`)
+  assert.equal((await calls("CreateHostedSession")).at(-1).verificationId, bound.vid, "the same verification")
+  assert.equal((await calls("CreateVerification")).length, creates.length, "no new verification")
+  await decideOnHostedPage(hosted, "retry")
+  const back = await decideOnHostedPage(hosted, "pass")
+  assert.equal((await s.fetch(back)).status, 303, "back to the order")
+  const released = await setup("run", id)
+  assert.equal(released.status, "processing", JSON.stringify(released))
+  await mock("config", { docRetry: "off" })
+  await setup("mode", "hold") // the next groups read GetIntegrationInfo without the retry, as production
 })
 
 await group("PR 12: links off at AgeCheck: held, Verify now still works", async () => {

@@ -96,35 +96,54 @@ final class EntryGateTest extends TestCase {
 		$this->assertFalse( EntryGate::applies(), 'only a stored yes turns it on' );
 	}
 
-	public function test_whole_site_gate_is_a_bundled_head_script_with_fixed_config(): void {
+	public function test_whole_site_gate_is_the_vendored_gate_build_and_a_boot_script_in_the_head(): void {
 		$this->install_with_keys(); // Keys and no cached answer: still no AgeCheck call.
 		$this->assertTrue( EntryGate::applies() );
 		EntryGate::enqueue();
 
-		$this->assertCount( 1, $this->enqueued );
+		$this->assertCount( 2, $this->enqueued );
 		list( $handle, $src, $deps, $ver, $args ) = $this->enqueued[0];
-		$this->assertSame( EntryGate::HANDLE, $handle );
-		$this->assertSame( 'https://shop.example/wp-content/plugins/navexa-agecheck-for-woocommerce/assets/js/entry-gate.min.js', $src, 'bundled, from the store itself' );
-		$this->assertSame( array(), $deps, 'no dependencies' );
+		$this->assertSame( EntryGate::HANDLE_LOADER, $handle );
+		$this->assertSame( 'https://shop.example/wp-content/plugins/navexa-agecheck-for-woocommerce/assets/vendor/agecheck-js/agecheck-gate-' . \Navexa\AgeCheck\Frontend::LOADER_VERSION . '.js', $src, 'the shared loader\'s gate-only build, vendored, from the store itself' );
+		$this->assertSame( array(), $deps );
+		$this->assertSame( \Navexa\AgeCheck\Frontend::LOADER_VERSION, $ver );
 		$this->assertSame( array( 'in_footer' => false ), $args, 'in the head, so the page never flashes' );
-		$this->assertSame( EntryGate::HANDLE, $this->inline[0][0] );
-		$this->assertSame( 'before', $this->inline[0][2] );
-		$this->assertStringStartsWith( 'window.navexaAgeCheckGate = {', $this->inline[0][1] );
+		list( $handle, $src, $deps, , $args ) = $this->enqueued[1];
+		$this->assertSame( EntryGate::HANDLE, $handle );
+		$this->assertSame( 'https://shop.example/wp-content/plugins/navexa-agecheck-for-woocommerce/assets/js/gate-boot.min.js', $src );
+		$this->assertSame( array( EntryGate::HANDLE_LOADER ), $deps );
+		$this->assertSame( array( 'in_footer' => false ), $args );
+		$this->assertSame( array(), $this->inline, 'no inline script (a script-src \'self\' CSP works)' );
 
 		$config = EntryGate::config();
-		$this->assertSame( 1, $config['v'] );
-		$this->assertSame( 21, $config['minimumAge'], '21 until AgeCheck has answered' );
-		$this->assertSame( 30, $config['days'] );
-		$this->assertSame( '', $config['exitUrl'] );
-		$this->assertSame( 'Welcome to Corner & Co', $config['i18n']['title'], 'the site title, decoded (the script sets it as text)' );
-		$this->assertSame( 'I am 21 or older', $config['i18n']['yes'] );
-		$this->assertSame( 'I am under 21', $config['i18n']['no'] );
-		$this->assertStringContainsString( '21 or older', $config['i18n']['denied'] );
+		$this->assertSame( 'attest', $config['mode'], 'Yes/No by default, as 1.0.x' );
+		$this->assertSame( 21, $config['minAge'], '21 until AgeCheck has answered' );
+		$this->assertSame( 30, $config['rememberDays'] );
+		$this->assertArrayNotHasKey( 'exitUrl', $config );
+		$this->assertArrayNotHasKey( 'logoUrl', $config );
+		$this->assertSame( 'Corner & Co', $config['siteName'], 'the site title, decoded (the loader sets it as text)' );
+		$this->assertSame( 'Welcome to Corner & Co', $config['title'] );
+		$this->assertSame( 'You must be 21 or older to enter this store. Please confirm your age.', $config['message'], 'the 1.0.x copy' );
+		$this->assertSame( 'I am 21 or older', $config['labels']['yes'] );
+		$this->assertSame( 'I am under 21', $config['labels']['no'] );
+		$this->assertStringContainsString( '21 or older', $config['labels']['denied'] );
+		$this->assertSame( array( 'backdrop' => '#1e1e1e', 'card' => '#ffffff', 'text' => '#1e1e1e', 'accent' => '#1e1e1e', 'accentText' => '#ffffff' ), $config['theme'], 'the 1.0.x colours' );
+		$this->assertSame( array( 'yes', 'no', 'submit', 'dob', 'month', 'day', 'year', 'invalid', 'denied', 'leaving' ), array_keys( $config['labels'] ), "the loader's label keys" );
 
+		$attributes = EntryGate::script_attributes(
+			array(
+				'src' => 'https://shop.example/gate-boot.min.js',
+				'id'  => EntryGate::HANDLE . '-js',
+			)
+		);
+		$boot       = json_decode( $attributes['data-config'], true );
+		$this->assertSame( 2, $boot['v'] );
+		$this->assertSame( $config, $boot['options'] );
 		$this->assertSame( array(), $this->http_requests, 'no network call' );
-		$json = $this->inline[0][1];
-		$this->assertStringNotContainsString( 'txk_', $json, 'no key' );
-		$this->assertStringNotContainsString( '<', $json, 'JSON_HEX_TAG' );
+		$this->assertStringNotContainsString( 'txk_', $attributes['data-config'], 'no key' );
+		foreach ( array( '<', '>', '&', "'" ) as $char ) {
+			$this->assertStringNotContainsString( $char, $attributes['data-config'], 'hex escapes: attribute escaping never alters it' );
+		}
 	}
 
 	public function test_config_uses_the_last_integration_info_and_the_merchants_choices(): void {
@@ -136,29 +155,30 @@ final class EntryGateTest extends TestCase {
 		$this->options[ Options::ENTRY_GATE_EXIT_URL ] = 'https://www.google.com/';
 
 		$config = EntryGate::config();
-		$this->assertSame( 18, $config['minimumAge'] );
-		$this->assertSame( 'I am 18 or older', $config['i18n']['yes'] );
-		$this->assertSame( 'Welcome to Vape <b>Hut</b>', $config['i18n']['title'], 'text, never markup: the script uses textContent' );
-		$this->assertSame( 7, $config['days'] );
+		$this->assertSame( 18, $config['minAge'] );
+		$this->assertSame( 'I am 18 or older', $config['labels']['yes'] );
+		$this->assertSame( 'Welcome to Vape <b>Hut</b>', $config['title'], 'text, never markup: the loader uses textContent' );
+		$this->assertSame( 7, $config['rememberDays'] );
 		$this->assertSame( 'https://www.google.com/', $config['exitUrl'] );
 
 		$this->http_requests = array();
 		EntryGate::enqueue();
+		$attributes = EntryGate::script_attributes( array( 'id' => EntryGate::HANDLE . '-js' ) );
 		$this->assertSame( array(), $this->http_requests, 'the cached profile, never the network' );
-		$this->assertStringContainsString( 'Vape \\u003Cb\\u003EHut', $this->inline[0][1], 'JSON_HEX_TAG: no markup in the inline script' );
+		$this->assertStringContainsString( 'Vape \\u003Cb\\u003EHut', $attributes['data-config'], 'JSON_HEX_TAG: no markup in the attribute' );
 
 		Mode::flush();
-		$this->assertSame( 21, EntryGate::config()['minimumAge'], 'new keys: back to the default until AgeCheck answers' );
+		$this->assertSame( 21, EntryGate::config()['minAge'], 'new keys: back to the default until AgeCheck answers' );
 
 		$this->options[ Options::STORE_PROFILE ] = array(
 			'minimum_age'  => 20,
 			'display_name' => '  ',
 		);
 		$config                                  = EntryGate::config();
-		$this->assertSame( 21, $config['minimumAge'], 'an age AgeCheck does not offer reads as 21' );
-		$this->assertSame( 'Welcome to Corner & Co', $config['i18n']['title'] );
+		$this->assertSame( 21, $config['minAge'], 'an age AgeCheck does not offer reads as 21' );
+		$this->assertSame( 'Welcome to Corner & Co', $config['title'] );
 		$this->site_name = '';
-		$this->assertSame( 'Welcome', EntryGate::config()['i18n']['title'] );
+		$this->assertSame( 'Welcome', EntryGate::config()['title'] );
 	}
 
 	public function test_days_and_exit_url_are_bounded(): void {
@@ -302,15 +322,15 @@ final class EntryGateTest extends TestCase {
 	}
 
 	public function test_settings_label_it_self_attestation_and_bound_the_input(): void {
-		$page   = new Settings();
+		$page = new Settings();
+		$this->assertSame( array( '', Settings::SECTION_GATE ), array_keys( $page->get_sections() ), 'the gate has its own section' );
 		$fields = array();
-		foreach ( $page->get_settings_for_section( '' ) as $field ) {
+		foreach ( $page->get_settings_for_section( Settings::SECTION_GATE ) as $field ) {
 			$fields[ $field['id'] . ':' . $field['type'] ] = $field;
 		}
 		$section = $fields['navexa_agecheck_gate_section:title'];
 		$this->assertStringContainsString( 'self-attestation', $section['title'] );
 		$this->assertStringContainsString( 'not age verification', $section['desc'] );
-		$this->assertStringContainsString( '"I am 21 or older"', $section['desc'] );
 		$this->assertStringContainsString( 'Corner & Co', $section['desc'] );
 		$toggle = $fields[ Options::ENTRY_GATE . ':checkbox' ];
 		$this->assertSame( 'no', $toggle['default'], 'off by default' );
@@ -318,10 +338,24 @@ final class EntryGateTest extends TestCase {
 		$scope = $fields[ Options::ENTRY_GATE_SCOPE . ':select' ];
 		$this->assertSame( Options::GATE_SCOPE_SITE, $scope['default'] );
 		$this->assertSame( array( Options::GATE_SCOPE_SITE, Options::GATE_SCOPE_RESTRICTED ), array_keys( $scope['options'] ) );
+		$mode = $fields[ Options::ENTRY_GATE_MODE . ':select' ];
+		$this->assertSame( Options::GATE_MODE_ATTEST, $mode['default'] );
+		$this->assertSame( array( Options::GATE_MODE_ATTEST, Options::GATE_MODE_DOB ), array_keys( $mode['options'] ) );
+		$this->assertStringContainsString( 'never stored or sent', $mode['desc'] );
+		$this->assertStringContainsString( 'self-attestation', $mode['desc'] );
+		$age = $fields[ Options::ENTRY_GATE_MIN_AGE . ':select' ];
+		$this->assertSame( array( '18', '19', '21' ), array_map( 'strval', array_keys( $age['options'] ) ), 'AgeCheck has not reported an age: the gate\'s own' );
 		$days = $fields[ Options::ENTRY_GATE_DAYS . ':number' ];
 		$this->assertSame( '30', $days['default'] );
 		$this->assertSame( '365', $days['custom_attributes']['max'] );
 		$this->assertSame( '', $fields[ Options::ENTRY_GATE_EXIT_URL . ':url' ]['default'] );
+		$this->assertArrayHasKey( Options::ENTRY_GATE_LOGO . ':' . Settings::FIELD_MEDIA, $fields );
+		foreach ( Options::GATE_THEME_DEFAULTS as $key => $default ) {
+			$this->assertSame( $default, $fields[ Options::ENTRY_GATE_THEME . '[' . $key . ']:color' ]['default'], $key );
+		}
+		$this->assertSame( 'textarea', $fields[ Options::ENTRY_GATE_TEXT . '[message]:textarea' ]['type'] );
+		$this->assertSame( 'I am 21 or older', $fields[ Options::ENTRY_GATE_TEXT . '[yes]:text' ]['placeholder'], 'blank shows the default it stands for' );
+		$this->assertSame( '40', $fields[ Options::ENTRY_GATE_TEXT . '[yes]:text' ]['custom_attributes']['maxlength'] );
 
 		$this->assertSame( '365', $page->sanitize_gate_days( '999', array(), '999' ) );
 		$this->assertSame( '30', $page->sanitize_gate_days( '', array(), 'x' ) );
@@ -330,6 +364,156 @@ final class EntryGateTest extends TestCase {
 		$this->options[ Options::ENTRY_GATE_EXIT_URL ] = 'https://example.org/kept';
 		$this->assertSame( 'https://example.org/kept', $page->sanitize_gate_exit_url( '', array(), 'javascript:alert(1)' ), 'a bad address keeps the saved one' );
 		$this->assertCount( 1, \WC_Admin_Settings::$errors );
+	}
+
+	public function test_minimum_age_is_the_dashboards_with_verification_on_else_the_gates_own(): void {
+		$this->options[ Options::ENTRY_GATE_MIN_AGE ] = '18';
+		$this->assertSame( 18, Options::entry_gate_minimum_age(), 'AgeCheck has not reported one' );
+		$this->options[ Options::STORE_PROFILE ] = array( 'minimum_age' => 21 );
+		$this->assertSame( 21, Options::entry_gate_minimum_age(), 'verification on: the age checkout verifies' );
+		$page   = new Settings();
+		$fields = array();
+		foreach ( $page->get_settings_for_section( Settings::SECTION_GATE ) as $field ) {
+			$fields[ $field['id'] . ':' . $field['type'] ] = $field;
+		}
+		$note = $fields[ Options::ENTRY_GATE_MIN_AGE . ':' . Settings::FIELD_NOTE ];
+		$this->assertFalse( $note['is_option'], 'read-only: the saved local age is kept, unposted' );
+		$this->assertStringContainsString( '21, set in the Navexa dashboard', $note['desc'] );
+		$this->options[ Options::MODE ] = Options::MODE_GATE_ONLY;
+		$this->assertSame( 18, Options::entry_gate_minimum_age(), 'verification off: the gate\'s own' );
+		$this->options[ Options::ENTRY_GATE_MIN_AGE ] = '20';
+		$this->assertSame( 21, Options::entry_gate_minimum_age(), 'only 18, 19 or 21' );
+	}
+
+	public function test_contrast_ratio_matches_the_loaders_vectors(): void {
+		$root    = dirname( __DIR__, 3 );
+		$vectors = json_decode( (string) file_get_contents( $root . '/assets/vendor/agecheck-js/schema/' . \Navexa\AgeCheck\Frontend::LOADER_VERSION . '/vectors/contrast.json' ), true );
+		$this->assertNotEmpty( $vectors['cases'] );
+		foreach ( $vectors['cases'] as $case ) {
+			$ratio = Options::contrast_ratio( $case['fg'], $case['bg'] );
+			$this->assertEqualsWithDelta( $case['ratio'], round( $ratio, 2 ), 0.001, $case['fg'] . ' on ' . $case['bg'] );
+			$this->assertSame( $case['pass'], $ratio >= Options::MIN_CONTRAST, $case['fg'] . ' on ' . $case['bg'] );
+		}
+		$this->assertSame( 1.0, Options::contrast_ratio( 'red', '#fff' ), 'not a colour' );
+		$this->assertSame( '#abc', Options::hex_color( ' #ABC ' ) );
+		$this->assertSame( '', Options::hex_color( '#abcd' ) );
+	}
+
+	public function test_theme_defaults_bad_values_and_a_low_contrast_pair_fall_back(): void {
+		$this->assertSame( Options::GATE_THEME_DEFAULTS, Options::entry_gate_theme() );
+		$this->options[ Options::ENTRY_GATE_THEME ] = array(
+			'backdrop'    => '#0B5',
+			'card'        => 'url(x)',
+			'text'        => '#111111',
+			'accent'      => '#ffffff',
+			'accent_text' => '#eeeeee',
+		);
+		$theme = Options::entry_gate_theme();
+		$this->assertSame( '#0b5', $theme['backdrop'], 'lower-cased' );
+		$this->assertSame( '#ffffff', $theme['card'], 'not a colour: the default' );
+		$this->assertSame( '#111111', $theme['text'] );
+		$this->assertSame( array( '#1e1e1e', '#ffffff' ), array( $theme['accent'], $theme['accent_text'] ), 'a pair under 4.5:1 falls back to its default pair' );
+	}
+
+	public function test_settings_save_refuses_a_low_contrast_pair_and_keeps_the_saved_colours(): void {
+		$page                    = new Settings();
+		$this->options[ Options::ENTRY_GATE_THEME ] = array( 'text' => '#222222' );
+		$_POST[ Options::ENTRY_GATE_THEME ] = array(
+			'backdrop'    => '#000000',
+			'card'        => '#ffffff',
+			'text'        => '#777777',
+			'accent'      => '#0a6b3d',
+			'accent_text' => '#ffffff',
+		);
+		$field = static function ( string $key ): array {
+			return array( 'id' => Options::ENTRY_GATE_THEME . '[' . $key . ']' );
+		};
+		$this->assertNull( $page->sanitize_gate_color( '', $field( 'text' ), '#777777' ), '#777 on white is 4.477:1: kept' );
+		$this->assertNull( $page->sanitize_gate_color( '', $field( 'card' ), '#ffffff' ), 'both colours of the pair are kept' );
+		$this->assertSame( '#0a6b3d', $page->sanitize_gate_color( '', $field( 'accent' ), '#0A6B3D' ), 'a passing pair saves (6.6:1)' );
+		$this->assertSame( '#ffffff', $page->sanitize_gate_color( '', $field( 'accent_text' ), '#ffffff' ) );
+		$this->assertSame( '#000000', $page->sanitize_gate_color( '', $field( 'backdrop' ), '#000000' ), 'the backdrop carries no text' );
+		$this->assertSame( '#1e1e1e', $page->sanitize_gate_color( '', $field( 'backdrop' ), '' ), 'blank is the default' );
+		$this->assertCount( 1, \WC_Admin_Settings::$errors, 'one error per refused pair, not per field' );
+		$this->assertStringContainsString( 'Text on the card has a contrast of 4.47:1; it needs at least 4.5:1', \WC_Admin_Settings::$errors[0] );
+		$this->assertNull( $page->sanitize_gate_color( '', $field( 'card' ), 'red' ) );
+		$this->assertStringContainsString( 'hex colours', \WC_Admin_Settings::$errors[1] );
+		$this->assertNull( $page->sanitize_gate_color( '', array( 'id' => Options::ENTRY_GATE_THEME . '[evil]' ), '#000' ) );
+		$this->assertSame( '4.49', Settings::ratio_text( 4.4999 ), 'never rounds up to 4.50' );
+		unset( $_POST[ Options::ENTRY_GATE_THEME ] );
+	}
+
+	public function test_settings_save_gate_text_as_plain_text_within_the_loaders_limits(): void {
+		$page  = new Settings();
+		$field = static function ( string $key ): array {
+			return array( 'id' => Options::ENTRY_GATE_TEXT . '[' . $key . ']' );
+		};
+		$this->assertSame( 'Over {age}? Welcome to {site}', $page->sanitize_gate_text( '', $field( 'title' ), ' Over {age}? Welcome to {site} ' ) );
+		$this->assertSame( 'Hi there', $page->sanitize_gate_text( '', $field( 'yes' ), "Hi\tthere " ), 'control characters fold to spaces, as the loader reads them' );
+		$this->assertNull( $page->sanitize_gate_text( '', $field( 'yes' ), str_repeat( 'a', 41 ) ), 'over 40: kept' );
+		$this->assertStringContainsString( 'longer than 40', \WC_Admin_Settings::$errors[0] );
+		$this->assertSame( str_repeat( 'é', 40 ), $page->sanitize_gate_text( '', $field( 'yes' ), str_repeat( 'é', 40 ) ), 'counted in code points' );
+		$this->assertSame( '', $page->sanitize_gate_text( '', $field( 'message' ), '' ), 'blank: the default' );
+		$this->options[ Options::ENTRY_GATE_TEXT ] = array(
+			'title'   => 'Hello {site}',
+			'yes'     => str_repeat( 'x', 41 ),
+			'message' => array( 'not text' ),
+		);
+		$text = Options::entry_gate_text();
+		$this->assertSame( 'Hello {site}', $text['title'] );
+		$this->assertSame( '', $text['yes'], 'too long for the loader: the default' );
+		$this->assertSame( '', $text['message'] );
+		$config = EntryGate::config();
+		$this->assertSame( 'Hello {site}', $config['title'], 'the loader fills in {site}' );
+		$this->assertSame( 'I am 21 or older', $config['labels']['yes'] );
+	}
+
+	public function test_dob_mode_and_the_logo_only_when_it_is_an_https_image(): void {
+		$this->options[ Options::ENTRY_GATE_MODE ] = Options::GATE_MODE_DOB;
+		$config = EntryGate::config();
+		$this->assertSame( 'dob', $config['mode'] );
+		$this->assertSame( 'You must be 21 or older to enter this store. Please enter your date of birth.', $config['message'] );
+		$this->assertSame( 'Date of birth', $config['labels']['dob'] );
+		$this->assertStringContainsString( 'date of birth', Privacy::policy_text() );
+		$this->assertStringContainsString( 'never stored or sent', Privacy::policy_text() );
+
+		$images = array( 7 => 'https://shop.example/wp-content/uploads/logo-300x100.png', 8 => 'http://shop.example/logo.png' );
+		Functions\when( 'wp_attachment_is_image' )->alias(
+			static function ( $id ) use ( $images ) {
+				return isset( $images[ (int) $id ] );
+			}
+		);
+		Functions\when( 'wp_get_attachment_image_url' )->alias(
+			static function ( $id ) use ( $images ) {
+				return isset( $images[ (int) $id ] ) ? $images[ (int) $id ] : false;
+			}
+		);
+		$this->options[ Options::ENTRY_GATE_LOGO ] = '7';
+		$this->assertSame( 'https://shop.example/wp-content/uploads/logo-300x100.png', EntryGate::config()['logoUrl'] );
+		$this->options[ Options::ENTRY_GATE_LOGO ] = '8';
+		$this->assertArrayNotHasKey( 'logoUrl', EntryGate::config(), 'an http logo is mixed content: the loader would ignore it' );
+		$this->options[ Options::ENTRY_GATE_LOGO ] = '9';
+		$this->assertSame( 0, Options::entry_gate_logo_id(), 'not an image' );
+
+		$page = new Settings();
+		$this->assertSame( '7', $page->sanitize_gate_logo( '', array(), '7' ) );
+		$this->assertSame( '', $page->sanitize_gate_logo( '', array(), '' ), 'blank removes it' );
+		$this->assertNull( $page->sanitize_gate_logo( '', array(), '9' ), 'not an image: kept' );
+		$this->assertNull( $page->sanitize_gate_logo( '', array(), '7 or 1=1' ) );
+		$this->assertCount( 2, \WC_Admin_Settings::$errors );
+	}
+
+	public function test_gate_only_mode_needs_no_key_and_the_gate_still_serves(): void {
+		$this->options[ Options::MODE ] = Options::MODE_GATE_ONLY;
+		$this->assertFalse( Options::verification_enabled() );
+		$this->assertTrue( EntryGate::applies() );
+		EntryGate::enqueue();
+		$this->assertCount( 2, $this->enqueued );
+		$this->assertSame( array(), $this->http_requests );
+		$this->assertStringContainsString( 'Age verification is off', ( new Settings() )->get_settings_for_section( Settings::SECTION_GATE )[0]['desc'] );
+		$policy = Privacy::policy_text();
+		$this->assertStringContainsString( 'only in your own browser', $policy );
+		$this->assertStringNotContainsString( 'Didit', $policy, 'nothing goes to Navexa' );
 	}
 
 	public function test_privacy_text_mentions_the_gate_only_when_it_is_on(): void {
@@ -342,17 +526,19 @@ final class EntryGateTest extends TestCase {
 	public function test_script_optimizers_are_told_to_leave_only_the_gates_tags_alone(): void {
 		$src = EntryGate::script_attributes(
 			array(
-				'src' => 'https://shop.example/entry-gate.min.js',
-				'id'  => 'navexa-agecheck-entry-gate-js',
+				'src' => 'https://shop.example/agecheck-gate-1.0.0.js',
+				'id'  => 'navexa-agecheck-gate-loader-js',
 			)
 		);
 		$this->assertSame( array( 'data-cfasync', 'data-no-optimize', 'data-no-defer', 'data-no-minify', 'nowprocket', 'src', 'id' ), array_keys( $src ), 'data-cfasync before src' );
 		$this->assertSame( 'false', $src['data-cfasync'] );
-		$this->assertSame( 'https://shop.example/entry-gate.min.js', $src['src'] );
-		$inline = EntryGate::script_attributes( array( 'id' => 'navexa-agecheck-entry-gate-js-before' ) );
-		$this->assertSame( '1', $inline['data-no-defer'] );
-		$this->assertTrue( $inline['nowprocket'] );
-		foreach ( array( array( 'id' => 'navexa-agecheck-js' ), array( 'id' => 'navexa-agecheck-entry-gate-js-after' ), array( 'src' => 'x' ), 'not-an-array' ) as $other ) {
+		$this->assertSame( 'https://shop.example/agecheck-gate-1.0.0.js', $src['src'] );
+		$boot = EntryGate::script_attributes( array( 'id' => 'navexa-agecheck-entry-gate-js' ) );
+		$this->assertSame( '1', $boot['data-no-defer'] );
+		$this->assertTrue( $boot['nowprocket'] );
+		$this->assertArrayHasKey( 'data-config', $boot );
+		$this->assertArrayNotHasKey( 'data-config', $src, 'the configuration rides on the boot script only' );
+		foreach ( array( array( 'id' => 'navexa-agecheck-js' ), array( 'id' => 'navexa-agecheck-entry-gate-js-before' ), array( 'src' => 'x' ), 'not-an-array' ) as $other ) {
 			$this->assertSame( $other, EntryGate::script_attributes( $other ), 'other tags unchanged' );
 		}
 	}
@@ -361,10 +547,10 @@ final class EntryGateTest extends TestCase {
 		EntryGate::register();
 		$this->assertNotFalse( has_action( 'wp_enqueue_scripts', array( EntryGate::class, 'enqueue' ) ) );
 		$this->assertNotFalse( has_filter( 'wp_script_attributes', array( EntryGate::class, 'script_attributes' ) ) );
-		$this->assertNotFalse( has_filter( 'wp_inline_script_attributes', array( EntryGate::class, 'script_attributes' ) ) );
 		$root = dirname( __DIR__, 3 );
-		$this->assertFileExists( $root . '/assets/js/entry-gate.js' );
-		$this->assertFileExists( $root . '/assets/js/entry-gate.min.js' );
+		$this->assertFileExists( $root . '/assets/js/gate-boot.js' );
+		$this->assertFileExists( $root . '/assets/js/gate-boot.min.js' );
+		$this->assertFileExists( $root . '/assets/js/entry-gate.min.js', 'the 1.0.x gate stays for pages a cache stored under 1.0.x' );
 		$this->assertStringContainsString( 'EntryGate::register()', (string) file_get_contents( $root . '/includes/Plugin.php' ) );
 		$this->assertTrue( class_exists( Plugin::class ) );
 	}

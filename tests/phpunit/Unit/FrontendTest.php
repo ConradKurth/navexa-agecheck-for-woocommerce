@@ -60,7 +60,7 @@ final class FrontendTest extends TestCase {
 
 	public function test_the_built_files_exist(): void {
 		$root = dirname( __DIR__, 3 );
-		foreach ( array( 'checkout-classic.js', 'checkout-classic.min.js' ) as $file ) {
+		foreach ( array( 'checkout-classic.js', 'checkout-classic.min.js', 'gate-boot.js', 'gate-boot.min.js', 'admin-settings.js', 'admin-settings.min.js' ) as $file ) {
 			$this->assertFileExists( $root . '/assets/js/' . $file );
 		}
 		foreach ( array( 'agecheck-', 'agecheck-gate-' ) as $build ) {

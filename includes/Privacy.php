@@ -108,7 +108,7 @@ final class Privacy {
 			'<p>' . esc_html__( 'We keep, with your order, the AgeCheck verification reference, whether your age check passed or failed and when, and a one-way hash of the shipping address that was checked. While you check out, your shopping session holds the verification reference. To stop abuse, we count age check attempts per session and per IP address for one hour, stored only as keyed hashes. Navexa\'s privacy policy explains how Navexa handles your data: https://navexa.co/privacy', 'navexa-agecheck-for-woocommerce' ) . '</p>',
 		);
 		if ( Options::entry_gate_enabled() ) {
-			$paragraphs[] = '<p>' . esc_html__( 'When you enter the store, we ask you to confirm that you are old enough. Your answer is remembered only in your own browser (local storage), so that we do not ask again for a while; it is not sent to us or to Navexa, and it is not an age verification.', 'navexa-agecheck-for-woocommerce' ) . '</p>';
+			$paragraphs[] = self::gate_paragraph();
 		}
 		if ( Options::turnstile_enabled() ) {
 			// phpcs:ignore PluginCheck.CodeAnalysis.Offloading.OffloadedContent -- privacy policy text that names Cloudflare's domain; nothing is loaded here.
@@ -125,9 +125,20 @@ final class Privacy {
 		$paragraphs = array( '<p class="privacy-policy-tutorial">' . esc_html__( 'Age verification is off in Navexa AgeCheck for WooCommerce: it sends nothing to Navexa AgeCheck and keeps nothing with your orders. Only the entry age gate runs when you turn it on, and the text below describes it.', 'navexa-agecheck-for-woocommerce' ) . '</p>' );
 		if ( Options::entry_gate_enabled() ) {
 			$paragraphs[] = '<p><strong class="privacy-policy-tutorial">' . esc_html__( 'Suggested text:', 'navexa-agecheck-for-woocommerce' ) . ' </strong></p>';
-			$paragraphs[] = '<p>' . esc_html__( 'When you enter the store, we ask you to confirm that you are old enough. Your answer is remembered only in your own browser (local storage), so that we do not ask again for a while; it is not sent to us or to Navexa, and it is not an age verification.', 'navexa-agecheck-for-woocommerce' ) . '</p>';
+			$paragraphs[] = self::gate_paragraph();
 		}
 		return implode( "\n", $paragraphs );
+	}
+
+	/**
+	 * The entry gate's paragraph: what it asks (a Yes/No answer or a date of
+	 * birth) and that only the answer stays, in the visitor's own browser.
+	 */
+	private static function gate_paragraph(): string {
+		if ( Options::GATE_MODE_DOB === Options::entry_gate_mode() ) {
+			return '<p>' . esc_html__( 'When you enter the store, we ask for your date of birth to confirm that you are old enough. Your date of birth is checked in your own browser and is never stored or sent to us or to Navexa. Only the fact that you confirmed is remembered in your browser (local storage), so that we do not ask again for a while. This is not an age verification.', 'navexa-agecheck-for-woocommerce' ) . '</p>';
+		}
+		return '<p>' . esc_html__( 'When you enter the store, we ask you to confirm that you are old enough. Your answer is remembered only in your own browser (local storage), so that we do not ask again for a while; it is not sent to us or to Navexa, and it is not an age verification.', 'navexa-agecheck-for-woocommerce' ) . '</p>';
 	}
 
 	/**

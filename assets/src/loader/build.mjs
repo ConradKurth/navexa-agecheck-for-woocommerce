@@ -3,7 +3,10 @@
 // by bin/sync-loader.mjs):
 //   assets/src/loader/classic.ts   -> assets/js/checkout-classic.js and .min.js
 //   assets/src/loader/turnstile.ts -> assets/js/turnstile.js and .min.js (loaded only with Turnstile on)
-//   assets/src/loader/gate.ts      -> assets/js/entry-gate.js and .min.js (loaded only with the entry gate on)
+//   assets/src/gate/boot.ts        -> assets/js/gate-boot.js and .min.js (the entry gate on the shared loader)
+//   assets/src/admin/settings.ts   -> assets/js/admin-settings.js and .min.js (the entry gate settings section)
+//   assets/src/loader/gate.ts      -> assets/js/entry-gate.js and .min.js (the 1.0.x gate: no longer
+//                                     enqueued, kept for pages a cache stored under 1.0.x; goes in 1.2.0)
 // Run: npm run build:loader. The output is committed (wordpress.org
 // Guideline 4: the readable source and its build ship together).
 import { build } from "esbuild"
@@ -19,6 +22,8 @@ const banner = (name, source) => `/*! ${name} | Navexa AgeCheck for WooCommerce 
 const targets = [
   { entry: "loader/classic.ts", out: "checkout-classic", name: "Navexa AgeCheck classic checkout" },
   { entry: "loader/turnstile.ts", out: "turnstile", name: "Navexa AgeCheck Turnstile glue" },
+  { entry: "gate/boot.ts", out: "gate-boot", name: "Navexa AgeCheck entry age gate boot (self-attestation)" },
+  { entry: "admin/settings.ts", out: "admin-settings", name: "Navexa AgeCheck entry gate settings" },
   { entry: "loader/gate.ts", out: "entry-gate", name: "Navexa AgeCheck entry age gate (self-attestation)" },
 ]
 
@@ -38,4 +43,4 @@ for (const target of targets) {
     })
   }
 }
-console.log("built the classic glue, the Turnstile glue and the entry gate")
+console.log("built the classic glue, the Turnstile glue, the gate boot, the gate settings script and the 1.0.x entry gate")

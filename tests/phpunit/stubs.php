@@ -53,7 +53,20 @@ namespace {
 		}
 
 		public function get_settings_for_section( $section_id ) {
-			return '' === $section_id ? $this->get_settings_for_default_section() : array();
+			if ( '' === $section_id ) {
+				return $this->get_settings_for_default_section();
+			}
+			$method = 'get_settings_for_' . $section_id . '_section';
+			return method_exists( $this, $method ) ? $this->$method() : array();
+		}
+
+		/** WooCommerce's sections: id => label (WC_Settings_Page::get_sections()). */
+		public function get_sections() {
+			return $this->get_own_sections();
+		}
+
+		protected function get_own_sections() {
+			return array( '' => '' );
 		}
 
 		protected function get_settings_for_default_section() {

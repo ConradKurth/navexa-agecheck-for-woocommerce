@@ -214,10 +214,244 @@ final class Options {
 	const DEFAULT_MINIMUM_AGE = 21;
 
 	/**
+	 * How visitors answer the entry gate: GATE_MODE_ATTEST (default) or
+	 * GATE_MODE_DOB. Both are self-attestation.
+	 */
+	const ENTRY_GATE_MODE = 'navexa_agecheck_entry_gate_mode';
+
+	/**
+	 * The entry gate's own minimum age (18, 19 or 21), used while age
+	 * verification is off or AgeCheck has not reported one
+	 * (entry_gate_minimum_age()).
+	 */
+	const ENTRY_GATE_MIN_AGE = 'navexa_agecheck_entry_gate_min_age';
+
+	/**
+	 * Attachment id of the entry gate's logo (the merchant's media library),
+	 * or 0 for none.
+	 */
+	const ENTRY_GATE_LOGO = 'navexa_agecheck_entry_gate_logo';
+
+	/**
+	 * The entry gate's colours: an array keyed by GATE_THEME_DEFAULTS' keys,
+	 * saved through WooCommerce's opt[key] fields.
+	 */
+	const ENTRY_GATE_THEME = 'navexa_agecheck_entry_gate_theme';
+
+	/**
+	 * The merchant's entry gate text: an array keyed by GATE_TEXT_LIMITS'
+	 * keys; blank means the translated default.
+	 */
+	const ENTRY_GATE_TEXT = 'navexa_agecheck_entry_gate_text';
+
+	/**
+	 * Visitors click "I am 21 or older" or "I am under 21".
+	 */
+	const GATE_MODE_ATTEST = 'attest';
+
+	/**
+	 * Visitors type their date of birth, judged in their browser and never
+	 * stored or sent (the shared loader's gate).
+	 */
+	const GATE_MODE_DOB = 'dob';
+
+	/**
+	 * Minimum ages the gate accepts (the loader's GateOptions schema).
+	 */
+	const GATE_MINIMUM_AGES = array( 18, 19, 21 );
+
+	/**
+	 * The entry gate's default colours, which reproduce the 1.0.x gate and
+	 * equal the loader's defaults (schema/gate-options.schema.json theme).
+	 */
+	const GATE_THEME_DEFAULTS = array(
+		'backdrop'    => '#1e1e1e',
+		'card'        => '#ffffff',
+		'text'        => '#1e1e1e',
+		'accent'      => '#1e1e1e',
+		'accent_text' => '#ffffff',
+	);
+
+	/**
+	 * Colour pairs that carry text, as [foreground, background]: each must
+	 * reach MIN_CONTRAST (the schema's x-contrast; the backdrop carries none).
+	 */
+	const GATE_CONTRAST_PAIRS = array(
+		array( 'text', 'card' ),
+		array( 'accent_text', 'accent' ),
+	);
+
+	/**
+	 * Least WCAG 2.x contrast ratio of a text colour pair (AA, normal text).
+	 */
+	const MIN_CONTRAST = 4.5;
+
+	/**
+	 * The merchant's gate text fields and their longest length in Unicode code
+	 * points (the schema's maxLength for title, message and the labels).
+	 */
+	const GATE_TEXT_LIMITS = array(
+		'title'   => 80,
+		'message' => 300,
+		'yes'     => 40,
+		'no'      => 40,
+		'submit'  => 40,
+	);
+
+	/**
 	 * Whether the merchant turned the entry gate on. Only a stored 'yes' does.
 	 */
 	public static function entry_gate_enabled(): bool {
 		return 'yes' === get_option( self::ENTRY_GATE, 'no' );
+	}
+
+	/**
+	 * GATE_MODE_ATTEST (default, also for an unknown value) or GATE_MODE_DOB.
+	 */
+	public static function entry_gate_mode(): string {
+		return self::GATE_MODE_DOB === get_option( self::ENTRY_GATE_MODE, self::GATE_MODE_ATTEST ) ? self::GATE_MODE_DOB : self::GATE_MODE_ATTEST;
+	}
+
+	/**
+	 * The gate's own minimum age: 18, 19 or 21, DEFAULT_MINIMUM_AGE otherwise.
+	 */
+	public static function entry_gate_local_minimum_age(): int {
+		$age = get_option( self::ENTRY_GATE_MIN_AGE, self::DEFAULT_MINIMUM_AGE );
+		$age = is_numeric( $age ) ? (int) $age : 0;
+		return in_array( $age, self::GATE_MINIMUM_AGES, true ) ? $age : self::DEFAULT_MINIMUM_AGE;
+	}
+
+	/**
+	 * The minimum age the entry gate asks about: with age verification on,
+	 * the one AgeCheck reported for the store (so the gate asks the age
+	 * checkout verifies); otherwise, or before AgeCheck has answered, the
+	 * gate's own (entry_gate_local_minimum_age()). Never asks AgeCheck.
+	 */
+	public static function entry_gate_minimum_age(): int {
+		$reported = self::reported_minimum_age();
+		return self::verification_enabled() && null !== $reported ? $reported : self::entry_gate_local_minimum_age();
+	}
+
+	/**
+	 * Attachment id of the gate's logo when it is an image, else 0.
+	 */
+	public static function entry_gate_logo_id(): int {
+		$id = absint( get_option( self::ENTRY_GATE_LOGO, 0 ) );
+		return $id > 0 && function_exists( 'wp_attachment_is_image' ) && wp_attachment_is_image( $id ) ? $id : 0;
+	}
+
+	/**
+	 * The gate's colours, keyed as GATE_THEME_DEFAULTS: each stored colour
+	 * when it is #rgb or #rrggbb (lower-cased), else the default; and a text
+	 * pair under MIN_CONTRAST falls back to its default pair, as the loader
+	 * would (Settings refuses such a pair on save; this covers values written
+	 * some other way).
+	 *
+	 * @return array<string, string>
+	 */
+	public static function entry_gate_theme(): array {
+		$stored = get_option( self::ENTRY_GATE_THEME, array() );
+		$stored = is_array( $stored ) ? $stored : array();
+		$theme  = array();
+		foreach ( self::GATE_THEME_DEFAULTS as $key => $default ) {
+			$color         = isset( $stored[ $key ] ) && is_string( $stored[ $key ] ) ? self::hex_color( $stored[ $key ] ) : '';
+			$theme[ $key ] = '' === $color ? $default : $color;
+		}
+		foreach ( self::GATE_CONTRAST_PAIRS as $pair ) {
+			if ( self::contrast_ratio( $theme[ $pair[0] ], $theme[ $pair[1] ] ) < self::MIN_CONTRAST ) {
+				$theme[ $pair[0] ] = self::GATE_THEME_DEFAULTS[ $pair[0] ];
+				$theme[ $pair[1] ] = self::GATE_THEME_DEFAULTS[ $pair[1] ];
+			}
+		}
+		return $theme;
+	}
+
+	/**
+	 * The merchant's gate text, keyed as GATE_TEXT_LIMITS: each stored value
+	 * trimmed, or '' (blank, not text, or longer than its limit).
+	 *
+	 * @return array<string, string>
+	 */
+	public static function entry_gate_text(): array {
+		$stored = get_option( self::ENTRY_GATE_TEXT, array() );
+		$stored = is_array( $stored ) ? $stored : array();
+		$text   = array();
+		foreach ( self::GATE_TEXT_LIMITS as $key => $limit ) {
+			$value        = isset( $stored[ $key ] ) && is_string( $stored[ $key ] ) ? self::gate_text( $stored[ $key ] ) : '';
+			$text[ $key ] = self::text_length( $value ) <= $limit ? $value : '';
+		}
+		return $text;
+	}
+
+	/**
+	 * Gate text as the loader reads it: control characters folded to spaces,
+	 * the ends trimmed.
+	 *
+	 * @param string $value Text.
+	 */
+	public static function gate_text( string $value ): string {
+		if ( 1 !== preg_match( '//u', $value ) ) {
+			return ''; // Not valid UTF-8.
+		}
+		return trim( (string) preg_replace( '/[\x00-\x1f\x7f]/u', ' ', $value ) );
+	}
+
+	/**
+	 * Length of $value in Unicode code points (the schema's maxLength).
+	 *
+	 * @param string $value UTF-8 text.
+	 */
+	public static function text_length( string $value ): int {
+		return (int) mb_strlen( $value, 'UTF-8' );
+	}
+
+	/**
+	 * $value as a lower-case #rgb or #rrggbb colour, or '' when it is not one
+	 * (the schema's colour pattern).
+	 *
+	 * @param string $value Candidate.
+	 */
+	public static function hex_color( string $value ): string {
+		$value = trim( $value );
+		return 1 === preg_match( '/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/', $value ) ? strtolower( $value ) : '';
+	}
+
+	/**
+	 * WCAG 2.x contrast ratio of two #rgb / #rrggbb colours, unrounded (1 to
+	 * 21); 1.0 when either is not a colour. Pinned by the loader's
+	 * schema/vectors/contrast.json.
+	 *
+	 * @param string $a Colour.
+	 * @param string $b Colour.
+	 */
+	public static function contrast_ratio( string $a, string $b ): float {
+		$la = self::luminance( $a );
+		$lb = self::luminance( $b );
+		if ( null === $la || null === $lb ) {
+			return 1.0;
+		}
+		return ( max( $la, $lb ) + 0.05 ) / ( min( $la, $lb ) + 0.05 );
+	}
+
+	/**
+	 * WCAG 2.x relative luminance of a #rgb / #rrggbb colour, or null.
+	 *
+	 * @param string $color Colour.
+	 */
+	private static function luminance( string $color ): ?float {
+		$hex = ltrim( self::hex_color( $color ), '#' );
+		if ( '' === $hex ) {
+			return null;
+		}
+		if ( 3 === strlen( $hex ) ) {
+			$hex = $hex[0] . $hex[0] . $hex[1] . $hex[1] . $hex[2] . $hex[2];
+		}
+		$channels = array();
+		foreach ( array( 0, 2, 4 ) as $offset ) {
+			$c          = hexdec( substr( $hex, $offset, 2 ) ) / 255;
+			$channels[] = $c <= 0.04045 ? $c / 12.92 : pow( ( $c + 0.055 ) / 1.055, 2.4 );
+		}
+		return 0.2126 * $channels[0] + 0.7152 * $channels[1] + 0.0722 * $channels[2];
 	}
 
 	/**
@@ -263,7 +497,7 @@ final class Options {
 	 */
 	public static function exit_url( string $url ): string {
 		$url   = trim( $url );
-		$parts = '' === $url ? false : wp_parse_url( $url );
+		$parts = '' === $url || strlen( $url ) > 2048 ? false : wp_parse_url( $url );
 		if ( ! is_array( $parts ) || empty( $parts['host'] ) || ! isset( $parts['scheme'] ) || ! in_array( strtolower( (string) $parts['scheme'] ), array( 'http', 'https' ), true ) ) {
 			return '';
 		}
@@ -275,9 +509,18 @@ final class Options {
 	 * DEFAULT_MINIMUM_AGE when it has not. Never asks AgeCheck.
 	 */
 	public static function store_minimum_age(): int {
+		$age = self::reported_minimum_age();
+		return null === $age ? self::DEFAULT_MINIMUM_AGE : $age;
+	}
+
+	/**
+	 * The minimum age AgeCheck last reported for the store (18, 19 or 21), or
+	 * null when it has not reported one. Never asks AgeCheck.
+	 */
+	public static function reported_minimum_age(): ?int {
 		$profile = get_option( self::STORE_PROFILE, array() );
 		$age     = is_array( $profile ) && isset( $profile['minimum_age'] ) ? $profile['minimum_age'] : null;
-		return is_int( $age ) && in_array( $age, IntegrationInfo::MINIMUM_AGES, true ) ? $age : self::DEFAULT_MINIMUM_AGE;
+		return is_int( $age ) && in_array( $age, IntegrationInfo::MINIMUM_AGES, true ) ? $age : null;
 	}
 
 	/**

@@ -13,56 +13,21 @@ Age verification for age-restricted WooCommerce orders shipping to US addresses,
 
 == Description ==
 
-Navexa AgeCheck checks a shopper's age before an age-restricted order ships. It verifies orders shipping to US addresses only.
+Navexa AgeCheck checks a shopper's age before an age-restricted WooCommerce order ships. It verifies orders shipping to US addresses only, including US territories and APO/FPO addresses.
 
-When a shopper places an age-restricted order, AgeCheck's age check opens in a secure window on your checkout page (AgeCheck's own page, verify.navexa.co, shown in a frame). When your Navexa account runs the data check first and the order ships to the shopper's US billing address, the shopper types only their date of birth there and AgeCheck confirms their age from their billing name and address against US data sources; any other shopper takes an ID document and selfie check. Your store never sees their date of birth or ID images. You choose when they verify: at checkout, before they pay (the default), or after payment, while the order is held. Or turn age verification off and use only the free entry age gate, with no Navexa account.
+When a shopper with age-restricted items in the cart selects Place order, the age check opens in a window on your checkout page (AgeCheck's own page, verify.navexa.co). With the data check on, a shopper whose order ships to their US billing address types only their date of birth; any other shopper takes an ID document and selfie check. Your store never sees their date of birth or ID images. The order goes through as soon as they pass, on the classic and the block checkout.
 
-How orders are handled:
+* Choose when shoppers verify: at checkout, before they pay (the default), or after payment, while the order is held.
+* Paid age-restricted orders wait in "Awaiting age check" until AgeCheck clears them. A check passed at checkout clears at once.
+* Fails closed: no order skips its check because AgeCheck could not be reached.
+* A failed check never ships: the order is refunded through the gateway, or listed for you to refund.
+* Choose which products need a check, and exempt customer roles. Local pickup is never checked.
+* Express buttons (Apple Pay, Google Pay, Link, Amazon Pay, WooPay, PayPal) are hidden on age-restricted products and carts.
+* Optional Cloudflare Turnstile bot protection.
+* Optional free entry age gate (self-attestation, not age verification), usable on its own with no Navexa account.
+* Accessible dialogs, suggested privacy policy text, and WordPress's personal data export and erasure.
 
-* In "Before payment" mode (the default), when a shopper with age-restricted items in the cart selects Place order, the age check opens in a window on the checkout page, and the order goes through as soon as they pass: no second click. This works on the classic checkout and the block checkout. If the window cannot load there (see the FAQ), it offers to continue in a new window, or on the same page. After a pass, the name and address fields are locked to the check (block checkout: WooCommerce's address cards); the check is tied to the shipping address, so changing it means checking again at the next Place order. A declined payment retried with the same cart and address needs no new check.
-* A paid order with age-restricted products moves to "Awaiting age check" instead of Processing, and stays there until AgeCheck clears it. For a check passed at checkout that is immediate. Stock is reserved and you get the usual new-order email; the shopper gets their processing email once the order is released.
-* Moving such an order to Processing or Completed by hand, or by another plugin, is refused with an order note. The "AgeCheck: release without age check" order action releases it anyway; it records who did it and why.
-* Which products need an age check is set in WooCommerce > Settings > AgeCheck (every product, chosen categories or tags, or all but those) and per product in the product editor. Orders whose customer has an exempt role skip the check.
-* Local pickup orders are never checked: check the buyer's ID at the counter.
-* Orders paid on the "pay for order" page, and every order in "After payment" mode, are accepted, then held until the shopper verifies. AgeCheck emails the shopper a link to its page (good for 7 days; the ID must match the order's billing name), and the order-received page and the order in My account show a "Verify now" button. The AgeCheck panel on the order says whether the email went out; Order actions can resend it (at most 5 a day) or withdraw it. When the order is cancelled, refunded in full, marked failed, trashed or deleted, the plugin has AgeCheck withdraw the link by itself, in the background, and notes the result on the order; a partial refund leaves it working. While AgeCheck is not sending verification emails yet, or until you set your store name in the AgeCheck dashboard, the order stays held and a notice tells you so.
-* A signed-in customer who passed an age check at your store recently may not have to verify again when AgeCheck's returning-customer check is on for your account; the order panel then says "Returning customer (reused verification)". The plugin sends AgeCheck only a keyed reference to the customer's account, never their name or email address for this.
-* A guest who passed here recently can skip a new check by typing a one-time code AgeCheck emails to their billing address. For this the Verify age start sends a guest's billing email, but only while AgeCheck says the code is offered for your account (returning-customer checks on and a store name set in the AgeCheck dashboard). The AgeCheck settings tab shows a "Returning customers" line with the state. With a test key, AgeCheck emails codes only to confirmed notification recipients, so confirm your own address there to try it.
-* If the shopper fails, the order is never released. By default it is refunded through the payment gateway when the gateway can refund by API; otherwise it is listed under "AgeCheck: denied, refund required" on the Orders screen.
-* If AgeCheck cannot be reached, the plugin fails closed: no age-restricted order skips its check because AgeCheck did not answer. In "Before payment" mode, Place order says "Age verification is temporarily unavailable" and a new order cannot be placed until AgeCheck answers again. Every paid age-restricted order, including one that passed at checkout, stays in "Awaiting age check" until AgeCheck clears it (see the FAQ).
-* The shipping address of an order linked to an age check cannot be changed.
-* AgeCheck verifies US addresses only, including Puerto Rico, Guam, the US Virgin Islands, American Samoa, the Northern Mariana Islands, the US Minor Outlying Islands and APO/FPO addresses.
-
-Express payment buttons:
-
-Apple Pay, Google Pay, Link, Amazon Pay, WooPay and PayPal buttons on product, cart and checkout pages let a shopper pay without the checkout form, so without the age check at Place order. By default the plugin hides them on age-restricted products and carts through each payment plugin's own filters (WooPayments, WooCommerce Stripe Gateway and WooCommerce PayPal Payments); the shopper then pays through the checkout form. An express order that still gets through is refused before payment in "Before payment" mode, and in every mode a paid age-restricted order is held until AgeCheck clears it. The setting is under WooCommerce > Settings > AgeCheck > Checkout protection.
-
-Accessibility:
-
-The age check window is an accessible dialog: it is labelled, keyboard focus stays in it while it is open, Escape or its close button closes it, the rest of the page is hidden from screen readers meanwhile, and the focus goes back where it was. A refusal shows where WooCommerce shows its own checkout errors and is announced to screen readers through a polite live region. The entry age gate is an accessible dialog too, and its settings refuse text and button colours under a 4.5:1 contrast ratio (WCAG AA).
-
-Optional bot protection:
-
-Turn on Cloudflare Turnstile under Checkout protection to require a Turnstile check before a shopper's age check starts. It is off by default; when it is on and Turnstile cannot confirm the shopper, the age check does not start.
-
-Optional entry age gate (self-attestation, not age verification):
-
-Turn it on in WooCommerce > Settings > AgeCheck > Entry age gate to ask visitors to confirm their age when they enter the store, on every page or only on age-restricted product, category and tag pages. It is off by default. Visitors either click "I am 21 or older" or "I am under 21", or type their date of birth (month, day and year); the date of birth is checked in the visitor's own browser and is never stored or sent. Both are self-attestation only: the gate asks, and anyone can answer, so it does not verify anyone's age and does not replace the age check at checkout, which still applies to every age-restricted order when age verification is on. With age verification on, the age shown is the minimum age set in the Navexa dashboard (until the plugin has connected, the gate's own minimum age: 18, 19 or 21, 21 by default); with it off, the gate's own. The store name is the display name set in the Navexa dashboard, or your site title. You can add your logo (from your media library; shown when your store is served over https), set the backdrop, card, text, button and button-text colours (text on the card and button text on the buttons must reach a contrast of 4.5:1, or the colours are not saved) and change the title, message and button text ({age} becomes the minimum age, {site} the store name). The answer is remembered in the visitor's own browser for the number of days you choose (30 by default; 0 remembers it only in the browser tab where they answered, so a new tab asks again); nothing is sent to your server, to Navexa or to anyone else, no API key is needed, and the decision is made in the browser, so it works with page caching. Visitors who answered the gate of an earlier version of this plugin are not asked again. Visitors who say they are under age go to an address you choose, or stay on the gate with a short message. The gate is an accessible dialog: keyboard focus stays in it, Escape does not dismiss it, and the rest of the page is hidden from screen readers while it is open. It never shows in wp-admin, on the login page, to the REST API, on AgeCheck's return page, on the page you send under-age visitors to, or to major search-engine crawlers.
-
-Using only the entry age gate:
-
-Set "Age verification" to "Off: entry age gate only (no age verification, no API key needed)" and turn the entry age gate on. No Navexa account or API key is needed, nothing is sent to Navexa, and no order is verified or held: the gate is the only age prompt, and it is self-attestation, not age verification. Orders already awaiting an age check when you switch stay held until AgeCheck clears them or you release them. A missing API key never switches verification off by itself: in the two verification modes, age-restricted checkouts are refused until both keys are added, and a notice on WooCommerce screens says so.
-
-Privacy tools:
-
-The plugin adds a suggested section to your privacy policy (Settings > Privacy > Policy Guide) and takes part in WordPress's personal data export and erasure tools for the age check details it stores with orders.
-
-Known limits:
-
-* Verification emails depend on AgeCheck sending them (AgeCheck turns them on for every store at once) and on your store name being set in the AgeCheck dashboard; until then shoppers of held orders verify from the "Verify now" button on their order page, or you release the order after checking their age yourself.
-* WooCommerce Subscriptions renewals that need an age check are held for you to review and release.
-* A plugin that ships or fulfils an order as soon as payment completes (on the woocommerce_payment_complete action) rather than on the order status cannot be stopped. AgeCheck is told about every completed order (ReportShipment) and flags any that shipped without a clearance.
-* Express buttons from payment plugins other than WooPayments, WooCommerce Stripe Gateway and WooCommerce PayPal Payments are not hidden (see the FAQ).
-* Held orders are checked every 15 minutes through Action Scheduler, which depends on WP-Cron. Set up a real system cron if your site has little traffic, and add the webhook in the Navexa dashboard so orders are released the moment the shopper passes.
+The FAQ explains each of these in detail, and the known limits.
 
 Pricing: $0.49 per billable pass, $0.10 for a returning customer's reused pass. There is no monthly fee.
 
@@ -79,44 +44,41 @@ Navexa AgeCheck lowers the risk of selling to someone under age; it does not rem
 
 == Frequently Asked Questions ==
 
+= How does the age check work at checkout? =
+
+In "Before payment" mode (the default), when a shopper with age-restricted items in the cart selects Place order, AgeCheck's age check opens in a secure window on your checkout page (AgeCheck's own page, verify.navexa.co, shown in a frame), and the order goes through as soon as they pass: no second click. This works on the classic checkout and the block checkout.
+
+When your Navexa account runs the data check first and the order ships to the shopper's US billing address, the shopper types only their date of birth there and AgeCheck confirms their age from their billing name and address against US data sources; any other shopper takes an ID document and selfie check.
+
+If the window cannot load on the checkout page, it offers to continue in a new window, or on the same page (see the question about the new window below). After a pass, the name and address fields are locked to the check (block checkout: WooCommerce's address cards); the check is tied to the shipping address, so changing it means checking again at the next Place order. A declined payment retried with the same cart and address needs no new check.
+
+In "After payment" mode the order is accepted, then held until the shopper verifies.
+
 = Which addresses can AgeCheck verify? =
 
-US addresses only, including US territories and APO/FPO addresses. An age-restricted order shipping anywhere else is refused at checkout, or held if it was placed another way.
+US addresses only, including Puerto Rico, Guam, the US Virgin Islands, American Samoa, the Northern Mariana Islands, the US Minor Outlying Islands and APO/FPO addresses. An age-restricted order shipping anywhere else is refused at checkout, or held if it was placed another way.
 
-= Is the entry age gate an age verification? =
+= Which products and orders need an age check? =
 
-No. It is self-attestation: visitors click "I am 21 or older" and anyone can do that. It is there for stores that want a front-door age prompt. Age-restricted orders are still verified by AgeCheck at checkout (or held until they are), whatever the visitor answered at the gate.
+Which products need an age check is set in WooCommerce > Settings > AgeCheck (every product, chosen categories or tags, or all but those) and per product in the product editor. Orders whose customer has an exempt role skip the check. Local pickup orders are never checked: check the buyer's ID at the counter.
 
-= The entry age gate shows late, or only after a click, with a speed plugin =
+= What happens to an age-restricted order after payment? =
 
-The gate's scripts have to run as the page loads, in the page head. Their tags ask Cloudflare Rocket Loader, LiteSpeed Cache and WP Rocket to leave them alone, but if your optimization plugin or service defers or delays JavaScript anyway, exclude `agecheck-gate-` (the gate, in assets/vendor/agecheck-js/) and `gate-boot.min.js` from its "delay JavaScript" and "defer JavaScript" settings. After updating from 1.0.x, clear your page cache.
+A paid order with age-restricted products moves to "Awaiting age check" instead of Processing, and stays there until AgeCheck clears it. For a check passed at checkout that is immediate. Stock is reserved and you get the usual new-order email; the shopper gets their processing email once the order is released.
 
-= The age check opens in a new window instead of on the checkout page =
+Moving such an order to Processing or Completed by hand, or by another plugin, is refused with an order note. The "AgeCheck: release without age check" order action releases it anyway; it records who did it and why. The shipping address of an order linked to an age check cannot be changed.
 
-The checkout shows AgeCheck's page in a frame. When the frame cannot load within 10 seconds, the window offers "Continue in a new window" (and, if the browser blocks that too, "Continue the age check on this page"). The usual reasons:
+= How does a shopper verify an order placed without a check? =
 
-* Your store's address (for example https://shop.example, exactly as shoppers reach it, with or without www) is not in the allowed origins of your Navexa account: AgeCheck then refuses to be framed by it. The Connection lines on the settings tab say whether it is allowed.
-* A Content Security Policy on your store (often from a security plugin or your host) whose frame-src or child-src does not include https://verify.navexa.co. Add https://verify.navexa.co to frame-src and connect-src.
-* A Permissions-Policy header that turns the camera off (camera=()): the ID check inside the frame cannot use the camera then. Allow it for https://verify.navexa.co, or remove that header.
+Orders paid on the "pay for order" page, and every order in "After payment" mode, are accepted, then held until the shopper verifies. AgeCheck emails the shopper a link to its page (good for 7 days; the ID must match the order's billing name), and the order-received page and the order in My account show a "Verify now" button.
 
-= Can I use only the entry age gate, without verifying ages? =
+The AgeCheck panel on the order says whether the email went out; Order actions can resend it (at most 5 a day) or withdraw it. When the order is cancelled, refunded in full, marked failed, trashed or deleted, the plugin has AgeCheck withdraw the link by itself, in the background, and notes the result on the order; a partial refund leaves it working. While AgeCheck is not sending verification emails yet, or until you set your store name in the AgeCheck dashboard, the order stays held and a notice tells you so.
 
-Yes. Set Age verification to Off (entry age gate only) and turn the entry age gate on. You need no Navexa account and no API key, and nothing is verified or held. The gate is self-attestation: it is not an age verification.
+= Do returning customers have to verify again? =
 
-= Does my store see the shopper's date of birth or ID? =
+A signed-in customer who passed an age check at your store recently may not have to verify again when AgeCheck's returning-customer check is on for your account; the order panel then says "Returning customer (reused verification)". For this the plugin sends AgeCheck only a keyed reference to the customer's account, never their name or email address.
 
-No. Shoppers type their date of birth and photograph their ID only on AgeCheck's own page, verify.navexa.co, which your checkout shows in a frame (the frame belongs to AgeCheck: your store's scripts cannot read it). Your store keeps a verification reference, the result and a one-way hash of the checked shipping address with the order. The entry age gate's date of birth never leaves the visitor's browser.
-
-= What happens to Apple Pay, Google Pay and PayPal buttons? =
-
-With "Hide express checkout buttons on age-restricted carts and products" on (the default), on age-restricted products and carts:
-
-* WooPayments: Apple Pay, Google Pay and Amazon Pay (product, cart and checkout pages, classic and block) and WooPay are hidden. Link is part of the card form on the checkout page, so the shopper verifies before paying.
-* WooCommerce Stripe Gateway: Apple Pay, Google Pay, Link and Amazon Pay are hidden on product, cart and checkout pages (classic and block).
-* WooCommerce PayPal Payments (its default SDK v6 buttons and the older SDK v5 ones): the PayPal, Pay Later and Venmo buttons on product, cart and mini-cart are not rendered, and the express buttons on the block cart and checkout are removed (PayPal then stays on the block checkout only in its "Place order" mode). With SDK v6 this also covers PayPal's Apple Pay and Google Pay buttons; with SDK v5, whether they follow is not confirmed. PayPal on the classic checkout page stays: it is the payment method there, and WooCommerce checks the checkout form, including the age check, before the order is placed.
-* Buttons on the "pay for order" page are never hidden: those orders are accepted and held until the shopper verifies.
-
-If an express order still gets through (another payment plugin, a setting turned off, or a cart that changed after the page loaded): when it goes through WooCommerce's checkout in "Before payment" mode it is refused before payment with "Verify your age on the checkout page"; and whichever way it is placed, a paid age-restricted order is held as "Awaiting age check" until AgeCheck clears it. Some express flows create the order without WooCommerce's checkout (for example PayPal's "Pay now" experience); those are held after payment.
+A guest who passed here recently can skip a new check by typing a one-time code AgeCheck emails to their billing address. For this the age check start sends a guest's billing email, but only while AgeCheck says the code is offered for your account (returning-customer checks on and a store name set in the AgeCheck dashboard). The AgeCheck settings tab shows a "Returning customers" line with the state. With a test key, AgeCheck emails codes only to confirmed notification recipients, so confirm your own address there to try it.
 
 = What happens when AgeCheck is down? =
 
@@ -124,7 +86,7 @@ By default, "Before payment" checkout refuses age-restricted orders while AgeChe
 
 = What if a shopper fails the age check? =
 
-The order is never released. Depending on your setting, it is refunded through the payment gateway (when the gateway can refund by API) or listed under "AgeCheck: denied, refund required" for you to refund.
+The order is never released. Depending on your setting (refund, by default), it is refunded through the payment gateway (when the gateway can refund by API) or listed under "AgeCheck: denied, refund required" for you to refund.
 
 = What happens when AgeCheck can't be reached? =
 
@@ -140,6 +102,67 @@ No setting ships an order without a passed age check. The one outage setting, "W
 
 Yes, with the "AgeCheck: release without age check" order action. It records who released it, when and why.
 
+= The age check opens in a new window instead of on the checkout page =
+
+The checkout shows AgeCheck's page in a frame. When the frame cannot load within 10 seconds, the window offers "Continue in a new window" (and, if the browser blocks that too, "Continue the age check on this page"). The usual reasons:
+
+* Your store's address (for example https://shop.example, exactly as shoppers reach it, with or without www) is not in the allowed origins of your Navexa account: AgeCheck then refuses to be framed by it. The Connection lines on the settings tab say whether it is allowed.
+* A Content Security Policy on your store (often from a security plugin or your host) whose frame-src or child-src does not include https://verify.navexa.co. Add https://verify.navexa.co to frame-src and connect-src.
+* A Permissions-Policy header that turns the camera off (camera=()): the ID check inside the frame cannot use the camera then. Allow it for https://verify.navexa.co, or remove that header.
+
+= What happens to Apple Pay, Google Pay and PayPal buttons? =
+
+Apple Pay, Google Pay, Link, Amazon Pay, WooPay and PayPal buttons on product, cart and checkout pages let a shopper pay without the checkout form, so without the age check at Place order. By default the plugin hides them on age-restricted products and carts through each payment plugin's own filters (WooPayments, WooCommerce Stripe Gateway and WooCommerce PayPal Payments); the shopper then pays through the checkout form. The setting is under WooCommerce > Settings > AgeCheck > Checkout protection.
+
+With "Hide express checkout buttons on age-restricted carts and products" on (the default), on age-restricted products and carts:
+
+* WooPayments: Apple Pay, Google Pay and Amazon Pay (product, cart and checkout pages, classic and block) and WooPay are hidden. Link is part of the card form on the checkout page, so the shopper verifies before paying.
+* WooCommerce Stripe Gateway: Apple Pay, Google Pay, Link and Amazon Pay are hidden on product, cart and checkout pages (classic and block).
+* WooCommerce PayPal Payments (its default SDK v6 buttons and the older SDK v5 ones): the PayPal, Pay Later and Venmo buttons on product, cart and mini-cart are not rendered, and the express buttons on the block cart and checkout are removed (PayPal then stays on the block checkout only in its "Place order" mode). With SDK v6 this also covers PayPal's Apple Pay and Google Pay buttons; with SDK v5, whether they follow is not confirmed. PayPal on the classic checkout page stays: it is the payment method there, and WooCommerce checks the checkout form, including the age check, before the order is placed.
+* Buttons on the "pay for order" page are never hidden: those orders are accepted and held until the shopper verifies.
+
+If an express order still gets through (another payment plugin, a setting turned off, or a cart that changed after the page loaded): when it goes through WooCommerce's checkout in "Before payment" mode it is refused before payment with "Verify your age on the checkout page"; and whichever way it is placed, a paid age-restricted order is held as "Awaiting age check" until AgeCheck clears it. Some express flows create the order without WooCommerce's checkout (for example PayPal's "Pay now" experience); those are held after payment.
+
+= How does the optional bot protection work? =
+
+Turn on Cloudflare Turnstile under WooCommerce > Settings > AgeCheck > Checkout protection to require a Turnstile check before a shopper's age check starts. It is off by default; when it is on and Turnstile cannot confirm the shopper, the age check does not start.
+
+= Is the age check accessible? =
+
+The age check window is an accessible dialog: it is labelled, keyboard focus stays in it while it is open, Escape or its close button closes it, and the rest of the page is hidden from screen readers meanwhile. A refusal, including a window closed before the check finished, shows where WooCommerce shows its own checkout errors and is announced to screen readers. On the classic checkout the focus then moves to it; on the block checkout it stays where WooCommerce leaves it after its own checkout errors. The entry age gate is an accessible dialog too, and its settings refuse text and button colours under a 4.5:1 contrast ratio (WCAG AA).
+
+= Is the entry age gate an age verification? =
+
+No. It is self-attestation: visitors click "I am 21 or older" and anyone can do that. It is there for stores that want a front-door age prompt. Age-restricted orders are still verified by AgeCheck at checkout (or held until they are), whatever the visitor answered at the gate.
+
+= How does the entry age gate work? =
+
+Turn it on in WooCommerce > Settings > AgeCheck > Entry age gate to ask visitors to confirm their age when they enter the store, on every page or only on age-restricted product, category and tag pages. It is off by default. Visitors either click "I am 21 or older" or "I am under 21", or type their date of birth (month, day and year); the date of birth is checked in the visitor's own browser and is never stored or sent. Both are self-attestation only: the gate asks, and anyone can answer, so it does not verify anyone's age and does not replace the age check at checkout, which still applies to every age-restricted order when age verification is on.
+
+With age verification on, the age shown is the minimum age set in the Navexa dashboard (until the plugin has connected, the gate's own minimum age: 18, 19 or 21, 21 by default); with it off, the gate's own. The store name is the display name set in the Navexa dashboard, or your site title. You can add your logo (from your media library; shown when your store is served over https), set the backdrop, card, text, button and button-text colours (text on the card and button text on the buttons must reach a contrast of 4.5:1, or the colours are not saved) and change the title, message and button text ({age} becomes the minimum age, {site} the store name).
+
+The answer is remembered in the visitor's own browser for the number of days you choose (30 by default; 0 remembers it only in the browser tab where they answered, so a new tab asks again); nothing is sent to your server, to Navexa or to anyone else, no API key is needed, and the decision is made in the browser, so it works with page caching. Visitors who answered the gate of an earlier version of this plugin are not asked again. Visitors who say they are under age go to an address you choose, or stay on the gate with a short message.
+
+The gate is an accessible dialog: keyboard focus stays in it, Escape does not dismiss it, and the rest of the page is hidden from screen readers while it is open. It never shows in wp-admin, on the login page, to the REST API, on AgeCheck's return page, on the page you send under-age visitors to, or to major search-engine crawlers.
+
+= The entry age gate shows late, or only after a click, with a speed plugin =
+
+The gate's scripts have to run as the page loads, in the page head. Their tags ask Cloudflare Rocket Loader, LiteSpeed Cache and WP Rocket to leave them alone, but if your optimization plugin or service defers or delays JavaScript anyway, exclude `agecheck-gate-` (the gate, in assets/vendor/agecheck-js/) and `gate-boot.min.js` from its "delay JavaScript" and "defer JavaScript" settings. After updating from 1.0.x, clear your page cache.
+
+= Can I use only the entry age gate, without verifying ages? =
+
+Yes. Set Age verification to Off (entry age gate only) and turn the entry age gate on. You need no Navexa account and no API key, and nothing is verified or held. The gate is self-attestation: it is not an age verification. Orders already awaiting an age check when you switch stay held until AgeCheck clears them or you release them.
+
+A missing API key never switches verification off by itself: until both keys are added, age-restricted checkouts are refused in "Before payment" mode and orders are held in "After payment" mode, and a notice on WooCommerce screens says so.
+
+= Does my store see the shopper's date of birth or ID? =
+
+No. Shoppers type their date of birth and photograph their ID only on AgeCheck's own page, verify.navexa.co, which your checkout shows in a frame (the frame belongs to AgeCheck: your store's scripts cannot read it). Your store keeps a verification reference, the result and a one-way hash of the checked shipping address with the order. The entry age gate's date of birth never leaves the visitor's browser.
+
+= Does it work with WordPress's privacy tools? =
+
+Yes. The plugin adds a suggested section to your privacy policy (Settings > Privacy > Policy Guide) and takes part in WordPress's personal data export and erasure tools for the age check details it stores with orders.
+
 = Does it work with the block checkout and HPOS? =
 
 Yes. It supports the classic and block checkout and both order storage modes (High-Performance Order Storage and posts).
@@ -148,6 +171,14 @@ Yes. It supports the classic and block checkout and both order storage modes (Hi
 
 Use test keys from the Navexa dashboard. AgeCheck then runs a simulator instead of a real check, a TEST MODE banner shows, and held orders are never released automatically.
 
+= What are the known limits? =
+
+* Verification emails depend on AgeCheck sending them (AgeCheck turns them on for every store at once) and on your store name being set in the AgeCheck dashboard; until then shoppers of held orders verify from the "Verify now" button on their order page, or you release the order after checking their age yourself.
+* WooCommerce Subscriptions renewals that need an age check are held for you to review and release.
+* A plugin that ships or fulfils an order as soon as payment completes (on the woocommerce_payment_complete action) rather than on the order status cannot be stopped. AgeCheck is told about every completed order (ReportShipment) and flags any that shipped without a clearance.
+* Express buttons from payment plugins other than WooPayments, WooCommerce Stripe Gateway and WooCommerce PayPal Payments are not hidden (see the FAQ).
+* Held orders are checked every 15 minutes through Action Scheduler, which depends on WP-Cron. Set up a real system cron if your site has little traffic, and add the webhook in the Navexa dashboard so orders are released the moment the shopper passes.
+
 = What is removed when I delete the plugin? =
 
 Its settings, keys, scheduled jobs, rate-limit table and cached data. Each order's age check details and each product's age check setting are kept as an audit trail unless you turn on "Delete data on uninstall". Orders still awaiting an age check are moved to On hold with a note; they are never released.
@@ -155,8 +186,8 @@ Its settings, keys, scheduled jobs, rate-limit table and cached data. Each order
 == Screenshots ==
 
 1. WooCommerce > Settings > AgeCheck: API keys, checkout mode and connection status.
-2. The age check window on the block checkout, opened by Place order.
-3. The age check window on the classic checkout, opened by Place order.
+2. The block checkout in version 1.0.x, where a "Verify age" button started the age check. Since 1.1.0 there is no button: Place order opens the check in a window on the checkout page.
+3. The classic checkout in version 1.0.x, with the same "Verify age" button. Since 1.1.0 Place order opens the check here too.
 4. The AgeCheck panel on an order: the check's result, why the order is held, the verification, the emailed link and what to do next.
 5. WooCommerce > Settings > AgeCheck > Entry age gate: how visitors answer, logo, colours with the contrast check, and text.
 

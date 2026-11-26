@@ -27,10 +27,12 @@ defined( 'ABSPATH' ) || exit;
  * A resumed order that is already bound to a verification (a failed payment
  * being retried) is admitted without a guard only when its ship-to is the one
  * it was bound with; release still needs GetClearance CLEARED. Which order a
- * retry resumes is resumable_bound_order() (both checkouts) and
- * bound_awaiting_order() (classic only); Start::state() reports such an order
- * as passed, so the shopper is never sent through a second check that
- * nothing would use.
+ * retry resumes depends on the checkout placing it: bound_awaiting_order()
+ * for the classic checkout, bound_draft_order() for the Store API
+ * (resumable_bound_order() picks by route). Start::state() reports such an
+ * order as passed for that route only, so the shopper is never sent through
+ * a second check that nothing would use, and never told passed for an order
+ * the checkout they are on will not resume.
  *
  * Which carts and orders need a check is Requirement's job
  * (Requirement::cart_required() for the session cart,
@@ -55,6 +57,14 @@ final class Gate {
 	 * order again creates a new order that check admits.
 	 */
 	const REFUSE_PLACE_AGAIN = 'place_again';
+
+	/**
+	 * The checkout that will place the order (resumable_bound_order()): the
+	 * classic checkout (?wc-ajax=checkout), or the Store API (the checkout
+	 * block, express buttons).
+	 */
+	const ROUTE_CLASSIC   = 'classic';
+	const ROUTE_STORE_API = 'store_api';
 
 	/**
 	 * Pass classes that never clear an order. Every other class admits:
@@ -200,28 +210,41 @@ final class Gate {
 	}
 
 	/**
-	 * The bound order a payment retry would resume at $ship_to, or null.
+	 * The bound order a payment retry through $route would resume at
+	 * $ship_to, or null.
 	 *
 	 * Binding binds the order to the shopper's check before payment and drops
 	 * the check from the session. After a declined payment WooCommerce resumes
-	 * that order for the same cart (bound_awaiting_order() on the classic
-	 * checkout, bound_draft_order() through the Store API), and check()
-	 * admits it at the ship-to it was bound with, without a guard. This is
-	 * that order when $ship_to is its bound ship-to (is_bound_ship_to()),
-	 * so the shopper's state can say passed instead of asking for a second,
-	 * billed check that would never be attached. Another ship-to, another
-	 * cart, or an order that was never bound: null, and the checkout needs
-	 * its own check. Reads the session and the order only.
+	 * that order for the same cart, and check() admits it at the ship-to it
+	 * was bound with, without a guard. This is that order when $ship_to is its
+	 * bound ship-to (is_bound_ship_to()), so the shopper's state can say
+	 * passed instead of asking for a second, billed check that would never be
+	 * attached. Another ship-to, another cart, or an order that was never
+	 * bound: null, and the checkout needs its own check. Reads the session and
+	 * the order only.
+	 *
+	 * Each checkout resumes only its own session key: the classic checkout
+	 * order_awaiting_payment (bound_awaiting_order()), the Store API
+	 * store_api_draft_order (bound_draft_order()). The keys are not kept in
+	 * step: WooCommerce 11.x's Store API also writes order_awaiting_payment
+	 * (9.9 does not), Blocks::validate() drops only store_api_draft_order and
+	 * Classic::validate() only order_awaiting_payment. Asking the other
+	 * route's key would read passed for an order this route will not place,
+	 * hide the Verify age control and leave the shopper with a checkout the
+	 * gate refuses. An unknown route resumes nothing.
 	 *
 	 * @param ShipTo $ship_to The checkout's ship-to.
+	 * @param string $route   self::ROUTE_CLASSIC or self::ROUTE_STORE_API: the checkout that will place the order.
 	 */
-	public static function resumable_bound_order( ShipTo $ship_to ): ?\WC_Order {
-		foreach ( array( self::bound_awaiting_order(), self::bound_draft_order() ) as $order ) {
-			if ( null !== $order && self::is_bound_ship_to( $order, $ship_to ) ) {
-				return $order;
-			}
+	public static function resumable_bound_order( ShipTo $ship_to, string $route ): ?\WC_Order {
+		if ( self::ROUTE_CLASSIC === $route ) {
+			$order = self::bound_awaiting_order();
+		} elseif ( self::ROUTE_STORE_API === $route ) {
+			$order = self::bound_draft_order();
+		} else {
+			return null;
 		}
-		return null;
+		return null !== $order && self::is_bound_ship_to( $order, $ship_to ) ? $order : null;
 	}
 
 	/**

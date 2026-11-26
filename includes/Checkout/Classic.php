@@ -28,7 +28,9 @@ defined( 'ABSPATH' ) || exit;
  *   to ship. Otherwise it is dropped from the session, so WooCommerce creates
  *   a new order, and that order is decided like any new checkout (a check
  *   already passed for the new ship-to admits it). At its bound ship-to the
- *   button shows the check as passed (Start::state()).
+ *   button shows the check as passed (Start::state() for
+ *   Gate::ROUTE_CLASSIC, which asks only order_awaiting_payment: a Store API
+ *   draft is not what this checkout resumes).
  * - The button renders at woocommerce_review_order_before_submit, inside the
  *   fragment WooCommerce replaces on every checkout update, so it always
  *   shows the session's current state.
@@ -127,7 +129,7 @@ final class Classic {
 		if ( ! Gate::enforces() ) {
 			return;
 		}
-		$state = Start::state();
+		$state = Start::state( Gate::ROUTE_CLASSIC );
 		if ( empty( $state['required'] ) ) {
 			return;
 		}

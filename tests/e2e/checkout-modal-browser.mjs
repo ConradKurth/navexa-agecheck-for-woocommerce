@@ -22,11 +22,13 @@
 // opened from a click inside the modal; a blocked popup falls back to a
 // full-page redirect and back; the name and ship-to lock after a pass, a
 // declined payment retried with no second check, Change details, and a
-// devtools edit of a locked field refused by the server; the modal's dialog
-// semantics, its focus trap, and the focus on the classic refusal notice after
-// it closes (the block leaves it where WooCommerce leaves it after its own
-// Place order errors: Place order is disabled while WooCommerce awaits the
-// observer, so the loader's return to it fails); another plugin's false from a
+// devtools edit of a locked field refused by the server; an order the server
+// refuses while the page says passed brings the status back from the server,
+// so the next Place order opens the modal; the modal's dialog semantics, its
+// focus trap, and the focus on the classic refusal notice after it closes (the
+// block leaves it where WooCommerce leaves it after its own Place order errors:
+// Place order is disabled while WooCommerce awaits the observer, so the
+// loader's return to it fails); another plugin's false from a
 // checkout_place_order handler bound before the glue still stops WooCommerce
 // (a cart that needs no check, and the resubmit after a pass); a second Place
 // order while the start is in flight starts nothing more (one modal, one
@@ -519,6 +521,41 @@ for (const name of BROWSERS) {
       await context.close()
     })
 
+    await check(`${name}: classic checkout: an order the server refuses while the page says passed brings the status back from the server, and the next Place order opens the modal (there is no Verify age button to fall back on)`, async () => {
+      const context = await newContext(browser, OTHER_PLUGIN)
+      await prepareCart(context, { ...ADDRESS, email: "classic-refused@example.com" })
+      const { page } = await openClassic(context)
+      const posts = countCheckoutPosts(page)
+      // A pass whose resubmit another handler stops (as a payment form left incomplete does): the page says passed, no order.
+      await page.click("#place_order")
+      await answerInFrame(page, "pass")
+      await page.waitForSelector('[data-navexa-agecheck="1"][data-status="passed"]', { timeout: 30000 })
+      await page.waitForFunction(() => (window.__other?.calls ?? 0) >= 2 && !document.querySelector(".blockUI"), null, { timeout: 30000 })
+      assert.equal(posts.n, 0)
+      // The server stops admitting it (here: the posted ship-to is no longer the one checked, edited past the lock).
+      await page.evaluate(() => {
+        window.__other.refuses = false
+        document.querySelector('form.checkout [name="billing_address_1"]').value = "9 Elm St"
+      })
+      const sessions = await requests("CreateHostedSession")
+      await page.click("#place_order")
+      await page.waitForFunction(() => /shipping address changed after your age check/.test(document.querySelector(".woocommerce-NoticeGroup-checkout")?.textContent ?? ""), null, { timeout: 30000 })
+      assert.equal(posts.n, 1, "the order was posted, and refused")
+      assert.equal(await requests("CreateHostedSession"), sessions, "no modal for it: the page said passed")
+      // Before the fix the page kept saying passed, and every Place order posted again into the same refusal.
+      await page.waitForFunction(() => document.querySelector('[data-navexa-agecheck="1"]')?.getAttribute("data-status") === "none", null, { timeout: 20000 }).catch(() => {
+        throw new Error("the status comes back from the server after the refusal (WooCommerce's checkout update)")
+      })
+      await page.waitForFunction(() => !document.querySelector(".blockUI"), null, { timeout: 20000 })
+      assert.match(await page.locator('[data-navexa-agecheck="1"] .navexa-agecheck__message').textContent(), /shipping address changed/)
+      await page.click("#place_order")
+      await answerInFrame(page, "pass")
+      await page.waitForURL(/order-received/, { timeout: 45000 })
+      assert.equal(posts.n, 2, "placed on the next attempt")
+      assert.equal((await requests("CreateHostedSession")) - sessions, 1, "the next Place order opened the modal")
+      await context.close()
+    })
+
     await check(`${name}: classic checkout: a second Place order while the start is in flight starts nothing more: one modal, one hosted session, one order; the container is aria-busy meanwhile and the live region a polite status outside the replaced fragment`, async () => {
       const context = await newContext(browser)
       await prepareCart(context, { ...ADDRESS, email: "classic-busy@example.com" })
@@ -644,7 +681,7 @@ for (const name of BROWSERS) {
       await context.close()
     })
 
-    await check(`${name}: classic checkout: a devtools edit of a locked field is refused by the server; Change details unlocks, and the next Place order opens the modal`, async () => {
+    await check(`${name}: classic checkout: a devtools edit of a locked field is refused by the server; the checkout update after the refusal unlocks the fields, and the next Place order opens the modal`, async () => {
       const context = await newContext(browser)
       const page = await passThenDecline(context, "devtools@example.com")
       await page.check("#payment_method_cod")
@@ -658,18 +695,19 @@ for (const name of BROWSERS) {
       await page.waitForFunction(() => /shipping address changed after your age check/.test(document.querySelector(".woocommerce-NoticeGroup-checkout")?.textContent ?? ""), null, { timeout: 30000 })
       assert.equal(await requests("CreateHostedSession"), sessions, "no modal: the server refused the edit")
       assert.ok(!/order-received/.test(page.url()))
-      await page.click("[data-navexa-agecheck-unlock]")
+      // No Change details and no update by hand: the refusal has WooCommerce update the checkout.
+      await page.waitForFunction(() => document.querySelector('[data-navexa-agecheck="1"]')?.getAttribute("data-status") === "none", null, { timeout: 20000 })
+      await page.waitForFunction(() => !document.querySelector(".blockUI"), null, { timeout: 20000 })
       const unlocked = await page.evaluate(() => ({
         address: document.querySelector('form.checkout [name="billing_address_1"]')?.readOnly,
         mirrors: document.querySelectorAll("[data-navexa-agecheck-mirror]").length,
+        bar: getComputedStyle(document.querySelector("[data-navexa-agecheck-lock]")).display !== "none",
       }))
-      assert.deepEqual(unlocked, { address: false, mirrors: 0 })
-      await page.evaluate(() => window.jQuery(document.body).trigger("update_checkout"))
-      await page.waitForFunction(() => document.querySelector('[data-navexa-agecheck="1"]')?.getAttribute("data-status") === "none", null, { timeout: 20000 })
-      await page.waitForFunction(() => !document.querySelector(".blockUI"), null, { timeout: 20000 })
+      assert.deepEqual(unlocked, { address: false, mirrors: 0, bar: false })
       await page.click("#place_order")
       await answerInFrame(page, "pass")
       await page.waitForURL(/order-received/, { timeout: 45000 })
+      assert.equal((await requests("CreateHostedSession")) - sessions, 1, "the next Place order opened the modal")
       await context.close()
     })
 

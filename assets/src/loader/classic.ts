@@ -18,6 +18,10 @@
  *   .woocommerce-NoticeGroup-checkout with a role="alert" list, built with
  *   textContent) and are announced through the live region outside the
  *   replaced fragment (a11y.ts).
+ * - An order the server refuses (Checkout\Classic::validate(), while the
+ *   page said passed) comes back with refresh: WooCommerce runs a checkout
+ *   update, and updated_checkout re-reads the status, so the next Place
+ *   order starts the check from the server's state.
  * - With Turnstile on, the start carries a Turnstile token rendered into the
  *   container's [data-navexa-agecheck-turnstile]; an interactive challenge
  *   refuses the start at once and moves the focus to it (turnstile.ts).

@@ -309,6 +309,84 @@ final class CheckoutTest extends TestCase {
 		$this->assertSame( array( Gate::message( Gate::REFUSE_VERIFY_FIRST ) ), $errors->messages, 'WooCommerce creates a new order: it needs its own check' );
 	}
 
+	public function test_classic_refusal_has_woocommerce_update_the_checkout(): void {
+		$errors = new \WP_Error();
+		Classic::validate( $this->posted( $this->us_address() ), $errors );
+		$this->assertSame( array( 'navexa_agecheck' ), $errors->codes );
+		$this->assertTrue( $this->session()->get( 'refresh_totals' ), 'send_ajax_failure_response() answers refresh: checkout.js triggers update_checkout' );
+
+		$this->session()->set( 'refresh_totals', null );
+		$this->guard_for( $this->us_address() );
+		$this->respond( 200, array( 'verification' => $this->verification( 'acv_1', 'PASSED' ) ) );
+		$errors = new \WP_Error();
+		Classic::validate( $this->posted( $this->us_address() ), $errors );
+		$this->assertSame( array(), $errors->codes );
+		$this->assertNull( $this->session()->get( 'refresh_totals' ), 'an admitted order asks for no update' );
+
+		$errors = new \WP_Error();
+		Classic::validate( $this->posted( $this->us_address( array( 'country' => 'GB' ) ), array( 'woocommerce_checkout_update_totals' => '1' ) ), $errors );
+		$this->assertSame( array(), $errors->codes );
+		$this->assertNull( $this->session()->get( 'refresh_totals' ), 'the no-JavaScript update is not an order' );
+	}
+
+	/**
+	 * The page said passed, the server refused the order: the update the
+	 * refusal asks for renders the session's state after it, and that is
+	 * what the glue's next Place order starts from (none or failed: the
+	 * check, in the modal; pending: a start that mints a new guard).
+	 */
+	public function test_classic_refused_order_the_page_showed_as_passed_renders_the_servers_state(): void {
+		$render = static function (): string {
+			ob_start();
+			Classic::render_status();
+			return (string) ob_get_clean();
+		};
+		$address = $this->us_address();
+		$moved   = $this->us_address( array( 'address_1' => '9 Elm St' ) );
+		$cases   = array(
+			'a ship-to changed past the lock'  => array(
+				function () use ( $moved ) {
+					$this->customer_at( $moved ); // WC_Checkout::update_session() saves the posted address.
+					return $moved;
+				},
+				Gate::REFUSE_SHIP_TO_CHANGED,
+				'none',
+			),
+			'a check an earlier order took'    => array(
+				function () use ( $address ) {
+					$this->respond( 200, array( 'verification' => $this->verification( 'acv_1', 'PASSED', array( 'orderExternalId' => 'wc:other:1:99' ) ) ) );
+					return $address;
+				},
+				Gate::REFUSE_VERIFY_FIRST,
+				'none',
+			),
+			'a guard that expired meanwhile' => array(
+				function () use ( $address ) {
+					$mac = ShipTo::from_wc_address( $address )->mac();
+					Session::set_guard( GuardToken::mint_checkout_guard( Session::sid(), 'acv_1', $mac, time() - GuardToken::CHECKOUT_GUARD_TTL - 60 ), 'acv_1' );
+					return $address;
+				},
+				Gate::REFUSE_VERIFY_FIRST,
+				'pending',
+			),
+		);
+		foreach ( $cases as $name => list( $meanwhile, $code, $status ) ) {
+			self::$wc->session = new \WC_Session();
+			$this->http_requests  = array();
+			$this->http_responses = array();
+			$this->customer_at( $address );
+			$this->guard_for( $address );
+			$this->assertStringContainsString( 'data-status="passed"', $render(), $name . ': the page says passed' );
+
+			$posted = $meanwhile();
+			$errors = new \WP_Error();
+			Classic::validate( $this->posted( $posted ), $errors );
+			$this->assertSame( array( Gate::message( $code ) ), $errors->messages, $name );
+			$this->assertTrue( $this->session()->get( 'refresh_totals' ), $name . ': WooCommerce updates the checkout' );
+			$this->assertStringContainsString( 'data-status="' . $status . '"', $render(), $name . ': the update shows the server\'s state, not passed' );
+		}
+	}
+
 	public function test_classic_ignores_junk_arguments(): void {
 		Classic::validate( 'junk', new \WP_Error() );
 		Classic::validate( array(), 'junk' );

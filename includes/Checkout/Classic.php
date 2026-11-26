@@ -25,7 +25,9 @@ defined( 'ABSPATH' ) || exit;
  *   admits it, with the ship-to taken from the posted data (shipping_*, or
  *   billing_* when WooCommerce posts no shipping address). Skipped for the
  *   no-JavaScript "Update totals" post, for carts that need no check and for
- *   local pickup.
+ *   local pickup. A refusal also has WooCommerce update the checkout
+ *   (refresh_after_refusal()), so the status the next Place order reads is
+ *   the server's.
  * - A resumed order_awaiting_payment that is already bound (a retried
  *   payment, Gate::bound_awaiting_order()) must still ship where it was bound
  *   to ship. Otherwise it is dropped from the session, so WooCommerce creates
@@ -137,6 +139,27 @@ final class Classic {
 			return;
 		}
 		$errors->add( 'navexa_agecheck', $refusal['message'] );
+		self::refresh_after_refusal();
+	}
+
+	/**
+	 * Has WooCommerce run a checkout update after this refused order: with
+	 * refresh_totals in the session, WC_Checkout::send_ajax_failure_response()
+	 * answers refresh, and checkout.js triggers update_checkout, which
+	 * renders the status fragment from the session's state after the
+	 * refusal. The page can still say passed when the server refuses (a
+	 * guard that expired, a ship-to changed past the lock, a check an earlier
+	 * order took), and the glue answers Place order without stepping in while
+	 * it says passed; since 1.1.0 there is no Verify age button, so without
+	 * the update every Place order would post again into the same refusal
+	 * instead of starting the check. WooCommerce clears the flag in that
+	 * answer, or in the next update when the post was not AJAX.
+	 */
+	private static function refresh_after_refusal(): void {
+		$session = Session::wc_session();
+		if ( null !== $session ) {
+			$session->set( 'refresh_totals', true );
+		}
 	}
 
 	/**

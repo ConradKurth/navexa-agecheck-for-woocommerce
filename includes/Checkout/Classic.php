@@ -52,14 +52,16 @@ final class Classic {
 	}
 
 	/**
-	 * Copies the billing first and last name of the classic checkout form
-	 * into the session customer. WooCommerce's checkout update
-	 * (update_order_review) saves the posted billing address but not the
-	 * name, while the block checkout saves both through the Store API; the
-	 * start reads both from the session (Start::identity(), the engine's data
-	 * match). WooCommerce saves the customer right after this action. Only in
-	 * pre-payment mode and for a cart that needs a check; the ship-to, the
-	 * guard and the gate never read the name.
+	 * Copies the billing first and last name, and the billing email when
+	 * is_email() accepts it (TAX-1839), of the classic checkout form into the
+	 * session customer. WooCommerce's checkout update (update_order_review)
+	 * saves the posted billing address but not the name or the email, while
+	 * the block checkout saves them through the Store API; the start reads
+	 * them from the session (Start::identity(), the engine's data match, and
+	 * Start::guest_email(), the returning-guest code). WooCommerce saves the
+	 * customer right after this action. Only in pre-payment mode and for a
+	 * cart that needs a check; the ship-to, the guard and the gate never read
+	 * the name or the email.
 	 *
 	 * @param mixed $post_data The checkout form, URL-encoded (already unslashed).
 	 */
@@ -78,6 +80,12 @@ final class Classic {
 		}
 		if ( isset( $fields['billing_last_name'] ) && is_string( $fields['billing_last_name'] ) ) {
 			$customer->set_billing_last_name( wc_clean( $fields['billing_last_name'] ) );
+		}
+		if ( isset( $fields['billing_email'] ) && is_string( $fields['billing_email'] ) ) {
+			$email = sanitize_email( trim( $fields['billing_email'] ) );
+			if ( '' !== $email && false !== is_email( $email ) ) {
+				$customer->set_billing_email( $email );
+			}
 		}
 	}
 

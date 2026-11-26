@@ -12,7 +12,8 @@ defined( 'ABSPATH' ) || exit;
 /**
  * What GetIntegrationInfo (E10a, in production since tax v0.0.164) says
  * about one API key and the store's origin: {livemode, scopes,
- * origin_allowed, minimum_age, display_name, organization_id}.
+ * origin_allowed, minimum_age, display_name, organization_id}, and (TAX-1839)
+ * the store's reuse: {reuse_window_days, guest_reuse_code}.
  *
  * Proto3 JSON omits zero values, so a missing field reads as false, [], 0 or
  * ''. A missing livemode therefore reads as test mode, which the live gate
@@ -27,6 +28,11 @@ final class IntegrationInfo {
 	 * Minimum ages an org can be set to.
 	 */
 	const MINIMUM_AGES = array( 18, 19, 21 );
+
+	/**
+	 * The longest reuse window AgeCheck takes, in days (MaxReuseWindowDays).
+	 */
+	const MAX_REUSE_WINDOW_DAYS = 365;
 
 	/**
 	 * Whether the key is a live key.
@@ -80,6 +86,26 @@ final class IntegrationInfo {
 	public $doc_retry = false;
 
 	/**
+	 * The store's per-store reuse window in days while AgeCheck has reuse on
+	 * for it, else 0 (also for a missing or unexpected value). For the
+	 * settings status line only: whether a guest's email is sent is
+	 * $guest_reuse_code.
+	 *
+	 * @var int
+	 */
+	public $reuse_window_days = 0;
+
+	/**
+	 * Whether AgeCheck offers a returning guest an emailed code (reuse on and
+	 * a store name set; the engine decides). Only while it is true does a
+	 * guest start send the billing email. False when missing, as in a 1.0.3
+	 * cache entry.
+	 *
+	 * @var bool
+	 */
+	public $guest_reuse_code = false;
+
+	/**
 	 * Builds the value from a decoded response. Accepts proto3 JSON names
 	 * (originAllowed) and the original field names (origin_allowed).
 	 *
@@ -115,6 +141,16 @@ final class IntegrationInfo {
 		}
 
 		$info->doc_retry = true === self::field( $body, 'docRetry', 'doc_retry' );
+
+		$days = self::field( $body, 'reuseWindowDays', 'reuse_window_days' );
+		if ( is_int( $days ) || ( is_string( $days ) && ctype_digit( $days ) ) ) {
+			$days = (int) $days;
+			if ( $days >= 0 && $days <= self::MAX_REUSE_WINDOW_DAYS ) {
+				$info->reuse_window_days = $days;
+			}
+		}
+
+		$info->guest_reuse_code = true === self::field( $body, 'guestReuseCode', 'guest_reuse_code' );
 		return $info;
 	}
 
@@ -126,13 +162,15 @@ final class IntegrationInfo {
 	public static function from_array( array $data ): self {
 		return self::from_response(
 			array(
-				'livemode'        => isset( $data['livemode'] ) ? $data['livemode'] : false,
-				'scopes'          => isset( $data['scopes'] ) ? $data['scopes'] : array(),
-				'origin_allowed'  => isset( $data['origin_allowed'] ) ? $data['origin_allowed'] : false,
-				'minimum_age'     => isset( $data['minimum_age'] ) ? $data['minimum_age'] : null,
-				'display_name'    => isset( $data['display_name'] ) ? $data['display_name'] : '',
-				'organization_id' => isset( $data['organization_id'] ) ? $data['organization_id'] : '',
-				'doc_retry'       => isset( $data['doc_retry'] ) ? $data['doc_retry'] : false,
+				'livemode'          => isset( $data['livemode'] ) ? $data['livemode'] : false,
+				'scopes'            => isset( $data['scopes'] ) ? $data['scopes'] : array(),
+				'origin_allowed'    => isset( $data['origin_allowed'] ) ? $data['origin_allowed'] : false,
+				'minimum_age'       => isset( $data['minimum_age'] ) ? $data['minimum_age'] : null,
+				'display_name'      => isset( $data['display_name'] ) ? $data['display_name'] : '',
+				'organization_id'   => isset( $data['organization_id'] ) ? $data['organization_id'] : '',
+				'doc_retry'         => isset( $data['doc_retry'] ) ? $data['doc_retry'] : false,
+				'reuse_window_days' => isset( $data['reuse_window_days'] ) ? $data['reuse_window_days'] : 0,
+				'guest_reuse_code'  => isset( $data['guest_reuse_code'] ) ? $data['guest_reuse_code'] : false,
 			)
 		);
 	}
@@ -140,17 +178,19 @@ final class IntegrationInfo {
 	/**
 	 * Plain array for caching.
 	 *
-	 * @return array{livemode: bool, scopes: string[], origin_allowed: bool, minimum_age: int|null, display_name: string, organization_id: string, doc_retry: bool}
+	 * @return array{livemode: bool, scopes: string[], origin_allowed: bool, minimum_age: int|null, display_name: string, organization_id: string, doc_retry: bool, reuse_window_days: int, guest_reuse_code: bool}
 	 */
 	public function to_array(): array {
 		return array(
-			'livemode'        => $this->livemode,
-			'scopes'          => $this->scopes,
-			'origin_allowed'  => $this->origin_allowed,
-			'minimum_age'     => $this->minimum_age,
-			'display_name'    => $this->display_name,
-			'organization_id' => $this->organization_id,
-			'doc_retry'       => $this->doc_retry,
+			'livemode'          => $this->livemode,
+			'scopes'            => $this->scopes,
+			'origin_allowed'    => $this->origin_allowed,
+			'minimum_age'       => $this->minimum_age,
+			'display_name'      => $this->display_name,
+			'organization_id'   => $this->organization_id,
+			'doc_retry'         => $this->doc_retry,
+			'reuse_window_days' => $this->reuse_window_days,
+			'guest_reuse_code'  => $this->guest_reuse_code,
 		);
 	}
 

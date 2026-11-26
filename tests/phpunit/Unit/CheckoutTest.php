@@ -130,10 +130,13 @@ final class CheckoutTest extends TestCase {
 			array(
 				'first_name' => 'Pat',
 				'last_name'  => 'Doe',
+				'email'      => 'pat@example.com',
 			),
 			$customer->billing,
-			'only the billing name, cleaned; WooCommerce saves the customer after the action'
+			'only the billing name, cleaned, and the email; WooCommerce saves the customer after the action'
 		);
+		Classic::remember_billing_name( 'billing_first_name=Pat&billing_last_name=Doe&billing_email=not-an-email' );
+		$this->assertSame( 'pat@example.com', $customer->billing['email'], 'an address is_email() refuses is never copied' );
 
 		Classic::remember_billing_name( 'billing_first_name=&billing_last_name[]=x' );
 		$this->assertSame( '', $customer->billing['first_name'], 'the form is the truth: a cleared name is cleared' );

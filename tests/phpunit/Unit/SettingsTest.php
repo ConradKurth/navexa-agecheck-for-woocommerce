@@ -146,6 +146,47 @@ final class SettingsTest extends TestCase {
 		$this->assertStringContainsString( 'Minimum age: 21', $text );
 	}
 
+	public function test_status_says_whether_returning_customers_are_reused(): void {
+		$text = function ( array $start ): array {
+			$this->respond( 200, $this->live_info( array_merge( array( 'scopes' => array( 'agecheck:verify' ) ), $start ) ) );
+			$this->respond( 200, $this->live_info() );
+			foreach ( $this->page->status_lines() as $line ) {
+				if ( 0 === strpos( $line['text'], 'Returning customers' ) ) {
+					return $line;
+				}
+			}
+			return array();
+		};
+		$off = $text( array() );
+		$this->assertSame( 'ok', $off['level'] );
+		$this->assertStringContainsString( 'reuse is off in Navexa', $off['text'] );
+
+		$on = $text(
+			array(
+				'reuseWindowDays' => 90,
+				'guestReuseCode'  => true,
+			)
+		);
+		$this->assertSame( 'ok', $on['level'] );
+		$this->assertStringContainsString( 'on (90 days)', $on['text'] );
+		$this->assertStringContainsString( 'guests by a one-time code', $on['text'] );
+		$this->assertStringNotContainsString( 'test mode', $on['text'] );
+
+		$unnamed = $text( array( 'reuseWindowDays' => 1 ) );
+		$this->assertSame( 'warning', $unnamed['level'] );
+		$this->assertStringContainsString( 'on (1 day) for signed-in customers', $unnamed['text'] );
+		$this->assertStringContainsString( 'Guests need a store name', $unnamed['text'] );
+
+		$test = $text(
+			array(
+				'livemode'        => false,
+				'reuseWindowDays' => 30,
+				'guestReuseCode'  => true,
+			)
+		);
+		$this->assertStringContainsString( 'In test mode, AgeCheck emails codes only to confirmed notification recipients', $test['text'] );
+	}
+
 	public function test_status_flags_missing_scope_mixed_modes_and_origin(): void {
 		$this->respond( 200, $this->live_info( array( 'livemode' => false ) ) );
 		$this->respond(

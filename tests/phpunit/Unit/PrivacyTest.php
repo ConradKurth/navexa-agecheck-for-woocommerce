@@ -79,7 +79,7 @@ final class PrivacyTest extends TestCase {
 		$this->assertCount( 1, $this->policies );
 		$text = $this->policies[0][1];
 		$this->assertSame( 'Navexa AgeCheck for WooCommerce', $this->policies[0][0] );
-		foreach ( array( 'verify.navexa.co', 'billing name', 'date of birth', 'Didit', 'https://navexa.co/privacy', 'keyed hashes', 'email you a link to verify your age', 'keyed reference to your account' ) as $needle ) {
+		foreach ( array( 'verify.navexa.co', 'billing name', 'date of birth', 'Didit', 'https://navexa.co/privacy', 'keyed hashes', 'email you a link to verify your age', 'keyed reference to your account', 'check out as a guest, we also send Navexa AgeCheck your billing email address', 'one-time code' ) as $needle ) {
 			$this->assertStringContainsString( $needle, $text );
 		}
 		$this->assertStringNotContainsString( 'challenges.cloudflare.com', $text, 'Cloudflare only when Turnstile is on' );

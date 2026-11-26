@@ -279,6 +279,8 @@ final class ModeTest extends TestCase {
 		$this->assertNull( $info->minimum_age );
 		$this->assertSame( '', $info->display_name );
 		$this->assertSame( '', $info->organization_id );
+		$this->assertSame( 0, $info->reuse_window_days );
+		$this->assertFalse( $info->guest_reuse_code );
 		$this->assertSame( array( 'agecheck:verify' ), $info->missing_scopes( Client::KEY_START ) );
 		$this->assertSame( array( 'agecheck:verify', 'agecheck:clearance' ), $info->missing_scopes( Client::KEY_FULFILMENT ) );
 	}
@@ -309,5 +311,42 @@ final class ModeTest extends TestCase {
 	public function test_integration_info_round_trips_through_the_cache_array(): void {
 		$info = IntegrationInfo::from_response( $this->live_info() );
 		$this->assertEquals( $info, IntegrationInfo::from_array( $info->to_array() ) );
+		$reuse = IntegrationInfo::from_response(
+			$this->live_info(
+				array(
+					'reuseWindowDays' => 90,
+					'guestReuseCode'  => true,
+				)
+			)
+		);
+		$this->assertEquals( $reuse, IntegrationInfo::from_array( $reuse->to_array() ) );
+	}
+
+	public function test_integration_info_reads_the_reuse_fields(): void {
+		$info = IntegrationInfo::from_response(
+			array(
+				'reuseWindowDays' => 90,
+				'guestReuseCode'  => true,
+			)
+		);
+		$this->assertSame( 90, $info->reuse_window_days );
+		$this->assertTrue( $info->guest_reuse_code );
+		$snake = IntegrationInfo::from_response(
+			array(
+				'reuse_window_days' => '30',
+				'guest_reuse_code'  => 'true',
+			)
+		);
+		$this->assertSame( 30, $snake->reuse_window_days );
+		$this->assertFalse( $snake->guest_reuse_code, 'only a JSON true offers the code' );
+		foreach ( array( -1, 366, 30.5, 'x', null ) as $odd ) {
+			$this->assertSame( 0, IntegrationInfo::from_response( array( 'reuseWindowDays' => $odd ) )->reuse_window_days );
+		}
+		// A 1.0.3 cache entry has neither field: reuse reads as off.
+		$old = $info->to_array();
+		unset( $old['reuse_window_days'], $old['guest_reuse_code'] );
+		$cached = IntegrationInfo::from_array( $old );
+		$this->assertSame( 0, $cached->reuse_window_days );
+		$this->assertFalse( $cached->guest_reuse_code );
 	}
 }

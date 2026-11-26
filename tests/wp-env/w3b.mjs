@@ -10,11 +10,16 @@
 //   nonce), AgeCheck's hosted page, the return step back to the order page,
 //   and the release; forged and stale starts refused; My account's view-order
 //   page shows it for a signed-in customer.
+// - returning guests (TAX-1839): a guest's start carries the billing email
+//   (from the Store API's update-customer, and on the classic page from the
+//   typed form through update_order_review) only while GetIntegrationInfo's
+//   guestReuseCode is true; a returning guest passes REUSED by the emailed
+//   code, and the order is bound, held and released.
 //
 //   node tests/mock-agecheck/server.mjs --host 0.0.0.0 --port 8787 &
 //   npm run env start
 //   npm run env -- run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp eval-file tests/wp-env/prepayment-setup.php
-//   node tests/wp-env/w3b.mjs --site http://localhost:8888 --mock http://localhost:8787 --product <product>
+//   node tests/wp-env/w3b.mjs --site http://localhost:8888 --mock http://localhost:8787 --product <product> [--classic <classic_checkout>]
 //     [--setup-cmd "npx --yes @wordpress/env@12.1.0 run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp eval-file tests/wp-env/w3b-setup.php"]
 //
 // Exits non-zero when a group fails. Zero dependencies (Node 22+).
@@ -30,6 +35,7 @@ function arg(name, fallback) {
 const SITE = arg("--site", "http://localhost:8888").replace(/\/+$/, "")
 const MOCK = arg("--mock", "http://localhost:8787").replace(/\/+$/, "")
 const PRODUCT = Number(arg("--product", "0"))
+const CLASSIC = Number(arg("--classic", "0"))
 const SETUP = arg(
   "--setup-cmd",
   "npx --yes @wordpress/env@12.1.0 run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp eval-file tests/wp-env/w3b-setup.php",
@@ -256,6 +262,127 @@ await group("PR 14: reuse on, a returning customer passes at once as REUSED; the
   assert.equal(reused.passClass, "reused")
   assert.ok(reused.reusedFrom, "AgeCheck names the earlier check")
 })
+
+await group("TAX-1839: a guest's start carries the billing email only while AgeCheck offers the code", async () => {
+  await mock("reset", {})
+  await mock("config", { hostedBase: MOCK, org: { allowedOrigins: [SITE] } })
+  await setup("mode", "prepayment")
+  const off = new Shopper()
+  await off.addProduct()
+  assert.equal((await off.ageCheck("start")).status, "pending")
+  let creates = await calls("CreateVerification")
+  assert.equal(creates.at(-1).identity?.email, undefined, "reuse off: no email")
+  assert.match(creates.at(-1).idempotencyKey, /:[0-9]+$/)
+
+  await mock("config", { reuse: "on" })
+  await setup("mode", "prepayment") // flushes the cached GetIntegrationInfo
+  const on = new Shopper()
+  await on.addProduct()
+  assert.equal((await on.ageCheck("start")).status, "pending")
+  creates = await calls("CreateVerification")
+  assert.equal(creates.at(-1).identity?.email, US.email, "the email the Store API's update-customer saved")
+  assert.match(creates.at(-1).idempotencyKey, /:e[0-9a-f]{16}$/)
+  assert.equal(creates.at(-1).documentNameCheck, "DOCUMENT_NAME_CHECK_NONE")
+
+  const signed = new Shopper()
+  await signed.login(user.login, user.pass)
+  await signed.addProduct()
+  await signed.ageCheck("start")
+  creates = await calls("CreateVerification")
+  assert.equal(creates.at(-1).identity?.email, undefined, "a signed-in customer never sends it")
+  assert.equal(creates.at(-1).customerRef, user.customer_ref)
+
+  await mock("config", { org: { displayName: "" } })
+  await setup("mode", "prepayment")
+  const unnamed = new Shopper()
+  await unnamed.addProduct()
+  await unnamed.ageCheck("start")
+  creates = await calls("CreateVerification")
+  assert.equal(creates.at(-1).identity?.email, undefined, "no store name: no code, no email")
+})
+
+await group("TAX-1839: a returning guest passes REUSED by the emailed code; the order is bound, held and released", async () => {
+  await mock("reset", {})
+  await mock("config", { hostedBase: MOCK, org: { allowedOrigins: [SITE] }, reuse: "on" })
+  await setup("mode", "prepayment")
+  const first = new Shopper()
+  await first.addProduct()
+  const started = await first.ageCheck("start")
+  assert.equal(started.status, "pending")
+  await decideOnHostedPage(started.hosted_url, "pass")
+  assert.equal((await first.ageCheck("refresh")).status, "passed")
+  const placed = await first.checkout()
+  assert.equal(placed.status, 200, `first checkout: ${JSON.stringify(placed.json).slice(0, 300)}`)
+  assert.equal((await setup("run", placed.json.order_id)).status, "processing")
+
+  // Another session, the same guest: the hosted page offers the code; the code passes it.
+  const back = new Shopper()
+  await back.addProduct()
+  const again = await back.ageCheck("start")
+  assert.equal(again.status, "pending", "a guest is never reused at the start: the code is on AgeCheck's page")
+  const page = await (await http(again.hosted_url)).text()
+  assert.match(page, /Verified at this store before\?/)
+  await decideOnHostedPage(again.hosted_url, "otp")
+  assert.equal((await back.ageCheck("refresh")).status, "passed")
+  const second = await back.checkout()
+  assert.equal(second.status, 200, `second checkout: ${JSON.stringify(second.json).slice(0, 300)}`)
+  const run = await setup("run", second.json.order_id)
+  assert.equal(run.status, "processing", JSON.stringify(run))
+  assert.equal(run.bound_by, "attach")
+  assert.equal(run.pass_class, "REUSED")
+})
+
+if (CLASSIC > 0) {
+  await group("TAX-1839: the classic checkout's typed billing email reaches the start", async () => {
+    await mock("reset", {})
+    await mock("config", { hostedBase: MOCK, org: { allowedOrigins: [SITE] }, reuse: "on" })
+    await setup("mode", "prepayment")
+    const guest = new Shopper()
+    await guest.addProduct({ ...US, email: "stale@example.com" })
+    // Shopper.fetch never follows redirects (the permalink's 301 included).
+    let res = await guest.fetch(`${SITE}/?page_id=${CLASSIC}`)
+    for (let hops = 0; res.status >= 300 && res.status < 400 && hops < 3; hops++) res = await guest.fetch(new URL(res.headers.get("location"), SITE).href)
+    const html = await res.text()
+    const reviewNonce = /"update_order_review_nonce":"([^"]+)"/.exec(html)?.[1]
+    assert.ok(reviewNonce, "update_order_review nonce")
+    const typed = new URLSearchParams({
+      billing_first_name: US.first_name,
+      billing_last_name: US.last_name,
+      billing_country: US.country,
+      billing_address_1: US.address_1,
+      billing_address_2: US.address_2,
+      billing_city: US.city,
+      billing_state: US.state,
+      billing_postcode: US.postcode,
+      billing_email: "typed@example.com",
+      payment_method: "cod",
+    })
+    const review = new URLSearchParams({
+      security: reviewNonce,
+      payment_method: "cod",
+      country: "US",
+      state: US.state,
+      postcode: US.postcode,
+      city: US.city,
+      address: US.address_1,
+      address_2: US.address_2,
+      s_country: "US",
+      s_state: US.state,
+      s_postcode: US.postcode,
+      s_city: US.city,
+      s_address: US.address_1,
+      s_address_2: US.address_2,
+      has_full_address: "true",
+      post_data: typed.toString(),
+    })
+    const reviewed = await guest.fetch(`${SITE}/?wc-ajax=update_order_review`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: review.toString() })
+    assert.equal(reviewed.status, 200)
+    guest.nonce = null
+    assert.equal((await guest.ageCheck("start")).status, "pending")
+    const creates = await calls("CreateVerification")
+    assert.equal(creates.at(-1).identity?.email, "typed@example.com", "the email typed on the classic form")
+  })
+}
 
 await setup("mode", "hold")
 

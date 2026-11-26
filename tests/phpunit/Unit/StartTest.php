@@ -841,4 +841,138 @@ final class StartTest extends TestCase {
 		$this->assertFalse( Start::is_hosted_url( 'javascript:alert(1)' ) );
 		$this->assertFalse( Start::is_hosted_url( '' ) );
 	}
+
+	/**
+	 * The start key's GetIntegrationInfo says the returning-guest code is
+	 * offered (TAX-1839), or not, and is cached for the start.
+	 */
+	private function guest_reuse_code( bool $on ): void {
+		$this->respond(
+			200,
+			$this->live_info(
+				array(
+					'scopes'          => array( 'agecheck:verify' ),
+					'reuseWindowDays' => 90,
+					'guestReuseCode'  => $on,
+				)
+			)
+		);
+		Mode::lookup( Client::KEY_START, null, true );
+		$this->http_requests = array();
+	}
+
+	public function test_a_guest_sends_the_billing_email_only_while_agecheck_offers_the_code(): void {
+		// Off (the setUp answer has no guestReuseCode, as a 1.0.3 cache entry): no email.
+		$this->respond_created( 'acv_off' );
+		$this->respond( 200, array( 'hostedUrl' => self::HOSTED ) );
+		$this->start();
+		$this->assertArrayNotHasKey( 'email', $this->request_body( 0 )['identity'] );
+		$this->assertStringEndsWith( ':0', $this->request_body( 0 )['idempotencyKey'] );
+
+		Session::forget_verification();
+		$this->guest_reuse_code( true );
+		$this->respond_created( 'acv_on' );
+		$this->respond( 200, array( 'hostedUrl' => self::HOSTED ) );
+		$this->start();
+		$body = $this->request_body( 0 );
+		$this->assertSame(
+			array(
+				'name'               => 'Pat Doe',
+				'residentialAddress' => $body['intendedShipTo'],
+				'email'              => 'pat@example.com',
+			),
+			$body['identity']
+		);
+		$this->assertSame( 'DOCUMENT_NAME_CHECK_NONE', $body['documentNameCheck'] );
+		$this->assertMatchesRegularExpression( '/^' . preg_quote( Install::install_id() . ':' . Session::sid() . ':' . $this->mac() . ':1', '/' ) . ':e[0-9a-f]{16}$/', $body['idempotencyKey'] );
+		$this->assertArrayNotHasKey( 'customerRef', $body );
+		$this->assertStringNotContainsString( 'pat@example.com', $this->all_logs(), 'the email is never logged' );
+		$this->assertStringNotContainsString( substr( $body['idempotencyKey'], -16 ), $this->all_logs(), 'nor its tag' );
+	}
+
+	public function test_a_guest_whose_billing_address_is_elsewhere_sends_the_email_alone(): void {
+		$this->guest_reuse_code( true );
+		$this->customer_at( $this->us_address(), $this->us_address( array( 'address_1' => '9 Other Rd' ) ) );
+		$this->respond_created( 'acv_1' );
+		$this->respond( 200, array( 'hostedUrl' => self::HOSTED ) );
+		$this->start();
+		$this->assertSame( array( 'email' => 'pat@example.com' ), $this->request_body( 0 )['identity'] );
+	}
+
+	public function test_a_signed_in_customer_never_sends_the_email(): void {
+		$this->guest_reuse_code( true );
+		$this->current_user = 42;
+		$this->respond_created( 'acv_1' );
+		$this->respond( 200, array( 'hostedUrl' => self::HOSTED ) );
+		$this->start();
+		$body = $this->request_body( 0 );
+		$this->assertArrayNotHasKey( 'email', $body['identity'] );
+		$this->assertArrayHasKey( 'customerRef', $body );
+		$this->assertDoesNotMatchRegularExpression( '/:e[0-9a-f]{16}$/', $body['idempotencyKey'] );
+	}
+
+	public function test_no_email_without_an_integration_answer_or_a_valid_address(): void {
+		// GetIntegrationInfo failing: no answer, no email.
+		$this->respond( 503, array( 'code' => 'unavailable', 'message' => 'down' ) );
+		Mode::lookup( Client::KEY_START, null, true );
+		$this->http_requests = array();
+		$this->respond_created( 'acv_1' );
+		$this->respond( 200, array( 'hostedUrl' => self::HOSTED ) );
+		$this->start();
+		$this->assertArrayNotHasKey( 'email', $this->request_body( 0 )['identity'] );
+
+		$this->guest_reuse_code( true );
+		foreach ( array( '', 'not-an-email', 'pat@', 'pat @example.com', str_repeat( 'a', 250 ) . '@example.com' ) as $i => $email ) {
+			Session::forget_verification();
+			$this->http_requests = array();
+			$this->customer_at( $this->us_address( array( 'email' => $email ) ) );
+			$this->respond_created( 'acv_bad' . $i );
+			$this->respond( 200, array( 'hostedUrl' => self::HOSTED ) );
+			$this->start();
+			$this->assertArrayNotHasKey( 'email', $this->request_body( 0 )['identity'], 'no email for ' . $email );
+			$this->assertDoesNotMatchRegularExpression( '/:e[0-9a-f]{16}$/', $this->request_body( 0 )['idempotencyKey'] );
+		}
+	}
+
+	public function test_the_key_tag_changes_with_the_email_but_not_its_case(): void {
+		$this->guest_reuse_code( true );
+		$tags = array();
+		foreach ( array( 'pat@example.com', 'PAT@Example.com', 'sam@example.com' ) as $i => $email ) {
+			Session::forget_verification();
+			$this->http_requests = array();
+			$this->customer_at( $this->us_address( array( 'email' => $email ) ) );
+			$this->respond_created( 'acv_t' . $i );
+			$this->respond( 200, array( 'hostedUrl' => self::HOSTED ) );
+			$this->start();
+			$body   = $this->request_body( 0 );
+			$tags[] = substr( $body['idempotencyKey'], -16 );
+			$this->assertSame( $email, $body['identity']['email'] );
+		}
+		$this->assertSame( $tags[0], $tags[1], 'case does not change the tag' );
+		$this->assertNotSame( $tags[0], $tags[2], 'another email does' );
+	}
+
+	public function test_a_refused_email_starts_again_without_it(): void {
+		$this->guest_reuse_code( true );
+		$this->respond( 400, array( 'code' => 'invalid_argument', 'message' => 'invalid CreateVerificationRequest.identity.email' ) );
+		$this->respond_created( 'acv_retry' );
+		$this->respond( 200, array( 'hostedUrl' => self::HOSTED ) );
+		$answer = $this->start();
+		$this->assertSame( 'pending', $answer['status'] );
+		$this->assertSame( 'pat@example.com', $this->request_body( 0 )['identity']['email'] );
+		$retry = $this->request_body( 1 );
+		$this->assertSame( 'CreateVerification', $this->request_rpc( 1 ) );
+		$this->assertArrayNotHasKey( 'email', $retry['identity'] );
+		$this->assertSame( preg_replace( '/:e[0-9a-f]{16}$/', '', $this->request_body( 0 )['idempotencyKey'] ), $retry['idempotencyKey'], 'the key without the email part' );
+		$this->assertStringContainsString( 'code=invalid_argument', $this->all_logs() );
+		$this->assertStringNotContainsString( 'pat@example.com', $this->all_logs() );
+		$this->assertStringNotContainsString( 'identity.email', $this->all_logs(), 'never the engine\'s message' );
+
+		// The US-only refusal is about the address: not retried.
+		Session::forget_verification();
+		$this->http_requests = array();
+		$this->respond( 400, array( 'code' => 'invalid_argument', 'message' => 'AgeCheck verifies US addresses only' ) );
+		$this->assertSame( 'refused', $this->start()['status'] );
+		$this->assertCount( 1, $this->http_requests );
+	}
 }

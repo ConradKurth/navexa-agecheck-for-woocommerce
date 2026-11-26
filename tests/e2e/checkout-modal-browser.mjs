@@ -13,6 +13,7 @@
 //
 //   node tests/e2e/checkout-modal-browser.mjs --site http://localhost:8888 --mock http://127.0.0.1:8787 \
 //     --product <id> --exempt <id> --block <page id> --classic <page id> [--browsers chromium,webkit,firefox] [--only <text>]
+//     [--turnstile-interactive]
 //
 // --mock must be the 127.0.0.1 address: it is also the hosted pages' base.
 // Checks: the modal passes and the order is placed without leaving checkout;
@@ -28,6 +29,15 @@
 // observer, so the loader's return to it fails); another plugin's false from a
 // checkout_place_order handler bound before the glue still stops WooCommerce
 // (a cart that needs no check, and the resubmit after a pass).
+//
+// --turnstile-interactive: the site runs Turnstile with Cloudflare's
+// force-interactive test site key (3x00000000000000000000FF) and the
+// always-pass secret (1x0000000000000000000000000000000AA), set beforehand;
+// only the interactive-challenge checks run, on block and classic checkout:
+// Place order opens no modal and sends nothing to the store, the shopper is
+// told to complete the check shown and the focus is on it, and once it is
+// solved the next Place order opens the modal and the order is placed. Needs
+// challenges.cloudflare.com from the browser and from WordPress.
 
 import assert from "node:assert/strict"
 import { chromium, firefox, webkit } from "playwright-core"
@@ -45,6 +55,7 @@ const BLOCK = Number(arg("--block", "0"))
 const CLASSIC = Number(arg("--classic", "0"))
 const BROWSERS = arg("--browsers", "chromium,webkit,firefox").split(",")
 const ONLY = arg("--only", "")
+const TURNSTILE_INTERACTIVE = process.argv.includes("--turnstile-interactive")
 const ENGINES = { chromium, firefox, webkit }
 const LAUNCH = { chromium: { args: ["--test-third-party-cookie-phaseout"] }, firefox: {}, webkit: {} }
 
@@ -197,6 +208,29 @@ async function openBlock(context) {
   return { page, urls }
 }
 
+/**
+ * Clicks Cloudflare's checkbox in the Turnstile iframe (it may sit in a closed
+ * shadow root) until Turnstile writes its token into the status container's
+ * response field; the checkbox can take a moment to become clickable. The
+ * frame is scrolled into view first: the block checkout scrolls up to its
+ * error notice.
+ */
+async function solveTurnstile(page) {
+  const solved = () => page.evaluate(() => (document.querySelector(".navexa-agecheck__turnstile [name='cf-turnstile-response']")?.value ?? "") !== "")
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    const frame = page.frames().find((f) => f.url().includes("challenges.cloudflare.com"))
+    const element = frame ? await frame.frameElement().catch(() => null) : null
+    if (element) await element.scrollIntoViewIfNeeded().catch(() => {})
+    const box = element ? await element.boundingBox().catch(() => null) : null
+    if (box && box.width > 0) await page.mouse.click(box.x + 30, box.y + box.height / 2)
+    for (let i = 0; i < 10; i++) {
+      if (await solved()) return `click ${attempt}`
+      await page.waitForTimeout(500)
+    }
+  }
+  throw new Error("the Turnstile challenge was not solved")
+}
+
 /** Waits for the modal's frame, checks it is the embedded page on the mock (cross-site), and answers in it. */
 async function answerInFrame(page, decision) {
   await page.waitForSelector(FRAME, { timeout: 30000 })
@@ -216,6 +250,45 @@ for (const name of BROWSERS) {
   try {
     await mock("reset")
     await mock("config", { hostedBase: MOCK, org: { allowedOrigins: [SITE] } })
+
+    if (TURNSTILE_INTERACTIVE) {
+      for (const [checkout, open, place, notice] of [
+        ["block", openBlock, PLACE_BLOCK, ".wc-block-components-notice-banner.is-error"],
+        ["classic", openClassic, "#place_order", "[data-navexa-agecheck-notice]"],
+      ]) {
+        await check(`${name}: ${checkout} checkout, Turnstile interactive challenge: Place order opens no modal, the shopper is told and focused on the challenge; solved, the next Place order opens the modal and places the order`, async () => {
+          const context = await newContext(browser)
+          await prepareCart(context, { ...ADDRESS, email: `turnstile-${checkout}@example.com` })
+          const { page } = await open(context)
+          const creates = await requests("CreateVerification")
+          const sessions = await requests("CreateHostedSession")
+          const started = Date.now()
+          await page.click(place)
+          await page.waitForFunction((sel) => /Complete the security check shown/.test(document.querySelector(sel)?.textContent ?? ""), notice, { timeout: 30000 })
+          const refusedAfter = Date.now() - started
+          assert.ok(refusedAfter < 30000, `refused in ${refusedAfter} ms, not after the token timeout`)
+          await page.waitForFunction(() => !!document.activeElement?.classList?.contains("navexa-agecheck__turnstile"), null, { timeout: 5000 }).catch(() => {
+            throw new Error("the focus is on the Security check group")
+          })
+          const group = await page.evaluate(() => ({ role: document.activeElement?.getAttribute("role"), label: document.activeElement?.getAttribute("aria-label") }))
+          assert.deepEqual(group, { role: "group", label: "Security check" })
+          if (checkout === "classic") {
+            await page.waitForFunction(() => /Complete the security check shown/.test(document.getElementById("navexa-agecheck-live")?.textContent ?? ""), null, { timeout: 10000 })
+          }
+          assert.equal(await page.locator(MODAL).count(), 0, "no modal")
+          assert.equal(await requests("CreateVerification"), creates, "nothing reached AgeCheck")
+          assert.equal(await requests("CreateHostedSession"), sessions, "nothing reached AgeCheck")
+          assert.ok(!/order-received/.test(page.url()))
+          const how = await solveTurnstile(page)
+          await page.click(place)
+          await answerInFrame(page, "pass")
+          await page.waitForURL(/order-received/, { timeout: 45000 })
+          await context.close()
+          return `refused in ${refusedAfter} ms; challenge solved by ${how}`
+        })
+      }
+      continue
+    }
 
     await check(`${name}: block checkout: Place order opens the modal, a pass in the cross-site frame places the order without leaving checkout`, async () => {
       const context = await newContext(browser)

@@ -20,6 +20,14 @@
  * bypass, so the shopper never clicks twice. Anything else shows the
  * server's message where WooCommerce shows its own checkout errors.
  *
+ * Outage fallback (TAX-1841): a start (or refresh) answering "hold" means
+ * AgeCheck cannot run the check and the store takes and holds orders then.
+ * No modal opens: the hold copy is shown and announced, and the form is
+ * submitted at once; Checkout\Classic::validate() admits the order only on
+ * the outage this session's own start saw, and the order is held until the
+ * shopper verifies by link. With the store refusing (the default) the start
+ * answers "unavailable" and the checkout stays blocked.
+ *
  * The browser never decides: Checkout\Classic::validate() refuses an order
  * that has not passed on the server, whatever this code did.
  */
@@ -41,6 +49,8 @@ export interface PlaceOrderDeps {
   submit(): void
   /** The server said passed: lock the fields and show the pass. */
   passed(): void
+  /** The server takes and holds the order (AgeCheck down, TAX-1841): show and announce its copy; nothing is locked. */
+  hold(message: string): void
   /** Shows a refusal; focusChallenge when Turnstile shows an interactive challenge. */
   fail(message: string, focusChallenge: boolean): void
   /** Shopper copy by key. */
@@ -110,6 +120,11 @@ export function createPlaceOrderFlow(deps: PlaceOrderDeps): PlaceOrderFlow {
         resubmit()
         return
       }
+      if (answer.status === "hold") {
+        deps.hold(answer.message || deps.t("hold"))
+        resubmit()
+        return
+      }
       let closed = false
       if (answer.status === "pending" && answer.hosted_url) {
         unblock()
@@ -125,6 +140,11 @@ export function createPlaceOrderFlow(deps: PlaceOrderDeps): PlaceOrderFlow {
       }
       if (answer.status === "passed") {
         deps.passed()
+        resubmit()
+        return
+      }
+      if (answer.status === "hold") {
+        deps.hold(answer.message || deps.t("hold"))
         resubmit()
         return
       }

@@ -4,9 +4,10 @@
  * observer), in the shared loader's in-page modal.
  *
  * - Before a pass: "You'll confirm your age when you place the order" (or
- *   the server's own message, such as a changed ship-to); after: "Age
- *   verified". The status line is a polite live region (this component is
- *   not re-mounted on cart updates, so the region persists).
+ *   the server's own message, such as a changed ship-to, or the outage
+ *   fallback's hold copy, TAX-1841); after: "Age verified". The status line
+ *   is a polite live region (this component is not re-mounted on cart
+ *   updates, so the region persists).
  * - With Turnstile on it holds the Turnstile container the start renders
  *   into; an interactive challenge shows there and gets the focus.
  * - After a pass WooCommerce's own address cards replace the address forms

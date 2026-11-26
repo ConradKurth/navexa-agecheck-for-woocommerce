@@ -118,6 +118,7 @@
       case "failed":
       case "pending":
       case "unavailable":
+      case "hold":
         return status;
       case "none":
         return "pending";
@@ -179,6 +180,11 @@
           resubmit();
           return;
         }
+        if (answer.status === "hold") {
+          deps.hold(answer.message || deps.t("hold"));
+          resubmit();
+          return;
+        }
         let closed = false;
         if (answer.status === "pending" && answer.hosted_url) {
           unblock();
@@ -194,6 +200,11 @@
         }
         if (answer.status === "passed") {
           deps.passed();
+          resubmit();
+          return;
+        }
+        if (answer.status === "hold") {
+          deps.hold(answer.message || deps.t("hold"));
           resubmit();
           return;
         }
@@ -417,6 +428,13 @@
         setMessage(t("passed"));
         announce(doc, t("passed"));
         lock();
+      },
+      hold: (message) => {
+        var _a;
+        clearNotices();
+        (_a = container()) == null ? void 0 : _a.setAttribute("data-status", "hold");
+        setMessage(message);
+        announce(doc, message);
       },
       fail,
       t,

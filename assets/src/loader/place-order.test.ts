@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { createPlaceOrderFlow, failureMessage, type PlaceOrderDeps } from "./place-order.ts"
 import type { StoreAnswer } from "./types.ts"
 
-const T: Record<string, string> = { passed: "Age verified.", failed: "Failed.", pending: "Not finished.", unavailable: "Unavailable.", closed: "Closed." }
+const T: Record<string, string> = { passed: "Age verified.", failed: "Failed.", pending: "Not finished.", unavailable: "Unavailable.", closed: "Closed.", hold: "Held copy." }
 
 type Handler = (event: { stopImmediatePropagation(): void }) => unknown
 
@@ -56,6 +56,10 @@ function harness(opts: { status?: string | null; answers?: StoreAnswer[]; verify
     passed: () => {
       log.push("passed")
       status = "passed"
+    },
+    hold: (message) => {
+      log.push(`hold ${message}`)
+      status = "hold"
     },
     fail: (message, focus) => log.push(`fail ${message}${focus ? " (focus challenge)" : ""}`),
     t: (key) => T[key] ?? key,
@@ -166,6 +170,34 @@ test("a transport error reads as unavailable, with no resubmit", async () => {
   await flow.run()
   assert.ok(log.includes("fail Unavailable."))
   assert.ok(!log.includes("submit"))
+})
+
+test("TAX-1841: a start answering hold (AgeCheck down, the store takes and holds orders) shows the copy and resubmits once, with no modal", async () => {
+  const { flow, log } = harness({ answers: [{ v: 1, status: "hold", message: "Age verification is unavailable right now." }] })
+  const e = event()
+  assert.equal(flow.onPlaceOrder(e), false)
+  while (flow.busy()) await new Promise((r) => setTimeout(r, 1))
+  assert.deepEqual(log, ["block", "update", "start", "hold Age verification is unavailable right now.", "unblock", "submit", "handler:undefined"])
+  assert.ok(!log.some((l) => l.startsWith("verify")), "no modal")
+  // The next Place order asks the server again (AgeCheck may be back): hold is not passed.
+  assert.equal(flow.onPlaceOrder(event()), false)
+  while (flow.busy()) await new Promise((r) => setTimeout(r, 1))
+})
+
+test("TAX-1841: hold without a message uses the hold copy; a refresh answering hold after the modal resubmits too", async () => {
+  const quiet = harness({ answers: [{ v: 1, status: "hold" }] })
+  await quiet.flow.run()
+  assert.ok(quiet.log.includes("hold Held copy."))
+  const after = harness({ answers: [{ v: 1, status: "pending", hosted_url: "https://verify.navexa.co/v/a.b" }, { v: 1, status: "hold" }] })
+  await after.flow.run()
+  assert.deepEqual(after.log.slice(-4), ["hold Held copy.", "unblock", "submit", "handler:undefined"])
+})
+
+test("TAX-1841: the store refusing during an outage (unavailable) stays blocked: no resubmit", async () => {
+  const { flow, log } = harness({ answers: [{ v: 1, status: "unavailable", message: "Age verification is temporarily unavailable." }] })
+  await flow.run()
+  assert.ok(!log.includes("submit"))
+  assert.ok(log.includes("fail Age verification is temporarily unavailable."))
 })
 
 test("failureMessage: the server's message wins, then closed, then the status copy", () => {

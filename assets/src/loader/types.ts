@@ -7,10 +7,15 @@
  * key; whatever the answer says, the server decides at Place order.
  */
 
-export type Status = "none" | "pending" | "passed" | "failed" | "refused" | "unavailable"
+export type Status = "none" | "pending" | "passed" | "failed" | "refused" | "unavailable" | "hold"
 export type Action = "start" | "refresh"
 
-/** The store's answer. code is a machine reason on refusals (1.1.0, additive). */
+/**
+ * The store's answer. code is a machine reason on refusals (1.1.0, additive).
+ * status "hold" (TAX-1841): AgeCheck cannot run the check and the store takes
+ * and holds orders then; Place order goes on with no modal, and the server's
+ * gate decides again when the order is placed.
+ */
 export interface StoreAnswer {
   v: number
   status: string
@@ -36,6 +41,7 @@ export function statusKey(status: string): string {
     case "failed":
     case "pending":
     case "unavailable":
+    case "hold":
       return status
     case "none":
       return "pending"

@@ -27,6 +27,9 @@
  *   refuses the start at once and moves the focus to it (turnstile.ts).
  * - Back from the loader's full-page redirect fallback (data-status
  *   "pending" on load): one refresh, no modal.
+ * - Outage fallback (TAX-1841): a start answering "hold" (AgeCheck down, the
+ *   store takes and holds orders) shows and announces the hold copy and
+ *   submits with no modal; the server's gate decides the order.
  */
 import { StartRefused, storeApiTransport } from "./store-api.ts"
 import { announce, focusOnReturn, type DocLike as A11yDoc, type ElementLike, type WinLike } from "./a11y.ts"
@@ -186,6 +189,12 @@ function boot(): void {
       setMessage(t("passed"))
       announce(doc, t("passed"))
       lock()
+    },
+    hold: (message) => {
+      clearNotices()
+      container()?.setAttribute("data-status", "hold")
+      setMessage(message)
+      announce(doc, message)
     },
     fail,
     t,

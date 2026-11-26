@@ -44,10 +44,15 @@ defined( 'ABSPATH' ) || exit;
  *   Change details button) renders above the customer details, outside the
  *   replaced fragment, hidden until the glue locks the fields after a pass.
  *   The lock is consistency, not a control: the server binds the ship-to.
- * - Each checkout update copies the form's billing first and last name into
- *   the session customer (remember_billing_name()), as the block checkout's
- *   Store API does, so a start sends the name the shopper typed for the
- *   engine's data match (Start::identity()).
+ * - Each checkout update copies the form's billing first and last name, and
+ *   the billing email, into the session customer (remember_billing_name()),
+ *   as the block checkout's Store API does. The glue runs that update before
+ *   every start at Place order, so a start sends the name the shopper typed
+ *   for the engine's data match (Start::identity()) and a guest's email for
+ *   the returning-guest code (Start::guest_email(), TAX-1839).
+ * - Outage fallback (TAX-1841): a start answering hold has the glue submit
+ *   with no modal; validate() admits that order only on the session's own
+ *   server-observed outage (Gate::check()).
  */
 final class Classic {
 

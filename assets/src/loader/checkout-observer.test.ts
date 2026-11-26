@@ -74,6 +74,19 @@ test("not_required and pickup refusals let the order go (the server decides)", a
   }
 })
 
+test("TAX-1841: a start or refresh answering hold lets the order go with no modal; unavailable (the store refuses) stops it", async () => {
+  const held = deps({ answers: [{ v: 1, status: "hold", message: "held" }] })
+  assert.equal(await createCheckoutObserver(held.d)(), true)
+  assert.deepEqual(held.log, ["push", "start"], "no modal")
+  const later = deps({ answers: [{ v: 1, status: "pending", hosted_url: "https://verify.navexa.co/v/a.b" }, { v: 1, status: "hold" }] })
+  assert.equal(await createCheckoutObserver(later.d)(), true)
+  const again = deps({ state: () => ({ required: true, status: "hold" }), answers: [{ v: 1, status: "hold" }] })
+  assert.equal(await createCheckoutObserver(again.d)(), true)
+  assert.deepEqual(again.log, ["push", "start"], "a page that says hold still asks the server")
+  const refused = deps({ answers: [{ v: 1, status: "unavailable", message: "Age verification is temporarily unavailable." }] })
+  assert.deepEqual(await createCheckoutObserver(refused.d)(), { type: "error", errorMessage: "Age verification is temporarily unavailable." })
+})
+
 test("closing the modal: refresh, then the closed copy", async () => {
   const { d, log } = deps({ answers: [{ v: 1, status: "pending", hosted_url: "https://verify.navexa.co/v/a.b" }, { v: 1, status: "pending" }], verify: async () => ({ status: "closed" }) })
   assert.deepEqual(await createCheckoutObserver(d)(), { type: "error", errorMessage: "t:closed" })

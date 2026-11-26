@@ -12,6 +12,12 @@
  * - Idempotent: a payment method's own button can emit validation twice for
  *   one attempt (useValidateCheckout), so concurrent calls share one run: one
  *   start, one modal.
+ * - Outage fallback (TAX-1841): a start (or refresh) answering "hold" lets
+ *   the order go with no modal (the block shows the hold copy from the cart
+ *   state); Checkout\Blocks::validate() admits it only on the outage this
+ *   session's own start saw, and it is held until the shopper verifies by
+ *   link. With the store refusing (the default) the start answers
+ *   "unavailable" and the order is stopped.
  * - Short-circuits without a modal when the cart needs no check or has passed,
  *   when WooCommerce's own field validation has errors (it shows them; the
  *   observer still runs after a failing validation observer of its own), and
@@ -73,6 +79,7 @@ export function createCheckoutObserver(deps: ObserverDeps): () => Promise<Observ
       }
       let answer = await deps.transport("start")
       if (answer.status === "refused" && answer.code && PROCEED_CODES.includes(answer.code)) return true
+      if (answer.status === "hold") return true
       let closed = false
       if (answer.status === "pending" && answer.hosted_url) {
         let result: VerifyResult | null = null
@@ -84,7 +91,7 @@ export function createCheckoutObserver(deps: ObserverDeps): () => Promise<Observ
         closed = result?.status === "closed"
         answer = await deps.transport("refresh")
       }
-      if (answer.status === "passed") return true
+      if (answer.status === "passed" || answer.status === "hold") return true
       if (answer.status === "refused" && deps.challenging()) deps.onChallenge?.()
       else deps.restoreFocus?.()
       return { type: "error", errorMessage: failureMessage(answer, closed, deps.t) || deps.t(statusKey(answer.status)) }

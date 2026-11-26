@@ -22,17 +22,19 @@ defined( 'ABSPATH' ) || exit;
  *   FAILED_PRECONDITION once it may not, an under-age failure included). The
  *   release run asks it on every DENIED not_verified with GetVerification
  *   FAILED for such an order (defer()), and on every failure a test key's
- *   run reads (test orders wait the same window, so Try again can be tried
- *   with a test key). While AgeCheck
- *   accepts, Meta::RETRY_OPEN is 'yes', Meta::STATUS stays empty (no refund,
- *   no "will not ship" page) and the run asks again at least hourly. Once it
+ *   run reads (test orders wait too, within AgeCheck's 3-day test bound, so
+ *   Try again can be tried with a test key). While AgeCheck accepts,
+ *   Meta::RETRY_OPEN is 'yes', Meta::STATUS stays empty (no refund, no
+ *   "will not ship" page) and the run asks again at least hourly. Once it
  *   refuses (or Meta::RETRY_UNTIL is past), GetClearance decides as before:
  *   DENIED denies. An under-age failure is therefore denied at once.
  * - Meta::RETRY_UNTIL is the date the order page, the panel and the notes
  *   show, and a local backstop: the earliest failure the plugin learned of
  *   (the verification.failed webhook's occurred_at, or the failure's
  *   decidedAt) + WINDOW, never later than the verification's creation +
- *   CREATED_BOUND, and only ever moved earlier (anchor()).
+ *   CREATED_BOUND (CREATED_BOUND_TEST for a test verification), and only
+ *   ever moved earlier (anchor()). AgeCheck's API does not answer the
+ *   deadline, so these mirror its rule (domain.DocRetryWindowEnd).
  * - The shopper's order page offers "Try again" (OrderVerify), staff can
  *   email a new link (Links::can_resend()), and the needs_doc webhook that
  *   follows a failure queues a release run (Webhook), all only while open().
@@ -54,6 +56,12 @@ final class DocRetry {
 	const CREATED_BOUND = 2246400;
 
 	/**
+	 * The same bound for a test verification (AgeCheck's DocRetryCreatedBound
+	 * in test mode: 3 days, its 7-day test data purge less four days).
+	 */
+	const CREATED_BOUND_TEST = 259200;
+
+	/**
 	 * Most seconds between two release runs while the retry is possible.
 	 */
 	const RECHECK = 3600;
@@ -62,6 +70,46 @@ final class DocRetry {
 	 * Reason recorded while the denial waits.
 	 */
 	const REASON = 'retry_possible';
+
+	/**
+	 * Reason recorded while a test key's failure waits: no refund follows.
+	 */
+	const REASON_TEST = 'retry_possible_test';
+
+	/**
+	 * For defer() with a live key: a denial (and a refund) follows the window.
+	 */
+	const MODE_LIVE = 'live';
+
+	/**
+	 * For defer() with a test key and NAVEXA_AGECHECK_ALLOW_TEST_RELEASE: a
+	 * denial may follow the window, a refund never does.
+	 */
+	const MODE_TEST_RELEASE = 'test_release';
+
+	/**
+	 * For defer() with a test key without test release: neither follows.
+	 */
+	const MODE_TEST = 'test';
+
+	/**
+	 * Whether $reason is one defer() records while the order waits.
+	 *
+	 * @param string $reason Reason code.
+	 */
+	public static function is_reason( string $reason ): bool {
+		return self::REASON === $reason || self::REASON_TEST === $reason;
+	}
+
+	/**
+	 * Latest a retry window ends after the verification's creation, in
+	 * seconds.
+	 *
+	 * @param bool $test Whether the verification is a test one.
+	 */
+	public static function created_bound( bool $test ): int {
+		return $test ? self::CREATED_BOUND_TEST : self::CREATED_BOUND;
+	}
 
 	/**
 	 * Whether the order's verification was created with allowDocRetry by this
@@ -121,15 +169,17 @@ final class DocRetry {
 
 	/**
 	 * Moves the window's end to at most $failed_at + WINDOW and $created_at +
-	 * CREATED_BOUND (each ignored when not positive), never later than one
+	 * created_bound() (each ignored when not positive), never later than one
 	 * already recorded (unsaved meta changes). Answers the end.
 	 *
 	 * @param \WC_Order $order      Order.
 	 * @param int       $failed_at  Unix time of a failure.
 	 * @param int       $created_at Unix time the verification was created.
+	 * @param bool      $test       Whether the verification is a test one.
 	 */
-	public static function anchor( \WC_Order $order, int $failed_at, int $created_at ): int {
-		$ends = array();
+	public static function anchor( \WC_Order $order, int $failed_at, int $created_at, bool $test = false ): int {
+		$created_bound = self::created_bound( $test );
+		$ends          = array();
 		if ( self::until( $order ) > 0 ) {
 			$ends[] = self::until( $order );
 		}
@@ -137,12 +187,12 @@ final class DocRetry {
 			$ends[] = $failed_at + self::WINDOW;
 		}
 		if ( $created_at > 0 ) {
-			$ends[] = $created_at + self::CREATED_BOUND;
+			$ends[] = $created_at + $created_bound;
 		}
 		$bound = Meta::get_int( $order, Meta::BOUND_AT );
 		if ( $bound > 0 ) {
 			// Bound right after its creation: the same cap, a few seconds late.
-			$ends[] = $bound + self::CREATED_BOUND;
+			$ends[] = $bound + $created_bound;
 		}
 		if ( array() === $ends ) {
 			return 0;
@@ -162,8 +212,9 @@ final class DocRetry {
 	 *
 	 * @param \WC_Order $order       Order.
 	 * @param string    $occurred_at The event's occurred_at.
+	 * @param bool      $test        Whether the event says livemode false.
 	 */
-	public static function observe_failure( \WC_Order $order, string $occurred_at ): void {
+	public static function observe_failure( \WC_Order $order, string $occurred_at, bool $test = false ): void {
 		if ( ! self::opted_in( $order ) || Meta::is_released( $order ) ) {
 			return;
 		}
@@ -171,7 +222,7 @@ final class DocRetry {
 		if ( false === $time || $time <= 0 || $time > time() + 300 ) {
 			return;
 		}
-		self::anchor( $order, (int) $time, 0 );
+		self::anchor( $order, (int) $time, 0, $test );
 		Meta::set( $order, Meta::RETRY_OPEN, '' );
 		$order->save_meta_data();
 	}
@@ -186,18 +237,20 @@ final class DocRetry {
 	 * @param \WC_Order            $order        Order.
 	 * @param array<string, mixed> $verification GetVerification's verification.
 	 * @param Client               $client       Fulfilment-key client (a live or a test key).
-	 * @param bool                 $refunds      Whether a denial and refund follow the window
-	 *                                           (false for a test key without test release:
-	 *                                           the note then promises no refund).
+	 * @param string               $mode         MODE_LIVE, MODE_TEST_RELEASE or MODE_TEST:
+	 *                                           the window's bound (a test verification's
+	 *                                           is shorter) and what the note and the
+	 *                                           reason promise (a test key never refunds).
 	 * @throws ConnectError When AgeCheck cannot answer now (retryable).
 	 */
-	public static function defer( \WC_Order $order, array $verification, Client $client, bool $refunds = true ): bool {
+	public static function defer( \WC_Order $order, array $verification, Client $client, string $mode = self::MODE_LIVE ): bool {
 		if ( ! self::opted_in( $order ) ) {
 			return false;
 		}
 		$was_open = 'yes' === Meta::get( $order, Meta::RETRY_OPEN );
 		$failed   = self::time_of( $verification, 'decidedAt' );
-		$until    = self::anchor( $order, $failed > 0 ? $failed : time(), self::time_of( $verification, 'createdAt' ) );
+		$test     = self::MODE_LIVE !== $mode;
+		$until    = self::anchor( $order, $failed > 0 ? $failed : time(), self::time_of( $verification, 'createdAt' ), $test );
 		if ( time() >= $until ) {
 			Meta::set( $order, Meta::RETRY_OPEN, '' );
 			return false;
@@ -218,24 +271,29 @@ final class DocRetry {
 		}
 		Meta::set( $order, Meta::RETRY_OPEN, 'yes' );
 		if ( ! $was_open ) {
-			Meta::note(
-				$order,
-				$refunds
-					? sprintf(
-						/* translators: %s: a date and time. */
-						__( 'AgeCheck: the shopper\'s age check did not pass. They may try again until %s; a refund waits until then. Do not ship.', 'navexa-agecheck-for-woocommerce' ),
-						self::date( $until )
-					)
-					: sprintf(
-						/* translators: %s: a date and time. */
-						__( 'AgeCheck: the shopper\'s age check did not pass. They may try again until %s. Test keys never deny or refund orders. Do not ship.', 'navexa-agecheck-for-woocommerce' ),
-						self::date( $until )
-					)
-			);
+			Meta::note( $order, sprintf( self::deferral_note( $mode ), self::date( $until ) ) );
 		}
-		Meta::set( $order, Meta::REASON, self::REASON );
+		Meta::set( $order, Meta::REASON, $test ? self::REASON_TEST : self::REASON );
 		Meta::set( $order, Meta::NEXT_CHECK_AT, min( time() + self::RECHECK, $until ) );
 		return true;
+	}
+
+	/**
+	 * The note defer() adds when the retry opens, with a %s for the date.
+	 *
+	 * @param string $mode MODE_LIVE, MODE_TEST_RELEASE or MODE_TEST.
+	 */
+	private static function deferral_note( string $mode ): string {
+		if ( self::MODE_TEST_RELEASE === $mode ) {
+			/* translators: %s: a date and time. */
+			return __( 'AgeCheck: the shopper\'s age check did not pass. They may try again until %s. Test keys never refund orders. Do not ship.', 'navexa-agecheck-for-woocommerce' );
+		}
+		if ( self::MODE_TEST === $mode ) {
+			/* translators: %s: a date and time. */
+			return __( 'AgeCheck: the shopper\'s age check did not pass. They may try again until %s. Test keys never deny or refund orders. Do not ship.', 'navexa-agecheck-for-woocommerce' );
+		}
+		/* translators: %s: a date and time. */
+		return __( 'AgeCheck: the shopper\'s age check did not pass. They may try again until %s; a refund waits until then. Do not ship.', 'navexa-agecheck-for-woocommerce' );
 	}
 
 	/**

@@ -36,14 +36,26 @@ final class HoldTest extends TestCase {
 	}
 
 	public function test_status_registration_and_list_position(): void {
-		Functions\expect( 'register_post_status' )->once()->with( 'wc-agecheck-hold', \Mockery::on( static function ( $args ) {
-			return 'Awaiting age check' === $args['label'] && true === $args['show_in_admin_status_list'] && false === $args['public'];
-		} ) );
+		Functions\expect( 'register_post_status' )->once()->with(
+			'wc-agecheck-hold',
+			\Mockery::on(
+				static function ( $args ) {
+					return 'Awaiting age check' === $args['label'] && true === $args['show_in_admin_status_list'] && false === $args['public'];
+				}
+			)
+		);
 		Hold::register_status();
 
 		$this->assertSame(
 			array( 'wc-pending', 'wc-agecheck-hold', 'wc-processing' ),
-			array_keys( Hold::add_status( array( 'wc-pending' => 'Pending', 'wc-processing' => 'Processing' ) ) )
+			array_keys(
+				Hold::add_status(
+					array(
+						'wc-pending'    => 'Pending',
+						'wc-processing' => 'Processing',
+					)
+				)
+			)
 		);
 		$this->assertSame( array( 'wc-agecheck-hold' ), array_keys( Hold::add_status( 'junk' ) ) );
 		$this->assertSame( array( 'pending', 'on-hold', 'agecheck-hold' ), Hold::valid_for_payment_complete( array( 'pending', 'on-hold' ) ) );
@@ -90,7 +102,7 @@ final class HoldTest extends TestCase {
 		Hold::payment_starting( $plain->get_id() );
 		$this->assertSame( 'processing', Hold::payment_complete_status( 'processing', $plain->get_id(), $plain ) );
 
-		$cleared                       = $this->restricted_order();
+		$cleared = $this->restricted_order();
 		Meta::mark_released( $cleared, Meta::STATUS_CLEARED );
 		Hold::payment_starting( $cleared->get_id() );
 		$this->assertSame( 'completed', Hold::payment_complete_status( 'completed', $cleared->get_id(), $cleared ) );
@@ -134,7 +146,7 @@ final class HoldTest extends TestCase {
 		$plain->update_status( 'processing' );
 		$this->assertSame( 'processing', $plain->get_status() );
 
-		$cleared                       = $this->restricted_order( 'on-hold' );
+		$cleared = $this->restricted_order( 'on-hold' );
 		Meta::mark_released( $cleared, Meta::STATUS_CLEARED );
 		$cleared->update_status( 'processing' );
 		$this->assertSame( 'processing', $cleared->get_status() );
@@ -174,7 +186,7 @@ final class HoldTest extends TestCase {
 			$order->update_status( $exit );
 			$this->assertSame( $exit, $order->get_status() );
 		}
-		$cleared                       = $this->held_order();
+		$cleared = $this->held_order();
 		Meta::mark_released( $cleared, Meta::STATUS_CLEARED );
 		$cleared->update_status( 'processing' );
 		$this->assertSame( 'processing', $cleared->get_status(), 'a cleared order whose release did not stick may be moved by hand' );
@@ -258,7 +270,7 @@ final class HoldTest extends TestCase {
 		$this->assertStringContainsString( 'AgeCheck: passed. [status agecheck-hold -> processing]', implode( "\n", $order->notes ) );
 		$this->assertFalse( Hold::is_releasing( $order->get_id() ) );
 
-		$digital                                     = $this->held_order();
+		$digital                                   = $this->held_order();
 		$digital->meta[ Meta::INTERCEPTED_STATUS ] = 'completed';
 		$this->assertTrue( Hold::release( $digital, 'ok' ) );
 		$this->assertSame( 'completed', $digital->get_status() );
@@ -267,9 +279,9 @@ final class HoldTest extends TestCase {
 
 	public function test_release_falls_back_when_the_intercepted_status_is_unusable(): void {
 		foreach ( array( '', 'pending', 'agecheck-hold', 'wc-bogus' ) as $bad ) {
-			$order                                     = $this->held_order();
+			$order                                   = $this->held_order();
 			$order->meta[ Meta::INTERCEPTED_STATUS ] = $bad;
-			$order->needs_processing                   = '' !== $bad;
+			$order->needs_processing                 = '' !== $bad;
 			$this->assertTrue( Hold::release( $order, 'ok' ) );
 			$this->assertSame( '' === $bad ? 'completed' : 'processing', $order->get_status(), $bad );
 		}
@@ -298,6 +310,42 @@ final class HoldTest extends TestCase {
 		$this->assertStringNotContainsString( 'counter', $this->all_logs(), 'the reason text stays on the order' );
 	}
 
+	public function test_override_of_a_listed_order_recounts_after_the_save(): void {
+		$this->users[3]              = new \WP_User( 3, array( 'shop_manager' ), 'Sam Staff' );
+		$order                       = $this->held_order();
+		$order->meta[ Meta::REFUND ] = Meta::REFUND_MANUAL;
+		$this->transients[ Notices::COUNTS_TRANSIENT ] = array(
+			'value' => array(
+				'denied' => 1,
+				'stale'  => 0,
+			),
+			'ttl'   => 600,
+		);
+		$order->save_meta_data();
+		$saved_at_flush = null;
+		Functions\when( 'delete_transient' )->alias(
+			function ( $name ) use ( $order, &$saved_at_flush ) {
+				if ( null === $saved_at_flush ) { // The first flush.
+					$saved_at_flush = array_key_exists( Meta::REFUND, $order->saved_meta ) ? $order->saved_meta[ Meta::REFUND ] : '';
+				}
+				unset( $this->transients[ $name ] );
+				return true;
+			}
+		);
+		$this->assertTrue( Hold::override( $order, 3, 'Checked ID at the counter' ) );
+		$this->assertArrayNotHasKey( Meta::REFUND, $order->meta );
+		$this->assertArrayNotHasKey( Notices::COUNTS_TRANSIENT, $this->transients, 'the notice recounts' );
+		$this->assertSame( '', $saved_at_flush, 'flushed once the dropped listing was saved' );
+
+		// Not listed: nothing to recount.
+		$this->transients[ Notices::COUNTS_TRANSIENT ] = array(
+			'value' => array(),
+			'ttl'   => 600,
+		);
+		$this->assertTrue( Hold::override( $this->held_order(), 3, 'reason' ) );
+		$this->assertArrayHasKey( Notices::COUNTS_TRANSIENT, $this->transients );
+	}
+
 	public function test_override_needs_a_reason_a_user_and_a_held_order(): void {
 		$order = $this->held_order();
 		$this->assertFalse( Hold::override( $order, 3, '   ' ) );
@@ -314,7 +362,7 @@ final class HoldTest extends TestCase {
 
 	/** An order this plugin holds, on its way to processing. */
 	private function held_order(): \WC_Order {
-		$order = $this->restricted_order( Hold::STATUS );
+		$order                                   = $this->restricted_order( Hold::STATUS );
 		$order->meta[ Meta::REQUIRED ]           = 'yes';
 		$order->meta[ Meta::HELD ]               = 'yes';
 		$order->meta[ Meta::INTERCEPTED_STATUS ] = 'processing';

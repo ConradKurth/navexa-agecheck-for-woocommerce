@@ -112,6 +112,7 @@ final class Plugin {
 	 */
 	public static function wire(): void {
 		Install::register();
+		Upgrade::register();
 		Mode::register();
 		add_filter( 'woocommerce_get_settings_pages', array( self::class, 'add_settings_page' ) );
 

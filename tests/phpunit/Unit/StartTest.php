@@ -462,6 +462,41 @@ final class StartTest extends TestCase {
 		$this->assertStringContainsString( 'agecheck start rate limited', $this->all_logs() );
 	}
 
+	public function test_starts_are_capped_store_wide_across_sessions_and_ips(): void {
+		$this->assertSame( 2000, Start::LIMITS['start_store'], 'the platform ruling: 2,000 starts per store per hour' );
+		Filters\expectApplied( 'navexa_agecheck_rate_limits' )->andReturn( array( 'start_store' => 2 ) );
+		foreach ( array( 1, 2 ) as $i ) {
+			$this->session()->customer_id = 't_shopper_' . $i;
+			$_SERVER['REMOTE_ADDR']       = '198.51.100.' . $i;
+			$this->respond( 503, array( 'code' => 'unavailable' ) );
+			$this->assertSame( Start::CODE_UNAVAILABLE, $this->start()['code'], (string) $i );
+		}
+		$this->session()->customer_id = 't_shopper_3';
+		$_SERVER['REMOTE_ADDR']       = '198.51.100.3';
+		$answer                       = $this->start();
+		$this->assertSame( 'unavailable', $answer['status'] );
+		$this->assertSame( Start::CODE_RATE_LIMITED, $answer['code'] );
+		$this->assertStringContainsString( 'Too many age check attempts', $answer['message'] );
+		$this->assertCount( 2, $this->http_requests, 'the third start in the store\'s hour never reached AgeCheck' );
+		$this->assertStringContainsString( 'agecheck start store limit reached limit=2', $this->all_logs() );
+
+		$refresh = $this->refresh();
+		$this->assertNotSame( Start::CODE_RATE_LIMITED, $refresh['code'] ?? '', 'refreshes are not capped store-wide' );
+	}
+
+	public function test_the_store_wide_count_needs_the_session_and_ip_limits_first(): void {
+		Filters\expectApplied( 'navexa_agecheck_rate_limits' )->andReturn( array( 'start_session' => 1, 'start_store' => 2 ) );
+		$this->respond( 503, array( 'code' => 'unavailable' ) );
+		$this->start();
+		for ( $i = 0; $i < 5; $i++ ) {
+			$this->assertStringContainsString( 'Too many', $this->start()['message'], 'over the session limit' );
+		}
+		$this->session()->customer_id = 't_another';
+		$this->respond( 503, array( 'code' => 'unavailable' ) );
+		$this->assertSame( Start::CODE_UNAVAILABLE, $this->start()['code'], 'the starts the session limit refused were not counted store-wide' );
+		$this->assertStringNotContainsString( 'store limit reached', $this->all_logs() );
+	}
+
 	public function test_limits_are_filterable_and_the_table_failing_refuses(): void {
 		Filters\expectApplied( 'navexa_agecheck_rate_limits' )->andReturn( array( 'start_session' => 1 ) );
 		$this->respond( 503, array( 'code' => 'unavailable' ) );

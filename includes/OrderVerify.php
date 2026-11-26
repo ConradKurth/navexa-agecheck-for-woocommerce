@@ -59,6 +59,8 @@ final class OrderVerify {
 
 	/**
 	 * Hourly limits: starts per order and per client IP, returns per order.
+	 * Starts then count against the store-wide cap they share with the
+	 * checkout (Start::within_store_limit()).
 	 */
 	const LIMITS = array(
 		'start_order'  => 10,
@@ -274,6 +276,9 @@ final class OrderVerify {
 		$rate = RateLimit::check( 'order_verify_order', (string) $id, self::LIMITS['start_order'], HOUR_IN_SECONDS );
 		if ( RateLimit::OK === $rate ) {
 			$rate = RateLimit::check( 'order_verify_ip', '' === $ip ? 'unknown' : $ip, self::LIMITS['start_ip'], HOUR_IN_SECONDS );
+		}
+		if ( RateLimit::OK === $rate ) {
+			$rate = Start::within_store_limit();
 		}
 		if ( RateLimit::LIMITED === $rate ) {
 			return self::page( 429, __( 'Too many age check attempts. Please wait a while and try again.', 'navexa-agecheck-for-woocommerce' ) );

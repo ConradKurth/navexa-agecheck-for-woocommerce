@@ -121,14 +121,23 @@ final class Start {
 
 	/**
 	 * Default limits per hour: starts per session and per client IP (plan
-	 * §5), refreshes per session and per client IP.
+	 * §5), starts per store (the platform ruling: 2,000 an hour store-wide,
+	 * shared with OrderVerify's "Verify now" starts), refreshes per session
+	 * and per client IP.
 	 */
 	const LIMITS = array(
 		'start_session'   => 10,
 		'start_ip'        => 20,
+		'start_store'     => 2000,
 		'refresh_session' => 60,
 		'refresh_ip'      => 120,
 	);
+
+	/**
+	 * The store-wide start counter's subject: one bucket for the whole store
+	 * (the counter table is per site).
+	 */
+	const STORE_SUBJECT = 'store';
 
 	/**
 	 * Engine contract (E4a): DocumentNameCheck NONE.
@@ -245,6 +254,14 @@ final class Start {
 			}
 			if ( Turnstile::OK !== $turnstile ) {
 				return self::unavailable();
+			}
+			// Counted after Turnstile, so starts it refuses never spend the store's hour.
+			$rate = self::within_store_limit();
+			if ( RateLimit::UNAVAILABLE === $rate ) {
+				return self::unavailable();
+			}
+			if ( RateLimit::OK !== $rate ) {
+				return self::reply( self::STATUS_UNAVAILABLE, __( 'Too many age check attempts. Please wait a while and try again.', 'navexa-agecheck-for-woocommerce' ), self::CODE_RATE_LIMITED );
 			}
 		}
 
@@ -886,7 +903,7 @@ final class Start {
 		 *
 		 * @since 0.1.0
 		 *
-		 * @param array<string, int> $limits start_session, start_ip, refresh_session, refresh_ip.
+		 * @param array<string, int> $limits start_session, start_ip, start_store (store-wide, since 1.1.0), refresh_session, refresh_ip.
 		 */
 		$limits = apply_filters( 'navexa_agecheck_rate_limits', self::LIMITS );
 		$limits = is_array( $limits ) ? array_merge( self::LIMITS, $limits ) : self::LIMITS;
@@ -897,6 +914,24 @@ final class Start {
 		}
 		if ( RateLimit::LIMITED === $result ) {
 			Client::log( 'warning', 'agecheck ' . $action . ' rate limited' );
+		}
+		return $result;
+	}
+
+	/**
+	 * Counts one start against the store-wide hourly cap (LIMITS['start_store'],
+	 * through the navexa_agecheck_rate_limits filter): RateLimit::OK, LIMITED
+	 * or UNAVAILABLE. The checkout start asks it after the session and IP
+	 * limits and Turnstile; OrderVerify's "Verify now" start after its order
+	 * and IP limits. Both share the one bucket.
+	 */
+	public static function within_store_limit(): string {
+		/** This filter is documented in within_limits(). */
+		$limits = apply_filters( 'navexa_agecheck_rate_limits', self::LIMITS );
+		$limit  = is_array( $limits ) && isset( $limits['start_store'] ) ? (int) $limits['start_store'] : self::LIMITS['start_store'];
+		$result = RateLimit::check( 'start_store', self::STORE_SUBJECT, $limit, HOUR_IN_SECONDS );
+		if ( RateLimit::LIMITED === $result ) {
+			Client::log( 'warning', 'agecheck start store limit reached limit=' . $limit );
 		}
 		return $result;
 	}

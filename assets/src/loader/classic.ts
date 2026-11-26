@@ -58,7 +58,7 @@ declare global {
   }
 }
 
-const CONTAINER = "[data-navexa-agecheck]"
+const CONTAINER = "[data-navexa-agecheck=\"1\"]"
 const MESSAGE = ".navexa-agecheck__message"
 const TURNSTILE = "[data-navexa-agecheck-turnstile]"
 const LOCK_BAR = "[data-navexa-agecheck-lock]"
@@ -201,7 +201,28 @@ function boot(): void {
     first?.focus()
   })
 
-  $(document.body).on("updated_checkout", () => {
+  /**
+   * Brings the status container in line with the server's fragment of this
+   * update. WooCommerce replaces a fragment only when its HTML differs from
+   * the copy it stored at the last update, so after this glue changed the
+   * container in the page (a pass) an unchanged fragment would leave the
+   * page's state standing even when the server's is another.
+   */
+  const syncWithServer = (data: unknown) => {
+    const html = (data as { fragments?: Record<string, unknown> } | undefined)?.fragments?.[".woocommerce-checkout-payment"]
+    const live = container()
+    if (typeof html !== "string" || !live) return
+    const template = document.createElement("template")
+    template.innerHTML = html
+    const fresh = template.content.querySelector(CONTAINER)
+    if (!fresh) return
+    live.setAttribute("data-status", fresh.getAttribute("data-status") ?? "none")
+    const text = fresh.querySelector(MESSAGE)?.textContent ?? ""
+    if (text) setMessage(text)
+  }
+
+  $(document.body).on("updated_checkout", (_event: unknown, data: unknown) => {
+    syncWithServer(data)
     if (flow.busy()) return
     const now = status()
     if (now === "passed") lock()

@@ -110,9 +110,8 @@ export default function Block() {
 			message = t( 'passed' );
 		} else if ( status === 'failed' ) {
 			message = t( 'failed' );
-		} else if ( status === 'pending' ) {
-			message = t( 'pending' );
 		} else {
+			// pending too: the modal (or the closed-window notice) says the rest.
 			message = t( 'prompt' );
 		}
 	}

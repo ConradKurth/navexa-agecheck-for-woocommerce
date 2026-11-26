@@ -298,7 +298,7 @@
   }
 
   // assets/src/loader/classic.ts
-  var CONTAINER = "[data-navexa-agecheck]";
+  var CONTAINER = '[data-navexa-agecheck="1"]';
   var MESSAGE = ".navexa-agecheck__message";
   var TURNSTILE = "[data-navexa-agecheck-turnstile]";
   var LOCK_BAR = "[data-navexa-agecheck-lock]";
@@ -432,8 +432,22 @@
       const first = document.querySelector('[name="billing_first_name"]');
       first == null ? void 0 : first.focus();
     });
-    $(document.body).on("updated_checkout", () => {
+    const syncWithServer = (data2) => {
+      var _a, _b, _c, _d;
+      const html = (_a = data2 == null ? void 0 : data2.fragments) == null ? void 0 : _a[".woocommerce-checkout-payment"];
+      const live = container();
+      if (typeof html !== "string" || !live) return;
+      const template = document.createElement("template");
+      template.innerHTML = html;
+      const fresh = template.content.querySelector(CONTAINER);
+      if (!fresh) return;
+      live.setAttribute("data-status", (_b = fresh.getAttribute("data-status")) != null ? _b : "none");
+      const text = (_d = (_c = fresh.querySelector(MESSAGE)) == null ? void 0 : _c.textContent) != null ? _d : "";
+      if (text) setMessage(text);
+    };
+    $(document.body).on("updated_checkout", (_event, data2) => {
       var _a, _b, _c;
+      syncWithServer(data2);
       if (flow.busy()) return;
       const now = status();
       if (now === "passed") lock();

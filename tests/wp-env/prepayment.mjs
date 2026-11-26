@@ -300,8 +300,10 @@ await group("non-US ship-to is refused, territories are not", async () => {
   const cart = await s.addProduct(ca)
   assert.equal(cart.extensions[NS].required, true)
   assert.match(cart.extensions[NS].message, /only to US addresses/)
+  assert.equal(cart.extensions[NS].code, "us_only", "the cart data says why (1.1.0)")
   const started = await s.ageCheck("start")
   assert.equal(started.status, "refused")
+  assert.equal(started.code, "us_only", "a machine code the glue reads (1.1.0)")
   const res = await s.checkout(ca)
   assert.equal(res.status, 400)
   assert.match(res.json.message, /only to US addresses/)
@@ -399,7 +401,7 @@ await group("block: a different cart after a declined payment is a new order tha
 // order_awaiting_payment, and a dropped bound draft clears only
 // store_api_draft_order: the cart state must follow the Store API's own key, or
 // it says passed for an order the Store API will not resume and the block hides
-// Verify age while the gate refuses Place order (the 1.0.4 review's dead end).
+// no check at Place order while the gate refuses it (the 1.0.4 review's dead end).
 await group("block: set aside at another ship-to (place again), then back to the bound one: the cart and the gate agree, and a new check places it", async () => {
   const { s, order } = await declinedAfterPass()
   const moved = { ...RETRY, address_1: "9 Elm St" }
@@ -412,7 +414,7 @@ await group("block: set aside at another ship-to (place again), then back to the
   assert.match(again.json.message, /place your order again/)
 
   const back = (await s.setAddress(RETRY)).extensions[NS]
-  assert.equal(back.status, "none", "the Store API will create a new order: Verify age is offered")
+  assert.equal(back.status, "none", "the Store API will create a new order: Place order opens the age check")
   assert.match(back.message, /shipping address changed/)
   const refused = await s.checkout(RETRY)
   assert.equal(refused.status, 400, "the gate agrees")
@@ -436,7 +438,7 @@ await group("block: a ship-to change refused after a declined payment, then back
   assert.match(refused.json.message, /shipping address changed/)
   const state = (await s.setAddress(RETRY)).extensions[NS].status
   const placed = await s.checkout(RETRY)
-  assert.equal(state, "none", "the dropped draft is not resumed: Verify age is offered")
+  assert.equal(state, "none", "the dropped draft is not resumed: Place order opens the age check")
   assert.equal(placed.status, 400, "the gate agrees")
   assert.match(placed.json.message, /Verify your age on the checkout page/)
 })
@@ -562,9 +564,12 @@ await group("classic page: Store API nonce bootstrap, start, and ?wc-ajax=checko
   await s.addProduct()
   const page = await s.fetch(`${SITE}/?page_id=${CLASSIC}`, { redirect: "follow" })
   const html = await page.text()
-  assert.match(html, /agecheck-1\.0\.0(\.min)?\.js/, "loader enqueued")
+  assert.match(html, /assets\/vendor\/agecheck-js\/agecheck-\d+\.\d+\.\d+(\.debug)?\.js/, "the vendored shared loader enqueued")
+  assert.doesNotMatch(html, /assets\/js\/agecheck-1\.0\.0/, "not the 1.0.x bundled loader")
   assert.match(html, /checkout-classic(\.min)?\.js/, "classic glue enqueued")
-  assert.match(html, /data-navexa-agecheck-verify="1"/, "Verify age button rendered")
+  assert.match(html, /data-navexa-agecheck="1" data-status="none"/, "the status renders; Place order opens the check")
+  assert.doesNotMatch(html, /data-navexa-agecheck-verify/, "no Verify age button (1.1.0)")
+  assert.match(html, /data-navexa-agecheck-lock="1" hidden/, "the lock bar, hidden until a pass")
   assert.match(html, /window\.navexaAgeCheckClassic = /)
   const nonce = /name="woocommerce-process-checkout-nonce" value="([^"]+)"/.exec(html)?.[1]
   assert.ok(nonce, "checkout nonce")
@@ -711,7 +716,7 @@ await group("classic: a declined payment keeps the check: the page says passed a
   assert.equal((await s.store("GET", "/cart")).json.extensions[NS].status, "none")
   const html = await classicPage(s)
   assert.match(html, /data-navexa-agecheck="1" data-status="passed"/, "the page shows the check passed")
-  assert.doesNotMatch(html, /data-navexa-agecheck-verify="1"/, "no Verify age button")
+  assert.doesNotMatch(html, /data-navexa-agecheck="1" data-status="none"/, "Place order needs no new check")
   const placed = await classicSubmit(s, html, RETRY)
   assert.equal(placed.result, "success", JSON.stringify(placed).slice(0, 400))
   assert.match(placed.redirect, new RegExp(`order-received/${order}/`), "WooCommerce resumed the declined order")
@@ -729,7 +734,7 @@ await group("classic: a ship-to change after a declined payment needs a new chec
   const moved = { ...RETRY, address_1: "9 Elm St" }
   assert.equal((await s.setAddress(moved)).extensions[NS].status, "none")
   const html = await classicPage(s)
-  assert.match(html, /data-navexa-agecheck-verify="1"/, "Verify age is offered again")
+  assert.match(html, /data-navexa-agecheck="1" data-status="none"/, "Place order opens the age check again")
   const refused = await classicSubmit(s, html, moved)
   assert.equal(refused.result, "failure")
   assert.match(refused.messages, /shipping address changed/)
@@ -752,8 +757,8 @@ await group("block decline, then the classic checkout page: the page and the cla
     assert.match(placed.redirect, new RegExp(`order-received/${order}/`))
     assert.equal(await rpcCount("CreateVerification"), creates, "no second verification")
   } else {
-    // WooCommerce 9.9: a new order, which needs its own check; the page offers it.
-    assert.match(html, /data-navexa-agecheck-verify="1"/)
+    // WooCommerce 9.9: a new order, which needs its own check; Place order opens it.
+    assert.match(html, /data-navexa-agecheck="1" data-status="none"/)
   }
 })
 

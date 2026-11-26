@@ -108,8 +108,8 @@
 //                               "Continue on this device" opens the plain page. Bridge: the first embed GET of a
 //                               session token gets an engine session whose status IS this verification's (reads
 //                               and writes go to it, so a Pass in the frame decides it here: doc_only, or
-//                               data_verified for a data-match AWAITING_IDENTITY answer), and the engine's own
-//                               page and status requests (its session token) go to the engine. config embed:
+//                               data_verified for a data-match AWAITING_IDENTITY answer); the frame's POST back to
+//                               its own URL and the engine's own page and status requests go to the engine. config embed:
 //                               "serve" (default), "refuse" (frame-ancestors 'none') or "silent" (no messages).
 //
 // Control endpoints for tests (never part of the engine):
@@ -1052,7 +1052,8 @@ export function createMockAgeCheck() {
     if (engineToken(page[1])) return engine.handle(req, res)
     const claims = readToken(page[1])
     if (!claims) return false
-    if (url.searchParams.get("embed") !== "1" || req.method !== "GET") return false
+    // The embedded page's form has no action: it posts back to the frame's own URL.
+    if (url.searchParams.get("embed") !== "1" || (req.method !== "GET" && req.method !== "POST")) return false
     const v = state.verifications.get(claims.vid)
     if (!v) return false
     let link = embedLinks.get(page[1])
@@ -1067,7 +1068,7 @@ export function createMockAgeCheck() {
       link = new URL(session.url).pathname.slice(3)
       embedLinks.set(page[1], link)
     }
-    state.embedPages.push({ vid: v.id, parentOrigin: url.searchParams.get("parent_origin") || "" })
+    if (req.method === "GET") state.embedPages.push({ vid: v.id, parentOrigin: url.searchParams.get("parent_origin") || "" })
     req.url = `/v/${link}${url.search}`
     return engine.handle(req, res)
   }

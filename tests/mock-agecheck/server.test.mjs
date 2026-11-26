@@ -317,9 +317,12 @@ test("embed mode: the shared hosted page in a frame for allowed origins, its dec
   assert.ok(!plain.includes("embed=1") && !plain.includes("parent_origin"), "the hand-off link is the plain page")
   const enginePath = new URL(plain).pathname
   assert.notEqual(enginePath, new URL(hosted).pathname, "the engine's own session")
-  const post = await fetch(`${base}${enginePath}?embed=1`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "decision=pass", redirect: "manual" })
+  // The form has no action: it posts back to the frame's own URL.
+  assert.match(html, /<form method="post">/)
+  const post = await fetch(embedUrl, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "decision=pass", redirect: "manual" })
   assert.equal(post.status, 303)
-  assert.ok(post.headers.get("location").startsWith(enginePath), "a done view in the frame, not the return URL")
+  assert.ok(post.headers.get("location").startsWith(enginePath), "a done view in the frame (same origin), never the return URL")
+  assert.ok(post.headers.get("location").includes("embed=1"))
   const done = await (await fetch(`${base}${post.headers.get("location")}`)).text()
   assert.match(done, /data-final="true"/)
   assert.match(done, /data-status="passed"/)

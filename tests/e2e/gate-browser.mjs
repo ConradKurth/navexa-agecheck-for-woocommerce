@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// Browser check of the entry age gate (W3 PR 13; self-attestation, not
-// verification) against wp-env and the mock engine, in Chromium by default.
+// Browser check of the entry age gate (W3 PR 13, TAX-1874 for the shared
+// loader, date of birth and branding, TAX-1875 for gate-only; self-attestation,
+// not verification) against wp-env and the mock engine, in Chromium by default.
 //
-// Needs wp-env with the mock running (as for tests/e2e/prepayment-browser.mjs)
+// Needs wp-env with the mock running (as for tests/e2e/checkout-modal-browser.mjs)
 // and Playwright's Chromium (npx playwright-core install chromium). The
 // script switches the gate's settings itself through
 // tests/wp-env/gate-setup.php, run by --setup-cmd (default: wp-env's cli
@@ -13,22 +14,19 @@
 //     [--http-only]
 //
 // --http-only runs only the server-side checks over HTTP (no browser; CI):
-// which pages carry the gate script, in the head, with the same
-// configuration for every visitor and no cookie.
+// which pages carry the gate, both scripts in the head with the optimizer
+// opt-outs, the options in data-config (no inline script), the same for
+// every visitor, no cookie; gate-only with no keys.
 //
-// Checks: off by default and when off; the dialog's ARIA, initial focus, Tab
-// and Shift+Tab trapped, Escape ignored, the page hidden and inert; "under
-// age" goes to the exit page, where the gate never shows, and is not
-// remembered; "of age" by keyboard closes it and is remembered across pages
-// and reloads (localStorage; sessionStorage for 0 days, one tab, where a
-// localStorage answer does not count) and puts back the page's own
-// aria-hidden; a theme's root font size and button rules do not restyle the
-// dialog; both script tags carry the optimizer opt-outs; the minimum age and
-// store name come from GetIntegrationInfo (the mock); restricted scope gates
-// only restricted product and category pages; never on the login page,
-// wp-admin, REST or the AgeCheck return page; no request leaves the store's
-// origin; the server's HTML is the same whatever the visitor answered (page
-// caching) and sets no cookie.
+// Browser checks: the loader's dialog (ARIA, initial focus, Tab trapped,
+// Escape ignored, the page hidden and inert, its own aria-hidden put back);
+// "of age" remembered (navexa_agecheck_gate_v1; sessionStorage for 0 days);
+// "under age" goes to the exit page, where the gate never shows; a 1.0.x
+// remembered answer is migrated (no gate); date of birth: under age exits, of
+// age is remembered, the date of birth is in no storage and no request;
+// branding: the merchant's colours on the dialog and text with {age} and
+// {site}; gate-only with no keys; restricted scope; never on the login page
+// or in wp-admin; no request leaves the store's origin.
 
 import assert from "node:assert/strict"
 import { execSync } from "node:child_process"
@@ -47,8 +45,10 @@ const SETUP = arg(
   "npx --yes @wordpress/env@12.1.0 run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp eval-file tests/wp-env/gate-setup.php",
 )
 const ORIGIN = new URL(SITE).origin
-// The gate's own dialog: WooCommerce's product gallery (PhotoSwipe) and wp-admin have dialogs too.
-const DIALOG = '.navexa-agecheck-gate [role="dialog"][aria-modal="true"]'
+// The loader's gate dialog (WooCommerce's product gallery and wp-admin have dialogs too).
+const DIALOG = '[data-navexa-agecheck="gate"] [role="dialog"][aria-modal="true"]'
+const KEY = "navexa_agecheck_gate_v1"
+const LEGACY_KEY = "navexa-agecheck-gate"
 
 /** Runs gate-setup.php with these arguments; its JSON answer. */
 function setup(...args) {
@@ -75,18 +75,21 @@ async function check(name, fn) {
   }
 }
 
-/** A fresh context recording every request that leaves the store's origin. */
-async function context(browser, foreign) {
+/** A fresh context recording every request that leaves the store's origin (and every request URL and body). */
+async function context(browser, foreign, seen = []) {
   const ctx = await browser.newContext()
   ctx.on("request", (req) => {
     const url = req.url()
+    seen.push(`${url} ${req.postData() ?? ""}`)
     if (url.startsWith("data:") || url.startsWith("blob:")) return
     if (new URL(url).origin !== ORIGIN) foreign.push(url)
   })
   return ctx
 }
 
-const gateScript = /entry-gate(\.min)?\.js/
+const gateLoader = /assets\/vendor\/agecheck-js\/agecheck-gate-\d+\.\d+\.\d+(\.debug)?\.js/
+const gateBoot = /assets\/js\/gate-boot(\.min)?\.js/
+const legacyGate = /entry-gate(\.min)?\.js/
 
 /** The page's HTML over plain HTTP (a visitor with no answer stored, as a page cache sees it). */
 async function html(url, headers = {}) {
@@ -101,12 +104,22 @@ async function html(url, headers = {}) {
   }
 }
 
+/** The boot script's tag and its data-config, decoded. */
+function bootTag(text) {
+  const tag = /<script[^>]* id="navexa-agecheck-entry-gate-js"[^>]*>/.exec(text)?.[0] ?? ""
+  const raw = / data-config="([^"]*)"/.exec(tag)?.[1] ?? ""
+  const json = raw.replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")
+  return { tag, raw, config: raw ? JSON.parse(json) : null }
+}
+
+const carries = (text) => gateLoader.test(text) && gateBoot.test(text)
+
 console.log("# HTTP")
 await mock("config", { org: { minimumAge: 21, displayName: "Mock Store", allowedOrigins: [SITE] } })
 let urls = setup("off")
 
 await check("off: no page carries the gate", async () => {
-  for (const url of [urls.home, urls.product_url, urls.category_url]) assert.doesNotMatch((await html(url)).text, gateScript, url)
+  for (const url of [urls.home, urls.product_url, urls.category_url]) assert.ok(!carries((await html(url)).text), url)
 })
 
 await mock("config", { org: { minimumAge: 18, displayName: "Gate Test Store" } })
@@ -114,42 +127,89 @@ urls = setup("on", "site", "30", "exit")
 assert.equal(urls.minimum_age, 18, "the mock's minimum age reached the store")
 assert.equal(urls.display_name, "Gate Test Store")
 
-await check("site scope: the script in the head, the same configuration for everyone, no cookie", async () => {
+await check("site scope: the shared loader's gate build and the boot script in the head, options in data-config, the same for everyone, no cookie", async () => {
   const first = await html(urls.home)
   const head = first.text.slice(0, first.text.indexOf("</head>"))
-  assert.match(head, gateScript, "loaded in the head")
-  assert.match(head, /window\.navexaAgeCheckGate = /)
-  const config = (text) => /window\.navexaAgeCheckGate = (\{.*?\});/.exec(text)?.[1]
-  const second = await html(urls.home, { Cookie: "navexa-agecheck-gate=1" })
-  assert.equal(config(first.text), config(second.text), "the server never reads an answer")
+  assert.match(head, gateLoader, "the vendored gate-only build in the head")
+  assert.match(head, gateBoot, "the boot script in the head")
+  assert.ok(head.search(gateLoader) < head.search(gateBoot), "the loader before the boot script")
+  assert.doesNotMatch(first.text, legacyGate, "not the 1.0.x gate")
+  assert.doesNotMatch(first.text, /navexaAgeCheckGate/, "no inline configuration")
+  const { tag, raw, config } = bootTag(head)
+  assert.ok(config, `data-config on the boot tag: ${tag}`)
+  const second = await html(urls.home, { Cookie: `${LEGACY_KEY}=1; ${KEY}=1` })
+  assert.equal(bootTag(second.text).raw, raw, "the server never reads an answer")
   assert.equal(first.res.headers.get("set-cookie"), null, "the gate sets no cookie")
-  const parsed = JSON.parse(config(first.text))
-  assert.deepEqual(Object.keys(parsed).sort(), ["days", "exitUrl", "i18n", "minimumAge", "v"])
-  assert.equal(parsed.minimumAge, 18)
-  assert.equal(parsed.i18n.title, "Welcome to Gate Test Store")
-  assert.doesNotMatch(config(first.text), /txk_/)
+  assert.equal(config.v, 2)
+  const o = config.options
+  assert.deepEqual(Object.keys(o).sort(), ["exitUrl", "labels", "message", "minAge", "mode", "rememberDays", "siteName", "theme", "title"])
+  assert.equal(o.mode, "attest")
+  assert.equal(o.minAge, 18)
+  assert.equal(o.title, "Welcome to Gate Test Store")
+  assert.equal(o.labels.yes, "I am 18 or older")
+  assert.deepEqual(o.theme, { backdrop: "#1e1e1e", card: "#ffffff", text: "#1e1e1e", accent: "#1e1e1e", accentText: "#ffffff" }, "the 1.0.x look")
+  assert.doesNotMatch(raw, /txk_/)
   // Optimizer opt-outs on both tags (Rocket Loader reads data-cfasync before src).
-  for (const id of ["navexa-agecheck-entry-gate-js", "navexa-agecheck-entry-gate-js-before"]) {
-    const tag = new RegExp(`<script[^>]* id="${id}"[^>]*>`).exec(head)?.[0] ?? ""
-    for (const attr of [/ data-cfasync="false"/, / data-no-optimize="1"/, / data-no-defer="1"/, / data-no-minify="1"/, / nowprocket(="nowprocket")?[ >]/]) assert.match(tag, attr, id)
-    if (id.endsWith("-js")) assert.match(tag, / data-cfasync="false".* src="[^"]*entry-gate(\.min)?\.js/, "data-cfasync before src")
+  for (const id of ["navexa-agecheck-gate-loader-js", "navexa-agecheck-entry-gate-js"]) {
+    const t = new RegExp(`<script[^>]* id="${id}"[^>]*>`).exec(head)?.[0] ?? ""
+    for (const attr of [/ data-cfasync="false"/, / data-no-optimize="1"/, / data-no-defer="1"/, / data-no-minify="1"/, / nowprocket(="nowprocket")?[ >]/]) assert.match(t, attr, id)
+    assert.match(t, / data-cfasync="false".* src="/, `${id}: data-cfasync before src`)
   }
-  assert.match((await html(urls.exit_url)).text, gateScript, "the exit page carries it too; the script skips that page")
+  assert.ok(carries((await html(urls.exit_url)).text), "the exit page carries it too; the loader skips that page")
 })
 
 await check("never on the login page, wp-admin, REST or the AgeCheck return page", async () => {
-  for (const url of [urls.login_url, urls.return_url, urls.rest_url, `${SITE}/wp-admin/`]) {
-    assert.doesNotMatch((await html(url)).text, gateScript, url)
-  }
+  for (const url of [urls.login_url, urls.return_url, urls.rest_url, `${SITE}/wp-admin/`]) assert.ok(!carries((await html(url)).text), url)
 })
 
 await check("restricted scope: only restricted product and category pages", async () => {
   setup("on", "restricted", "30", "noexit")
-  assert.doesNotMatch((await html(urls.home)).text, gateScript, "home")
-  assert.doesNotMatch((await html(urls.exempt_url)).text, gateScript, "exempt product")
-  assert.match((await html(urls.product_url)).text, gateScript, "restricted product")
-  assert.match((await html(urls.category_url)).text, gateScript, "its category")
-  setup("on", "site", "30", "exit")
+  assert.ok(!carries((await html(urls.home)).text), "home")
+  assert.ok(!carries((await html(urls.exempt_url)).text), "exempt product")
+  assert.ok(carries((await html(urls.product_url)).text), "restricted product")
+  assert.ok(carries((await html(urls.category_url)).text), "its category")
+})
+
+await check("date of birth and branding: mode, the merchant's colours and text ({age} and {site} left to the loader)", async () => {
+  urls = setup("on", "site", "30", "exit", "dob", "verify", "brand")
+  const o = bootTag((await html(urls.home)).text).config.options
+  assert.equal(o.mode, "dob")
+  assert.deepEqual(o.theme, { backdrop: "#0b3d2e", card: "#fffbe6", text: "#222222", accent: "#0a6b3d", accentText: "#ffffff" })
+  assert.equal(o.title, "Hello from {site}")
+  assert.equal(o.message, "Only {age}+ past this point.")
+  assert.equal(o.labels.submit, "Go")
+  assert.equal(o.labels.dob, "Date of birth")
+  assert.equal(o.logoUrl, undefined, "no logo chosen (and an http store would never get one)")
+})
+
+await check("gate-only: no keys, the gate still serves at its own minimum age, and a restricted cart checks out with no AgeCheck call", async () => {
+  urls = setup("on", "site", "30", "exit", "attest", "gate_only")
+  assert.equal(urls.minimum_age, 19)
+  const o = bootTag((await html(urls.home)).text).config.options
+  assert.equal(o.minAge, 19)
+  const before = (await (await fetch(`${MOCK}/__mock/requests`)).json()).length
+  // A Store API checkout of the restricted product: no check, no hold.
+  const cart = await fetch(`${SITE}/wp-json/wc/store/v1/cart`)
+  const cookie = cart.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ")
+  const headers = { Nonce: cart.headers.get("nonce"), Cookie: cookie, "Content-Type": "application/json" }
+  const added = await fetch(`${SITE}/wp-json/wc/store/v1/cart/add-item`, { method: "POST", headers, body: JSON.stringify({ id: urls.product_id, quantity: 1 }) })
+  assert.equal(added.status, 201)
+  const jar = new Map([...cookie.split("; "), ...added.headers.getSetCookie().map((c) => c.split(";")[0])].filter(Boolean).map((c) => [c.split("=")[0], c]))
+  headers.Cookie = [...jar.values()].join("; ")
+  headers.Nonce = added.headers.get("nonce") ?? headers.Nonce
+  const data = await added.json()
+  assert.equal(data.extensions["navexa-agecheck"].required, false, "nothing needs a check")
+  const address = { first_name: "Gate", last_name: "Only", address_1: "1 Main St", city: "Springfield", state: "IL", postcode: "62701", country: "US", email: "gate-only@example.com", phone: "5555550100" }
+  const placed = await fetch(`${SITE}/wp-json/wc/store/v1/checkout`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ billing_address: address, shipping_address: address, payment_method: "cod" }),
+  })
+  const body = await placed.json()
+  assert.equal(placed.status, 200, JSON.stringify(body).slice(0, 300))
+  assert.notEqual(body.status, "agecheck-hold", "not held")
+  const after = (await (await fetch(`${MOCK}/__mock/requests`)).json()).length
+  assert.equal(after, before, "the mock recorded no request")
 })
 
 // Playwright only for the browser checks (the CI job runs --http-only without node_modules).
@@ -163,20 +223,19 @@ for (const name of BROWSERS) {
   console.log(`# ${name}`)
   urls = setup("on", "site", "30", "exit")
 
-  await check("site scope: an accessible modal dialog hides the page", async () => {
+  await check("site scope: the loader's accessible modal dialog hides the page", async () => {
     const ctx = await context(browser, foreign)
     const page = await ctx.newPage()
     await page.goto(urls.home)
     const dialog = page.locator(DIALOG)
     await dialog.waitFor({ state: "visible" })
-    const title = page.locator("#navexa-agecheck-gate-title")
-    assert.equal(await title.textContent(), "Welcome to Gate Test Store", "GetIntegrationInfo display_name")
-    assert.match(await page.locator("#navexa-agecheck-gate-text").textContent(), /18 or older/, "GetIntegrationInfo minimum_age")
+    assert.equal(await page.locator("#navexa-agecheck-gate-title").textContent(), "Welcome to Gate Test Store", "GetIntegrationInfo display_name")
+    assert.match(await page.locator("#navexa-agecheck-gate-msg").textContent(), /18 or older/, "GetIntegrationInfo minimum_age")
     assert.equal(await dialog.getAttribute("aria-labelledby"), "navexa-agecheck-gate-title")
-    assert.equal(await dialog.getAttribute("aria-describedby"), "navexa-agecheck-gate-text")
+    assert.equal(await dialog.getAttribute("aria-describedby"), "navexa-agecheck-gate-msg")
     assert.equal(await page.evaluate(() => document.activeElement?.id), "navexa-agecheck-gate-title", "focus starts on the question")
     const hidden = await page.evaluate(() => {
-      const others = [...document.body.children].filter((el) => !el.classList.contains("navexa-agecheck-gate") && el.tagName !== "SCRIPT")
+      const others = [...document.body.children].filter((el) => !el.matches('[data-navexa-agecheck="gate"]') && el.tagName !== "SCRIPT" && el.tagName !== "STYLE")
       return {
         attr: document.documentElement.hasAttribute("data-navexa-agecheck-gate"),
         allHidden: others.every((el) => getComputedStyle(el).visibility === "hidden"),
@@ -186,14 +245,13 @@ for (const name of BROWSERS) {
     })
     assert.ok(hidden.count > 0)
     assert.deepEqual(hidden, { attr: true, allHidden: true, allInert: true, count: hidden.count })
-    const box = await page.locator(".navexa-agecheck-gate__yes").boundingBox()
+    const box = await page.locator(".nac-yes").boundingBox()
     assert.ok(box && box.height >= 44, "44 px touch target")
     await ctx.close()
   })
 
-  await check("keyboard: Tab and Shift+Tab stay in the dialog, Escape does not dismiss, Enter answers", async () => {
+  await check("keyboard: Tab stays in the dialog, Escape does not dismiss, Enter answers; remembered, the page's own aria-hidden put back", async () => {
     const ctx = await context(browser, foreign)
-    // A body child the page itself marks aria-hidden (as WooCommerce's PhotoSwipe container), there before the gate opens.
     await ctx.addInitScript(() => {
       document.addEventListener("DOMContentLoaded", () => {
         const own = document.createElement("div")
@@ -205,28 +263,19 @@ for (const name of BROWSERS) {
     const page = await ctx.newPage()
     await page.goto(urls.home)
     await page.locator(DIALOG).waitFor()
-    const focused = () => page.evaluate(() => document.activeElement?.className ?? "")
-    await page.keyboard.press("Tab")
-    assert.match(await focused(), /__yes/)
-    await page.keyboard.press("Tab")
-    assert.match(await focused(), /__no/)
-    await page.keyboard.press("Tab")
-    assert.match(await focused(), /__yes/, "Tab wraps")
-    await page.keyboard.press("Shift+Tab")
-    assert.match(await focused(), /__no/, "Shift+Tab wraps")
     for (let i = 0; i < 6; i++) await page.keyboard.press("Tab")
-    assert.match(await focused(), /navexa-agecheck-gate__button/, "never leaves the dialog")
+    assert.equal(await page.evaluate(() => !!document.activeElement?.closest('[data-navexa-agecheck="gate"]')), true, "never leaves the dialog")
     await page.keyboard.press("Escape")
     assert.equal(await page.locator(DIALOG).isVisible(), true, "Escape does not dismiss")
-    await page.locator(".navexa-agecheck-gate__yes").focus()
+    await page.locator(".nac-yes").focus()
     await page.keyboard.press("Enter")
     await page.locator(DIALOG).waitFor({ state: "detached" })
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute("data-navexa-agecheck-gate")), false)
     assert.equal(await page.evaluate(() => [...document.body.children].some((el) => el.hasAttribute("inert"))), false, "the page is usable again")
     assert.equal(await page.getAttribute("#page-own-hidden", "aria-hidden"), "true", "the page's own aria-hidden is put back")
-    const stored = JSON.parse(await page.evaluate(() => localStorage.getItem("navexa-agecheck-gate")))
-    assert.equal(stored.v, 1)
-    assert.equal(stored.age, 18)
+    const stored = JSON.parse(await page.evaluate((k) => localStorage.getItem(k), KEY))
+    assert.equal(stored.minAge, 18)
+    assert.equal(typeof stored.passedAt, "number")
     await page.reload()
     await page.waitForLoadState("domcontentloaded")
     assert.equal(await page.locator(DIALOG).count(), 0, "remembered on reload")
@@ -236,12 +285,29 @@ for (const name of BROWSERS) {
     await ctx.close()
   })
 
+  await check("a visitor who answered the 1.0.x gate is not asked again (migrated in the browser)", async () => {
+    const ctx = await context(browser, foreign)
+    await ctx.addInitScript((k) => {
+      if (!sessionStorage.getItem("seeded")) {
+        sessionStorage.setItem("seeded", "1")
+        localStorage.setItem(k, JSON.stringify({ v: 1, age: 21, at: Date.now() - 86_400_000 }))
+      }
+    }, LEGACY_KEY)
+    const page = await ctx.newPage()
+    await page.goto(urls.home)
+    await page.waitForLoadState("load")
+    assert.equal(await page.locator(DIALOG).count(), 0, "no gate")
+    const migrated = JSON.parse(await page.evaluate((k) => localStorage.getItem(k), KEY))
+    assert.equal(migrated.minAge, 21)
+    await ctx.close()
+  })
+
   await check("under age: the exit page, where the gate never shows; not remembered", async () => {
     const ctx = await context(browser, foreign)
     const page = await ctx.newPage()
     await page.goto(urls.home)
     await page.locator(DIALOG).waitFor()
-    await Promise.all([page.waitForURL((u) => u.href.replace(/\/+$/, "") === urls.exit_url.replace(/\/+$/, "")), page.locator(".navexa-agecheck-gate__no").click()])
+    await Promise.all([page.waitForURL((u) => u.href.replace(/\/+$/, "") === urls.exit_url.replace(/\/+$/, "")), page.locator(".nac-no").click()])
     await page.waitForLoadState("domcontentloaded")
     assert.equal(await page.locator(DIALOG).count(), 0, "no gate on the exit page")
     assert.match(await page.content(), /Come back when you are older/)
@@ -250,93 +316,76 @@ for (const name of BROWSERS) {
     await ctx.close()
   })
 
-  await check("under age without an exit URL: the refusal is shown and announced", async () => {
-    setup("on", "site", "30", "noexit")
+  await check("0 days: remembered in this tab only (sessionStorage)", async () => {
+    urls = setup("on", "site", "0", "noexit")
     const ctx = await context(browser, foreign)
     const page = await ctx.newPage()
     await page.goto(urls.home)
-    await page.locator(DIALOG).waitFor()
-    await page.locator(".navexa-agecheck-gate__no").click()
-    const alert = page.locator('[role="alert"]')
-    assert.match(await alert.textContent(), /must be 18 or older/)
-    assert.equal(await page.locator(DIALOG).isVisible(), true)
-    assert.equal(await page.evaluate(() => localStorage.getItem("navexa-agecheck-gate")), null)
-    await ctx.close()
-  })
-
-  await check("0 days: remembered for the browser session only (sessionStorage)", async () => {
-    setup("on", "site", "0", "noexit")
-    const ctx = await context(browser, foreign)
-    const page = await ctx.newPage()
-    await page.goto(urls.home)
-    await page.locator(".navexa-agecheck-gate__yes").click()
-    assert.equal(await page.evaluate(() => localStorage.getItem("navexa-agecheck-gate")), null)
-    assert.ok(await page.evaluate(() => sessionStorage.getItem("navexa-agecheck-gate")))
+    await page.locator(".nac-yes").click()
+    assert.equal(await page.evaluate((k) => localStorage.getItem(k), KEY), null)
+    assert.ok(await page.evaluate((k) => sessionStorage.getItem(k), KEY))
     await page.goto(urls.product_url)
     assert.equal(await page.locator(DIALOG).count(), 0)
-    // sessionStorage is one tab's: a new tab asks again, and a localStorage
-    // answer (left by a longer setting) does not count at 0 days.
     const tab = await ctx.newPage()
     await tab.goto(urls.home)
     await tab.locator(DIALOG).waitFor({ state: "visible" })
-    await tab.evaluate(() => localStorage.setItem("navexa-agecheck-gate", JSON.stringify({ v: 1, age: 18, at: Date.now() - 86_400_000 })))
-    const another = await ctx.newPage()
-    await another.goto(urls.home)
-    await another.locator(DIALOG).waitFor({ state: "visible" })
     await ctx.close()
   })
 
-  await check("a theme's root font size and button rules do not restyle the dialog", async () => {
-    setup("on", "site", "30", "noexit")
+  await check("date of birth: an invalid date is refused, under age goes to the exit page; of age is remembered; the date of birth is stored nowhere and sent nowhere", async () => {
+    urls = setup("on", "site", "30", "exit", "dob", "verify", "brand")
+    const seen = []
+    const ctx = await context(browser, foreign, seen)
+    const page = await ctx.newPage()
+    await page.goto(urls.home)
+    await page.locator(DIALOG).waitFor({ state: "visible" })
+    assert.equal(await page.locator("#navexa-agecheck-gate-title").textContent(), "Hello from Gate Test Store", "{site}")
+    assert.equal(await page.locator("#navexa-agecheck-gate-msg").textContent(), "Only 18+ past this point.", "{age}")
+    const colors = await page.evaluate(() => {
+      const card = document.querySelector('[data-navexa-agecheck="gate"] .nac-card')
+      const yes = document.querySelector('[data-navexa-agecheck="gate"] .nac-yes')
+      return { card: getComputedStyle(card).backgroundColor, text: getComputedStyle(card).color, button: getComputedStyle(yes).backgroundColor, buttonText: getComputedStyle(yes).color, label: yes.textContent }
+    })
+    assert.deepEqual(colors, { card: "rgb(255, 251, 230)", text: "rgb(34, 34, 34)", button: "rgb(10, 107, 61)", buttonText: "rgb(255, 255, 255)", label: "Go" })
+    await page.fill(".nac-month", "13")
+    await page.fill(".nac-day", "40")
+    await page.fill(".nac-year", "1990")
+    await page.click(".nac-yes")
+    assert.match(await page.locator(".nac-err").textContent(), /real date of birth/)
+    const year = String(new Date().getFullYear() - 10)
+    await page.fill(".nac-month", "4")
+    await page.fill(".nac-day", "17")
+    await page.fill(".nac-year", year)
+    await Promise.all([page.waitForURL((u) => u.href.replace(/\/+$/, "") === urls.exit_url.replace(/\/+$/, "")), page.click(".nac-yes")])
+    await page.goto(urls.home)
+    await page.locator(DIALOG).waitFor({ state: "visible" })
+    await page.fill(".nac-month", "4")
+    await page.fill(".nac-day", "17")
+    await page.fill(".nac-year", "1987")
+    await page.click(".nac-yes")
+    await page.locator(DIALOG).waitFor({ state: "detached" })
+    const storage = await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))
+    assert.doesNotMatch(storage, /1987|04-17|4\/17/, "the date of birth is not stored")
+    assert.ok(seen.every((r) => !r.includes("1987") && !r.includes(year)), "the date of birth is in no request")
+    await page.reload()
+    await page.waitForLoadState("domcontentloaded")
+    assert.equal(await page.locator(DIALOG).count(), 0, "remembered")
+    await ctx.close()
+    urls = setup("on", "site", "30", "exit")
+  })
+
+  await check("gate-only with no keys: the gate shows at the gate's own minimum age", async () => {
+    urls = setup("on", "site", "30", "exit", "attest", "gate_only")
     const ctx = await context(browser, foreign)
     const page = await ctx.newPage()
     await page.goto(urls.home)
     await page.locator(DIALOG).waitFor({ state: "visible" })
-    // Twenty Twenty's and Twenty Fifteen's root size, Twenty Twenty-One's button rule (0,3,1), Storefront's button:hover; appended after the gate's style.
-    await page.addStyleTag({
-      content:
-        "html{font-size:62.5%}h2{font-size:1.4rem;font-family:serif}p{font-size:1rem}" +
-        "button:not(:hover):not(:active):not(.has-background){background-color:#28303d;color:#d1e4dd;font-size:1.2rem;text-transform:uppercase}" +
-        "button:hover,button:focus{background:#999;color:#000}",
-    })
-    const styles = () =>
-      page.evaluate(() => {
-        const css = (sel) => getComputedStyle(document.querySelector(sel))
-        const px = (sel) => parseFloat(css(sel).fontSize)
-        return {
-          title: px(".navexa-agecheck-gate__title"),
-          text: px(".navexa-agecheck-gate__text"),
-          yes: px(".navexa-agecheck-gate__yes"),
-          no: px(".navexa-agecheck-gate__no"),
-          yesBg: css(".navexa-agecheck-gate__yes").backgroundColor,
-          noBg: css(".navexa-agecheck-gate__no").backgroundColor,
-          transform: css(".navexa-agecheck-gate__yes").textTransform,
-        }
-      })
-    const before = await styles()
-    assert.ok(before.text >= 16 && before.yes >= 16 && before.no >= 16 && before.title >= 24, JSON.stringify(before))
-    assert.equal(before.yesBg, "rgb(30, 30, 30)")
-    assert.equal(before.noBg, "rgb(255, 255, 255)", "the under-age button stays secondary")
-    assert.equal(before.transform, "none")
-    await page.hover(".navexa-agecheck-gate__no")
-    assert.equal((await styles()).noBg, "rgb(255, 255, 255)", "button:hover does not take over")
+    assert.equal(await page.locator(".nac-yes").textContent(), "I am 19 or older")
     await ctx.close()
-    setup("on", "site", "30", "exit")
-  })
-
-  await check("off: no dialog", async () => {
-    setup("off")
-    const ctx = await context(browser, foreign)
-    const page = await ctx.newPage()
-    await page.goto(urls.home)
-    await page.waitForLoadState("domcontentloaded")
-    assert.equal(await page.locator(DIALOG).count(), 0)
-    await ctx.close()
-    setup("on", "site", "30", "exit")
+    urls = setup("on", "site", "30", "exit")
   })
 
   await check("no dialog on the login page or in wp-admin", async () => {
-    setup("on", "site", "30", "exit")
     // wp-admin loads Gravatar avatars itself: not a storefront page, not recorded.
     const ctx = await context(browser, [])
     const page = await ctx.newPage()
@@ -346,7 +395,7 @@ for (const name of BROWSERS) {
     await page.fill("#user_pass", "password")
     await Promise.all([page.waitForURL(/wp-admin/), page.click("#wp-submit")])
     assert.equal(await page.locator(DIALOG).count(), 0, "wp-admin")
-    assert.doesNotMatch(await page.content(), gateScript)
+    assert.ok(!carries(await page.content()))
     await ctx.close()
   })
 

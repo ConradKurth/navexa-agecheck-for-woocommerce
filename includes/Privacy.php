@@ -318,6 +318,7 @@ final class Privacy {
 		$fields = array(
 			Meta::VERIFICATION_ID           => __( 'AgeCheck verification', 'navexa-agecheck-for-woocommerce' ),
 			Meta::PREVIOUS_VERIFICATION_IDS => __( 'Earlier AgeCheck verifications', 'navexa-agecheck-for-woocommerce' ),
+			Meta::FALLBACK                  => __( 'Placed while age verification was unavailable', 'navexa-agecheck-for-woocommerce' ),
 			Meta::VERIFICATION_STATUS       => __( 'Verification status', 'navexa-agecheck-for-woocommerce' ),
 			Meta::STATUS                    => __( 'Age check result', 'navexa-agecheck-for-woocommerce' ),
 			Meta::PASS_CLASS                => __( 'How the age check passed', 'navexa-agecheck-for-woocommerce' ),

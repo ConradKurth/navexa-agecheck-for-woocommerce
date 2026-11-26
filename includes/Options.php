@@ -162,6 +162,31 @@ final class Options {
 	const STORE_PROFILE = 'navexa_agecheck_store_profile';
 
 	/**
+	 * What pre-payment checkout does while AgeCheck cannot run the ID check
+	 * (owner decision #21, TAX-1841): OUTAGE_REFUSE (default) or
+	 * OUTAGE_HOLD.
+	 */
+	const OUTAGE_FALLBACK = 'navexa_agecheck_outage_fallback';
+
+	/**
+	 * Refuse the order, as when AgeCheck answers nothing (the default).
+	 */
+	const OUTAGE_REFUSE = 'refuse';
+
+	/**
+	 * Take the order and hold it; the shopper verifies by link once AgeCheck
+	 * answers again (the order-bound path).
+	 */
+	const OUTAGE_HOLD = 'hold';
+
+	/**
+	 * Unix time the store's daily ID check limit resets, from the last
+	 * GetCheckAvailability ORG_DAILY_LIMIT answer (Availability); 0 or
+	 * unset when not capped.
+	 */
+	const CAPPED_UNTIL = 'navexa_agecheck_capped_until';
+
+	/**
 	 * The entry gate shows on every front-end page.
 	 */
 	const GATE_SCOPE_SITE = 'site';
@@ -445,6 +470,55 @@ final class Options {
 	 */
 	public static function looks_like_webhook_secret( string $secret ): bool {
 		return 1 === preg_match( '/^[\x21-\x7e]{16,256}$/', $secret );
+	}
+
+	/**
+	 * The stored outage fallback: OUTAGE_HOLD only for a stored 'hold',
+	 * OUTAGE_REFUSE for anything else. What the merchant chose; checkout
+	 * reads outage_fallback().
+	 */
+	public static function stored_outage_fallback(): string {
+		return self::OUTAGE_HOLD === get_option( self::OUTAGE_FALLBACK, self::OUTAGE_REFUSE ) ? self::OUTAGE_HOLD : self::OUTAGE_REFUSE;
+	}
+
+	/**
+	 * What pre-payment checkout does while AgeCheck cannot run the ID check:
+	 * OUTAGE_HOLD only when the merchant chose it, the store verifies before
+	 * payment, and a held order's shopper can be reached by link: AgeCheck
+	 * reported the store's display name (a link needs one), no store-wide
+	 * link refusal is on record (Links::store_block(): links off, no display
+	 * name, no link RPC) and wp-config.php has not turned the emails off
+	 * (NAVEXA_AGECHECK_EMAIL_LINKS false: DisabledLinkSender). Otherwise
+	 * OUTAGE_REFUSE: a held order nobody can verify would only end refunded.
+	 */
+	public static function outage_fallback(): string {
+		if ( self::OUTAGE_HOLD !== self::stored_outage_fallback() || self::MODE_PRE_PAYMENT !== self::mode() ) {
+			return self::OUTAGE_REFUSE;
+		}
+		if ( array() !== Links::store_block() || '' === self::reported_display_name() || Links::sender() instanceof DisabledLinkSender ) {
+			return self::OUTAGE_REFUSE;
+		}
+		return self::OUTAGE_HOLD;
+	}
+
+	/**
+	 * Whether checkout takes and holds orders while AgeCheck is down
+	 * (outage_fallback() is OUTAGE_HOLD).
+	 */
+	public static function holds_on_outage(): bool {
+		return self::OUTAGE_HOLD === self::outage_fallback();
+	}
+
+	/**
+	 * Unix time the store's daily ID check limit resets (CAPPED_UNTIL), 0
+	 * when it is not capped or the time has passed.
+	 *
+	 * @param int|null $now Unix time; null for time().
+	 */
+	public static function capped_until( ?int $now = null ): int {
+		$until = (int) get_option( self::CAPPED_UNTIL, 0 );
+		$now   = null === $now ? time() : $now;
+		return $until > $now ? $until : 0;
 	}
 
 	/**

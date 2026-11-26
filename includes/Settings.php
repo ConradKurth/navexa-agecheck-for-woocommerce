@@ -68,7 +68,7 @@ final class Settings extends \WC_Settings_Page {
 	 * @return array<int, array<string, mixed>>
 	 */
 	protected function get_settings_for_default_section() {
-		return array(
+		$fields = array(
 			array(
 				'id'    => 'navexa_agecheck_section',
 				'type'  => 'title',
@@ -305,6 +305,40 @@ final class Settings extends \WC_Settings_Page {
 			array(
 				'id'   => 'navexa_agecheck_data_section',
 				'type' => 'sectionend',
+			),
+		);
+		if ( Options::MODE_PRE_PAYMENT !== Options::mode() ) {
+			return $fields;
+		}
+		// The outage fallback applies to checkout before payment only.
+		$at = 1 + (int) array_search( Options::MODE, array_column( $fields, 'id' ), true );
+		array_splice( $fields, $at, 0, array( self::outage_fallback_field() ) );
+		return $fields;
+	}
+
+	/**
+	 * The "When AgeCheck is down" field (TAX-1841, owner decision #21): what
+	 * checkout before payment does while AgeCheck cannot run the ID check.
+	 * Its description warns inline while a held order's shopper could not be
+	 * sent a link, which keeps the setting refusing
+	 * (Options::outage_fallback()).
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function outage_fallback_field(): array {
+		$desc = __( 'Take and hold accepts the order while AgeCheck cannot run the age check (an outage, or AgeCheck\'s ID check busy) and holds it, unshipped, until the shopper verifies by the link AgeCheck emails them or from their order page. Never after a failed check. When your store has used its own daily ID checks, orders are refused either way.', 'navexa-agecheck-for-woocommerce' );
+		if ( Options::OUTAGE_HOLD === Options::stored_outage_fallback() && Options::OUTAGE_HOLD !== Options::outage_fallback() ) {
+			$desc .= ' ' . __( 'Not in effect now: AgeCheck cannot email verification links for this store yet (they are off at AgeCheck, or your store display name is not set in the AgeCheck dashboard), so checkout refuses orders when AgeCheck is down until it can.', 'navexa-agecheck-for-woocommerce' );
+		}
+		return array(
+			'id'      => Options::OUTAGE_FALLBACK,
+			'type'    => 'select',
+			'title'   => __( 'When AgeCheck is down', 'navexa-agecheck-for-woocommerce' ),
+			'desc'    => $desc,
+			'default' => Options::OUTAGE_REFUSE,
+			'options' => array(
+				Options::OUTAGE_REFUSE => __( 'Refuse the order (the shopper tries again later)', 'navexa-agecheck-for-woocommerce' ),
+				Options::OUTAGE_HOLD   => __( 'Take the order and hold it until the shopper verifies', 'navexa-agecheck-for-woocommerce' ),
 			),
 		);
 	}

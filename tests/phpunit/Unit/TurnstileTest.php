@@ -29,6 +29,7 @@ final class TurnstileTest extends TestCase {
 		Mode::info( Client::KEY_START );
 		$this->http_requests = array();
 		$this->customer_at( $this->us_address() );
+		$this->cache_availability();
 	}
 
 	private function turn_on( bool $with_keys = true ): void {

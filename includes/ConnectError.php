@@ -178,6 +178,15 @@ final class ConnectError extends \RuntimeException {
 	}
 
 	/**
+	 * Whether AgeCheck itself did not answer (unavailable, or the call timed
+	 * out), as opposed to a local refusal or an answer: what a store's outage
+	 * fallback reacts to (TAX-1841). is_retryable() is unchanged.
+	 */
+	public function is_outage(): bool {
+		return '' === $this->local_reason && in_array( $this->connect_code, array( 'unavailable', 'deadline_exceeded' ), true );
+	}
+
+	/**
 	 * Whether a background job may retry the call later with the same body.
 	 * Local refusals are never retryable: they need an administrator.
 	 */

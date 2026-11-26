@@ -34,6 +34,15 @@ defined( 'ABSPATH' ) || exit;
  * a second check that nothing would use, and never told passed for an order
  * the checkout they are on will not resume.
  *
+ * Outage fallback (TAX-1841, owner decision #21; off unless the store chose
+ * it, Options::holds_on_outage()): an order is also admitted without a check
+ * when this session's own start saw AgeCheck down for this ship-to within
+ * Session::FALLBACK_TTL (a server-observed outage, never anything the
+ * browser sends), and never after a failed check; it binds nothing and
+ * verifies by link after payment. A guarded (passed) check whose
+ * GetVerification gets no answer is admitted and bound as usual. Every
+ * other refusal is unchanged.
+ *
  * Which carts and orders need a check is Requirement's job
  * (Requirement::cart_required() for the session cart,
  * Requirement::evaluate() for the order a Store API checkout is placing,
@@ -105,6 +114,14 @@ final class Gate {
 	private static $admitted = null;
 
 	/**
+	 * Whether the last check() in this request admitted the order through
+	 * the outage fallback (no verification), for order binding.
+	 *
+	 * @var bool
+	 */
+	private static $admitted_fallback = false;
+
+	/**
 	 * Whether shoppers verify before payment (Options::MODE_PRE_PAYMENT).
 	 * In accept-and-hold mode checkout is never gated here: the hold is.
 	 */
@@ -130,7 +147,8 @@ final class Gate {
 	 * @return array{code: string, message: string, clear_resumable: bool}|null Null admits; otherwise the refusal.
 	 */
 	public static function check( ?ShipTo $ship_to, string $country, ?\WC_Order $bound = null ): ?array {
-		self::$admitted = null;
+		self::$admitted          = null;
+		self::$admitted_fallback = false;
 		if ( null === $ship_to ) {
 			return self::refuse( '' !== $country && ! ShipTo::is_accepted_country( $country ) ? self::REFUSE_US_ONLY : self::REFUSE_NO_ADDRESS );
 		}
@@ -165,6 +183,16 @@ final class Gate {
 			if ( null !== $record && Session::STATUS_FAILED === $record['status'] ) {
 				return self::refuse( self::REFUSE_FAILED );
 			}
+			// The outage fallback (TAX-1841): this session's own start saw
+			// AgeCheck down within Session::FALLBACK_TTL and the store takes
+			// and holds orders then. The order binds nothing and verifies by
+			// link after payment (Binding). Never after a failed check
+			// (Session::fallback_for() refuses then too).
+			if ( Options::holds_on_outage() && Session::fallback_for( $mac ) ) {
+				self::$admitted_fallback = true;
+				Client::log( 'warning', 'agecheck checkout admitted reason=outage_fallback' );
+				return null;
+			}
 			return self::refuse( self::REFUSE_VERIFY_FIRST );
 		}
 
@@ -174,6 +202,16 @@ final class Gate {
 			if ( 'not_found' === $e->connect_code() ) {
 				Session::forget_verification();
 				return self::refuse( self::REFUSE_VERIFY_FIRST );
+			}
+			if ( $e->is_outage() && Options::holds_on_outage() ) {
+				// The guard is minted only on a pass this session saw, so the
+				// check is already passed: bind it as usual. AttachOrder then
+				// fails and stays pending (ATTACH_PENDING) for the release
+				// run and the sweep: no second check, no second bill. Release
+				// still waits for GetClearance CLEARED.
+				self::$admitted = $vid;
+				Client::log( 'warning', 'agecheck checkout admitted reason=outage_guarded vid=' . $vid );
+				return null;
 			}
 			return self::refuse( self::REFUSE_UNAVAILABLE );
 		}
@@ -315,10 +353,20 @@ final class Gate {
 	}
 
 	/**
+	 * Whether the last check() in this request admitted the order through
+	 * the outage fallback (TAX-1841): no verification to bind; Binding marks
+	 * the order (Meta::FALLBACK) and it takes the order-bound path.
+	 */
+	public static function admitted_fallback(): bool {
+		return self::$admitted_fallback;
+	}
+
+	/**
 	 * Forgets the request's admission (tests, and long-running processes).
 	 */
 	public static function reset(): void {
-		self::$admitted = null;
+		self::$admitted          = null;
+		self::$admitted_fallback = false;
 	}
 
 	/**

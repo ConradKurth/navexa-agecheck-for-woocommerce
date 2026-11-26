@@ -80,6 +80,7 @@ final class Binding {
 		Meta::VERIFICATION_ID,
 		Meta::VERIFICATION_STATUS,
 		Meta::PREVIOUS_VERIFICATION_IDS,
+		Meta::FALLBACK,
 		Meta::ATTACH_PENDING,
 		Meta::BOUND_AT,
 		Meta::BOUND_BY,
@@ -167,6 +168,9 @@ final class Binding {
 			}
 			$vid = self::checkout_vid();
 			if ( '' === $vid ) {
+				if ( Gate::enforces() && Gate::admitted_fallback() ) {
+					self::mark_fallback( $order );
+				}
 				$order->save_meta_data();
 				return;
 			}
@@ -190,6 +194,36 @@ final class Binding {
 		} catch ( \Throwable $e ) {
 			Client::log( 'error', sprintf( 'agecheck bind failed order=%d error=%s', $order->get_id(), get_class( $e ) ) );
 		}
+	}
+
+	/**
+	 * Marks an order the gate admitted through the outage fallback (TAX-1841;
+	 * unsaved): Meta::FALLBACK and an order note. A check the session had
+	 * started and not finished (its record, pending and not bound) is
+	 * abandoned: its id goes to Meta::PREVIOUS_VERIFICATION_IDS, so staff can
+	 * see a second check, and the session forgets it. Nothing is bound: the
+	 * order takes the order-bound path (create with the order id and ship-to,
+	 * the billing name and email, then a link) through the hold's release
+	 * runs, like any order placed without the gate. The session's fallback
+	 * stays until it expires, so a payment retried within it is admitted
+	 * again.
+	 *
+	 * @param \WC_Order $order Order.
+	 */
+	private static function mark_fallback( \WC_Order $order ): void {
+		if ( '' !== Meta::get( $order, Meta::FALLBACK ) ) {
+			return; // A retried payment of the same order.
+		}
+		Meta::set( $order, Meta::FALLBACK, 'outage:' . time() );
+		$record = Session::record();
+		if ( null !== $record && Session::STATUS_PENDING === $record['status'] ) {
+			$previous   = array_filter( explode( ',', Meta::get( $order, Meta::PREVIOUS_VERIFICATION_IDS ) ) );
+			$previous[] = $record['vid'];
+			Meta::set( $order, Meta::PREVIOUS_VERIFICATION_IDS, implode( ',', array_slice( array_unique( $previous ), -10 ) ) );
+			Session::forget_verification();
+		}
+		Meta::note( $order, __( 'AgeCheck: age verification was unavailable at checkout, so this order was taken without a check (your "When AgeCheck is down" setting). It stays held until the shopper verifies by the link AgeCheck emails them once it is back.', 'navexa-agecheck-for-woocommerce' ) );
+		Client::log( 'warning', sprintf( 'agecheck order taken during an outage order=%d', $order->get_id() ) );
 	}
 
 	/**

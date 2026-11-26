@@ -102,6 +102,10 @@ With "Hide express checkout buttons on age-restricted carts and products" on (th
 
 If an express order still gets through (another payment plugin, a setting turned off, or a cart that changed after the page loaded): when it goes through WooCommerce's checkout in "Before payment" mode it is refused before payment with "Verify your age on the checkout page"; and whichever way it is placed, a paid age-restricted order is held as "Awaiting age check" until AgeCheck clears it. Some express flows create the order without WooCommerce's checkout (for example PayPal's "Pay now" experience); those are held after payment.
 
+= What happens when AgeCheck is down? =
+
+By default, "Before payment" checkout refuses age-restricted orders while AgeCheck cannot run the check, and the shopper tries again later. With "When AgeCheck is down" set to "Take the order and hold it", a shopper whose check could not run (AgeCheck not answering, or its ID check unavailable) may place the order; it stays "Awaiting age check", unshipped, until they verify with the link AgeCheck emails them or from their order page. It is never offered after a failed check. The setting stays refusing while AgeCheck cannot email your shoppers a link (verification emails off at AgeCheck, or no store display name in the AgeCheck dashboard). When your store has used its own daily ID checks, orders are refused either way.
+
 = What if a shopper fails the age check? =
 
 The order is never released. Depending on your setting, it is refunded through the payment gateway (when the gateway can refund by API) or listed under "AgeCheck: denied, refund required" for you to refund.

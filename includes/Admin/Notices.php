@@ -30,6 +30,10 @@ defined( 'ABSPATH' ) || exit;
  *   refusal; it goes once a link is sent, and the display-name one as soon
  *   as AgeCheck reports a name (Options::STORE_PROFILE). Dismissing it hides
  *   it until the reason changes.
+ * - A notice on the same screens while the store has used its AgeCheck ID
+ *   checks for the day (Options::capped_until(), from GetCheckAvailability,
+ *   TAX-1841): shoppers whose check needs the ID step cannot order until
+ *   it resets. Dismissing it hides it until the next limit.
  *
  * Every lasting notice of this plugin (these, the test-mode one in Mode and
  * the paused one in Install) shows only on WooCommerce screens
@@ -47,6 +51,7 @@ final class Notices {
 	const USER_META_LINKS  = 'navexa_agecheck_dismissed_links';
 	const USER_META_TEST   = 'navexa_agecheck_dismissed_test';
 	const USER_META_PAUSED = 'navexa_agecheck_dismissed_paused';
+	const USER_META_CAPPED = 'navexa_agecheck_dismissed_capped';
 
 	/**
 	 * Dismissable notices: the dismiss URL's parameter and the user meta that
@@ -57,6 +62,7 @@ final class Notices {
 		'links'  => self::USER_META_LINKS,
 		'test'   => self::USER_META_TEST,
 		'paused' => self::USER_META_PAUSED,
+		'capped' => self::USER_META_CAPPED,
 	);
 
 	/**
@@ -125,6 +131,16 @@ final class Notices {
 				esc_html( $links ),
 				esc_url( $dismiss ),
 				esc_html__( 'Dismiss until this changes', 'navexa-agecheck-for-woocommerce' )
+			);
+		}
+		$capped = self::capped_text();
+		$until  = Options::capped_until();
+		if ( '' !== $capped && ! self::is_dismissed( 'capped', (string) $until ) ) {
+			printf(
+				'<div class="notice notice-warning"><p><strong>%1$s</strong></p><p>%2$s</p>%3$s</div>',
+				esc_html__( 'Navexa AgeCheck', 'navexa-agecheck-for-woocommerce' ),
+				esc_html( $capped ),
+				self::dismiss_link( 'capped', (string) $until ) // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in dismiss_link().
 			);
 		}
 		$counts = self::counts();
@@ -240,15 +256,45 @@ final class Notices {
 		}
 		switch ( $block['reason'] ) {
 			case Links::STATE_LINKS_OFF:
-				return __( 'AgeCheck is not sending verification emails yet, so shoppers of held orders are not emailed a link to verify. Their orders stay held until they verify from their order page (Verify now) or you release them after checking their age yourself. Nothing needs changing on your side: the plugin uses the emails once AgeCheck turns them on.', 'navexa-agecheck-for-woocommerce' );
+				return __( 'AgeCheck is not sending verification emails yet, so shoppers of held orders are not emailed a link to verify. Their orders stay held until they verify from their order page (Verify now) or you release them after checking their age yourself. Nothing needs changing on your side: the plugin uses the emails once AgeCheck turns them on.', 'navexa-agecheck-for-woocommerce' ) . self::fallback_suffix();
 			case Links::STATE_NO_DISPLAY_NAME:
 				if ( '' !== Options::reported_display_name() ) {
 					return ''; // Set since: the next check of each held order sends its email.
 				}
-				return __( 'AgeCheck cannot email shoppers a link to verify until you set your store name in the AgeCheck dashboard (AgeCheck settings, store display name). Held orders stay held until then; once AgeCheck reports the name (within an hour), each held order\'s email goes out at its next check, or at once with the order action "AgeCheck: check now".', 'navexa-agecheck-for-woocommerce' );
+				return __( 'AgeCheck cannot email shoppers a link to verify until you set your store name in the AgeCheck dashboard (AgeCheck settings, store display name). Held orders stay held until then; once AgeCheck reports the name (within an hour), each held order\'s email goes out at its next check, or at once with the order action "AgeCheck: check now".', 'navexa-agecheck-for-woocommerce' ) . self::fallback_suffix();
 			default:
-				return __( 'AgeCheck does not offer verification emails yet, so shoppers of held orders are not emailed a link. Their orders stay held until they verify from their order page or you release them after checking their age yourself.', 'navexa-agecheck-for-woocommerce' );
+				return __( 'AgeCheck does not offer verification emails yet, so shoppers of held orders are not emailed a link. Their orders stay held until they verify from their order page or you release them after checking their age yourself.', 'navexa-agecheck-for-woocommerce' ) . self::fallback_suffix();
 		}
+	}
+
+	/**
+	 * The store's daily ID check limit in words while it stands
+	 * (Options::capped_until()); else ''.
+	 *
+	 * @param int|null $now Unix time; null for time().
+	 */
+	public static function capped_text( ?int $now = null ): string {
+		$until = Options::capped_until( $now );
+		if ( 0 === $until ) {
+			return '';
+		}
+		return sprintf(
+			/* translators: %s: a date and time. */
+			__( 'Your store has used its AgeCheck ID checks for today, so shoppers whose age check needs a photo ID cannot place age-restricted orders until %s (00:00 UTC). AgeCheck raises the limit once your first AgeCheck invoice is paid; contact Navexa if you need more.', 'navexa-agecheck-for-woocommerce' ),
+			wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $until )
+		);
+	}
+
+	/**
+	 * What links_text() adds while a store that takes and holds orders when
+	 * AgeCheck is down cannot: no link could reach those shoppers
+	 * (Options::outage_fallback()).
+	 */
+	private static function fallback_suffix(): string {
+		if ( Options::OUTAGE_HOLD !== Options::stored_outage_fallback() ) {
+			return '';
+		}
+		return ' ' . __( 'While this lasts, checkout also refuses orders when AgeCheck is down instead of taking and holding them (your "When AgeCheck is down" setting), because those shoppers could not be sent a link.', 'navexa-agecheck-for-woocommerce' );
 	}
 
 	/**
@@ -266,6 +312,10 @@ final class Notices {
 		$links = isset( $_GET['links'] ) ? sanitize_key( wp_unslash( $_GET['links'] ) ) : '';
 		if ( in_array( $links, Links::BLOCKING_STATES, true ) ) {
 			update_user_meta( get_current_user_id(), self::USER_META_LINKS, $links );
+		}
+		$capped = isset( $_GET['capped'] ) ? sanitize_key( wp_unslash( $_GET['capped'] ) ) : '';
+		if ( 1 === preg_match( '/^\d{1,12}$/', $capped ) ) {
+			update_user_meta( get_current_user_id(), self::USER_META_CAPPED, $capped );
 		}
 		foreach ( array( 'test', 'paused' ) as $kind ) {
 			$reason = isset( $_GET[ $kind ] ) ? sanitize_key( wp_unslash( $_GET[ $kind ] ) ) : '';

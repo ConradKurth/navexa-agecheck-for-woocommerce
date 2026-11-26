@@ -15,6 +15,7 @@ Status: **W0 scaffold + W1 hold core + W2 pre-payment**, merged; **W4 hardening*
 | `includes/Settings.php` | WooCommerce > Settings > AgeCheck (`WC_Settings_Page`; loaded only from `woocommerce_get_settings_pages`) |
 | `includes/Client.php`, `ConnectError.php` | Connect unary JSON over `wp_remote_post`; 8 s timeout, one attempt, fail closed |
 | `includes/Mode.php`, `IntegrationInfo.php` | `GetIntegrationInfo` cached 1 h (failures 60 s), last livemode per key kept for the TEST MODE banner; live/test gate rules |
+| `includes/Availability.php` | `GetCheckAvailability` (TAX-1841): AVAILABLE, ORG_DAILY_LIMIT, SERVICE_UNAVAILABLE, or OUTAGE/REFUSED/UNKNOWN when AgeCheck gave no such answer; answers cached 60 s, outages 10 s; feeds the "When AgeCheck is down" fallback (`Options::OUTAGE_FALLBACK`, refuse by default) |
 | `includes/Meta.php` | Every order meta key (`_navexa_agecheck_*`) and the TEST note prefix |
 | `includes/Requirement.php` | Which orders and carts need a check: store rule (all / include / exclude categories and tags), per-product setting, exempt customer roles, local pickup skipped (the one pickup list, `pickup_method_ids()`), orders from before activation skipped; sticky once required |
 | `includes/Hold.php` | `wc-agecheck-hold` status; `payment_complete` interception; the pre-save backstop; refused exits; release to the intercepted status; the logged override |

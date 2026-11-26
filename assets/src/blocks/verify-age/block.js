@@ -169,9 +169,11 @@ export default function Block() {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [ server && server.status ] );
 
-	// Block Place order until the server says passed.
+	// Block Place order until the server says passed, or hold (AgeCheck is
+	// down and the store takes and holds the order: the server's gate decides
+	// again when the order is placed).
 	useEffect( () => {
-		if ( required && status !== 'passed' ) {
+		if ( required && status !== 'passed' && status !== 'hold' ) {
 			setValidationErrors( {
 				[ VALIDATION_KEY ]: {
 					message: requiredMessage,

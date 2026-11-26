@@ -114,9 +114,15 @@ final class OrderVerify {
 			self::render_denied( $order );
 			return;
 		}
+		// Taken while age verification was unavailable (TAX-1841).
+		$fallback = '' !== Meta::get( $order, Meta::FALLBACK );
 		if ( ! self::needs_shopper( $order ) ) {
 			if ( Hold::STATUS === $order->get_status( 'edit' ) ) {
 				echo '<section class="navexa-agecheck-order" style="margin:0 0 2em"><h2>' . esc_html__( 'Age check', 'navexa-agecheck-for-woocommerce' ) . '</h2>';
+				if ( $fallback && '' === Meta::get( $order, Meta::VERIFICATION_ID ) ) {
+					echo '<p>' . esc_html__( 'This order has age-restricted items, and age verification was unavailable when you placed it. The store holds the order until you verify your age: once verification is back, we email you a link, and you can also verify from this page.', 'navexa-agecheck-for-woocommerce' ) . '</p></section>';
+					return;
+				}
 				echo '<p>' . esc_html__( 'This order has age-restricted items. We are finishing your age check, and the store ships the order once it is complete.', 'navexa-agecheck-for-woocommerce' ) . '</p></section>';
 			}
 			return;
@@ -134,6 +140,9 @@ final class OrderVerify {
 			) . '</p>';
 		} else {
 			echo '<section class="navexa-agecheck-order" style="margin:0 0 2em"><h2>' . esc_html__( 'Verify your age', 'navexa-agecheck-for-woocommerce' ) . '</h2>';
+			if ( $fallback ) {
+				echo '<p>' . esc_html__( 'Age verification was unavailable when you placed this order, so the store holds it until you verify your age. Select Verify now; if it is still unavailable, try again later or use the link we email you.', 'navexa-agecheck-for-woocommerce' ) . '</p>';
+			}
 			echo '<p>' . esc_html__( 'This order has age-restricted items. The store ships it once you pass an age check.', 'navexa-agecheck-for-woocommerce' ) . '</p>';
 		}
 		if ( ! $retry && Links::STATE_SENT === Links::state( $order ) ) {

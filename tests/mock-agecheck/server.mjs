@@ -15,6 +15,9 @@
 //   GetIntegrationInfo {livemode, scopes, originAllowed, minimumAge, displayName, organizationId, docRetry,
 //     reuseWindowDays, guestReuseCode} (TAX-1839: the window while reuse is on for the org, i.e. config reuse
 //     "on", a policy other than default and a window above 0; the code while that holds and displayName is set)
+//   GetCheckAvailability (TAX-1841) {idCheck, resumesAt (ORG_DAILY_LIMIT only), livemode}: config
+//     availability "available" (default), "org_daily_limit", "service_unavailable", or "absent" (the
+//     plain 404 of an engine without the RPC); a test key always reads AVAILABLE
 //   CreateVerification: identity optional; returnUrl (5), documentNameCheck (6),
 //     intendedShipTo (7) with the proto's rules (order-bound is always REQUIRED
 //     and needs identity.name; NONE needs intendedShipTo; unset is REQUIRED
@@ -103,7 +106,9 @@
 //                          confirmedRecipients, allowedOrigins), integrationInfo?: "served"|"absent",
 //                          links?: "on"|"off"|"absent" ("served" = "on"), reuse?: "on"|"off",
 //                          awaitingIdentity?: "served"|"absent", dataConsent?: "required"|"off",
-//                          keys?, createOutcome?, hostedBase?}
+//                          keys?, createOutcome?, hostedBase?,
+//                          availability?: "available"|"org_daily_limit"|"service_unavailable"|"absent",
+//                          down?: true|false (every RPC answers a bodiless 503, read as unavailable: AgeCheck down)}
 //   POST /__mock/faults    queue {rpc?: "*"|Rpc, status?, code?, message?, retryAfter?, delayMs?, times?}
 //   POST /__mock/verifications  update {id, status?, passClass?, consumed?}: decide a verification as the shopper would
 //   POST /__mock/decide    {id, status, passClass?}: the same, status required
@@ -232,6 +237,10 @@ function defaultState() {
     createOutcome: "needs_doc",
     // Base of hosted URLs; "" = the Host the request came in on.
     hostedBase: "",
+    // GetCheckAvailability's answer for live keys (TAX-1841), or "absent".
+    availability: "available",
+    // AgeCheck down: every RPC answers a bodiless 503 (the hosted surface still serves).
+    down: false,
     faults: [],
     requests: [],
     verifications: new Map(),
@@ -817,6 +826,24 @@ const RPCS = {
     )
   },
 
+  GetCheckAvailability(state, key) {
+    if (state.availability === "absent") return null
+    const denied = requireScope(key, "agecheck:verify")
+    if (denied) return denied
+    if (!key.livemode) return [null, omitZero({ idCheck: "ID_CHECK_AVAILABILITY_AVAILABLE" })]
+    const idCheck = {
+      available: "ID_CHECK_AVAILABILITY_AVAILABLE",
+      org_daily_limit: "ID_CHECK_AVAILABILITY_ORG_DAILY_LIMIT",
+      service_unavailable: "ID_CHECK_AVAILABILITY_SERVICE_UNAVAILABLE",
+    }[state.availability]
+    const body = { idCheck, livemode: true }
+    if (state.availability === "org_daily_limit") {
+      const now = new Date()
+      body.resumesAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)).toISOString()
+    }
+    return [null, omitZero(body)]
+  },
+
   GetIntegrationInfo(state, key, request) {
     if (state.integrationInfo !== "served") return null
     const denied = requireScope(key, "agecheck:verify")
@@ -1027,6 +1054,13 @@ export function createMockAgeCheck() {
           state.createOutcome = outcome
         }
         if (typeof body.hostedBase === "string") state.hostedBase = body.hostedBase.replace(/\/+$/, "")
+        if (body.availability !== undefined) {
+          if (!["available", "org_daily_limit", "service_unavailable", "absent"].includes(body.availability)) {
+            return sendJSON(res, 400, { error: "availability: available, org_daily_limit, service_unavailable or absent" })
+          }
+          state.availability = body.availability
+        }
+        if (body.down !== undefined) state.down = Boolean(body.down)
         return sendJSON(res, 200, { ok: true })
       case "/__mock/verifications":
       case "/__mock/decide": {
@@ -1073,6 +1107,10 @@ export function createMockAgeCheck() {
       body: request ?? null,
     })
 
+    if (state.down) {
+      res.writeHead(503, { "Content-Type": "text/plain" })
+      return res.end("down\n")
+    }
     if (fault && (fault.code || fault.status)) {
       const headers = fault.retryAfter != null ? { "Retry-After": String(fault.retryAfter) } : {}
       if (!fault.code) {

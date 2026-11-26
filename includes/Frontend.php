@@ -142,6 +142,7 @@ final class Frontend {
 				'passed'      => __( 'Age verified.', 'navexa-agecheck-for-woocommerce' ),
 				'failed'      => __( 'We could not verify your age, so this order cannot be placed.', 'navexa-agecheck-for-woocommerce' ),
 				'unavailable' => __( 'Age verification is temporarily unavailable. Please try again in a few minutes.', 'navexa-agecheck-for-woocommerce' ),
+				'hold'        => Start::hold_message(),
 				'required'    => __( 'Verify your age before placing this order.', 'navexa-agecheck-for-woocommerce' ),
 				'opening'     => __( 'Opening the secure age check…', 'navexa-agecheck-for-woocommerce' ),
 				'closed'      => __( 'The age check window was closed. Select Verify age to try again.', 'navexa-agecheck-for-woocommerce' ),

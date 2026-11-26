@@ -513,7 +513,10 @@ final class EntryGateTest extends TestCase {
 		$this->assertStringContainsString( 'Age verification is off', ( new Settings() )->get_settings_for_section( Settings::SECTION_GATE )[0]['desc'] );
 		$policy = Privacy::policy_text();
 		$this->assertStringContainsString( 'only in your own browser', $policy );
-		$this->assertStringNotContainsString( 'Didit', $policy, 'nothing goes to Navexa' );
+		$this->assertStringNotContainsString( 'Didit', $policy, 'nothing about new orders goes to Navexa' );
+		$this->assertStringNotContainsString( 'keeps nothing with your orders', $policy );
+		$this->assertStringContainsString( 'orders still on hold from before the switch are still checked with Navexa AgeCheck until they are released, cancelled or refunded', $policy, 'held orders still reach AgeCheck' );
+		$this->assertStringContainsString( 'keep the age verification part of your privacy policy', $policy );
 	}
 
 	public function test_privacy_text_mentions_the_gate_only_when_it_is_on(): void {

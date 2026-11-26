@@ -119,10 +119,14 @@ final class Privacy {
 
 	/**
 	 * The suggested policy with age verification off (Options::MODE_GATE_ONLY):
-	 * nothing goes to Navexa, so only the entry gate is described, when it is on.
+	 * nothing about new orders goes to Navexa, so only the entry gate is
+	 * described, when it is on. The guidance says that orders held before the
+	 * switch stay held and are still checked with AgeCheck (release runs, the
+	 * sweep, the webhook, link withdrawal), and that earlier orders keep their
+	 * age check details, so the verification section stays while any remain.
 	 */
 	private static function gate_only_policy_text(): string {
-		$paragraphs = array( '<p class="privacy-policy-tutorial">' . esc_html__( 'Age verification is off in Navexa AgeCheck for WooCommerce: it sends nothing to Navexa AgeCheck and keeps nothing with your orders. Only the entry age gate runs when you turn it on, and the text below describes it.', 'navexa-agecheck-for-woocommerce' ) . '</p>' );
+		$paragraphs = array( '<p class="privacy-policy-tutorial">' . esc_html__( 'Age verification is off in Navexa AgeCheck for WooCommerce: new orders are not age-checked, and nothing about them is sent to Navexa AgeCheck. Orders placed while it was on keep their age check details, and orders still on hold from before the switch are still checked with Navexa AgeCheck until they are released, cancelled or refunded. While any remain, keep the age verification part of your privacy policy. Only the entry age gate runs for new visitors when you turn it on, and the text below describes it.', 'navexa-agecheck-for-woocommerce' ) . '</p>' );
 		if ( Options::entry_gate_enabled() ) {
 			$paragraphs[] = '<p><strong class="privacy-policy-tutorial">' . esc_html__( 'Suggested text:', 'navexa-agecheck-for-woocommerce' ) . ' </strong></p>';
 			$paragraphs[] = self::gate_paragraph();

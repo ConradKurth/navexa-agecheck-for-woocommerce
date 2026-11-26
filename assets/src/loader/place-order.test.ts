@@ -5,7 +5,26 @@ import type { StoreAnswer } from "./types.ts"
 
 const T: Record<string, string> = { passed: "Age verified.", failed: "Failed.", pending: "Not finished.", unavailable: "Unavailable.", closed: "Closed." }
 
-function harness(opts: { status?: string | null; answers?: StoreAnswer[]; verify?: () => Promise<any>; challenging?: boolean; updateStatus?: string | null } = {}) {
+type Handler = (event: { stopImmediatePropagation(): void }) => unknown
+
+/**
+ * jQuery's triggerHandler, as WooCommerce's checkout.js reads it: the last
+ * result that is not undefined; stopImmediatePropagation() skips the handlers
+ * bound later (a false only stops bubbling, so they still run).
+ */
+function triggerHandler(handlers: Handler[]): unknown {
+  let result: unknown = undefined
+  let stopped = false
+  const event = { stopImmediatePropagation: () => void (stopped = true) }
+  for (const handler of handlers) {
+    if (stopped) break
+    const ret = handler(event)
+    if (ret !== undefined) result = ret
+  }
+  return result
+}
+
+function harness(opts: { status?: string | null; answers?: StoreAnswer[]; verify?: () => Promise<any>; challenging?: boolean; updateStatus?: string | null; before?: Handler } = {}) {
   const log: string[] = []
   let status: string | null = opts.status === undefined ? "none" : opts.status
   const answers = [...(opts.answers ?? [])]
@@ -30,9 +49,9 @@ function harness(opts: { status?: string | null; answers?: StoreAnswer[]; verify
     unblock: () => log.push("unblock"),
     submit: () => {
       log.push("submit")
-      // WooCommerce's submit() asks checkout_place_order again, synchronously.
-      const stopped = { n: 0 }
-      log.push(`handler:${flow.onPlaceOrder({ stopImmediatePropagation: () => void stopped.n++ })}`)
+      // WooCommerce's submit() asks checkout_place_order again, synchronously
+      // (opts.before: another plugin's handler, bound before ours).
+      log.push(`handler:${String(triggerHandler([...(opts.before ? [opts.before] : []), (e) => flow.onPlaceOrder(e)]))}`)
     },
     passed: () => {
       log.push("passed")
@@ -51,14 +70,29 @@ const event = () => {
   return e
 }
 
-test("no container (nothing to check) or a passed status lets WooCommerce go on untouched", () => {
+test("no container (nothing to check) or a passed status answers undefined (never true) and leaves WooCommerce alone", () => {
   for (const status of [null, "passed"]) {
     const { flow, log } = harness({ status })
     const e = event()
-    assert.equal(flow.onPlaceOrder(e), true)
+    assert.equal(flow.onPlaceOrder(e), undefined)
     assert.equal(e.stopped, 0)
     assert.deepEqual(log, [])
+    assert.notEqual(triggerHandler([(ev) => flow.onPlaceOrder(ev)]), false, "WooCommerce goes on (it tests !== false)")
   }
+})
+
+test("another plugin's false from a handler bound before ours stands: no check needed, passed, and the resubmit past the bypass", async () => {
+  const other: Handler = () => false
+  for (const status of [null, "passed"]) {
+    const { flow } = harness({ status })
+    assert.equal(triggerHandler([other, (e) => flow.onPlaceOrder(e)]), false, String(status))
+  }
+  const { flow, log } = harness({ answers: [{ v: 1, status: "passed" }], before: other })
+  await flow.run()
+  assert.deepEqual(log.slice(-2), ["submit", "handler:false"], "the resubmit is still refused by the other handler")
+  const needed = harness()
+  assert.equal(triggerHandler([() => true, (e) => needed.flow.onPlaceOrder(e), () => true]), false, "a needed check: false, and later handlers are skipped")
+  while (needed.flow.busy()) await new Promise((r) => setTimeout(r, 1))
 })
 
 test("a needed check answers false, stops later handlers, then start, modal, refresh and exactly one resubmit past the bypass", async () => {
@@ -69,9 +103,9 @@ test("a needed check answers false, stops later handlers, then start, modal, ref
   assert.equal(flow.busy(), true)
   assert.equal(flow.onPlaceOrder(event()), false, "a second click while busy starts nothing new")
   while (flow.busy()) await new Promise((r) => setTimeout(r, 1))
-  assert.deepEqual(log, ["block", "update", "start", "unblock", "verify https://verify.navexa.co/v/a.b", "block", "refresh", "passed", "unblock", "submit", "handler:true"])
+  assert.deepEqual(log, ["block", "update", "start", "unblock", "verify https://verify.navexa.co/v/a.b", "block", "refresh", "passed", "unblock", "submit", "handler:undefined"])
   assert.equal(log.filter((l) => l === "start").length, 1)
-  assert.equal(flow.onPlaceOrder(event()), true, "passed now: the next attempt goes through")
+  assert.equal(flow.onPlaceOrder(event()), undefined, "passed now: the next attempt goes through")
 })
 
 test("unblock happens before the resubmit, and never after it (WooCommerce's own overlay stays)", async () => {
@@ -84,7 +118,7 @@ test("unblock happens before the resubmit, and never after it (WooCommerce's own
 test("a session already passed after the update resubmits without a start", async () => {
   const { flow, log } = harness({ updateStatus: "passed" })
   await flow.run()
-  assert.deepEqual(log, ["block", "update", "unblock", "submit", "handler:true"])
+  assert.deepEqual(log, ["block", "update", "unblock", "submit", "handler:undefined"])
 })
 
 test("failed and unavailable answers show the message and never resubmit", async () => {

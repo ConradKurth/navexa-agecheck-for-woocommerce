@@ -4,10 +4,13 @@
  * WooCommerce's checkout.js submit() runs
  * $form.triggerHandler("checkout_place_order") and goes on only when that
  * does not answer false, before the gateway's own checkout_place_order_<id>
- * handler. jQuery's triggerHandler answers the LAST handler's result, so the
- * handler stops the event (stopImmediatePropagation) as well as answering
- * false while a check is needed: a handler bound after ours cannot turn the
- * false back into true.
+ * handler. jQuery's triggerHandler answers the LAST result that is not
+ * undefined, so the handler stops the event (stopImmediatePropagation) as
+ * well as answering false while a check is needed: a handler bound after ours
+ * cannot turn the false back into true. When it does not step in (the
+ * one-shot bypass, no check needed, already passed) it answers undefined,
+ * never true: a true would replace a false from another plugin's handler
+ * bound before ours, and WooCommerce would submit anyway.
  *
  * One attempt: push the address the shopper sees into the session (an
  * update_checkout), then start; a hosted page opens in the loader's in-page
@@ -47,8 +50,11 @@ export interface PlaceOrderDeps {
 }
 
 export interface PlaceOrderFlow {
-  /** The checkout_place_order handler: true lets WooCommerce go on. */
-  onPlaceOrder(event: { stopImmediatePropagation(): void }): boolean
+  /**
+   * The checkout_place_order handler: false stops WooCommerce; undefined
+   * (never true) leaves the answer to the other handlers.
+   */
+  onPlaceOrder(event: { stopImmediatePropagation(): void }): false | undefined
   /** One attempt (the handler starts it). */
   run(): Promise<void>
   busy(): boolean
@@ -133,9 +139,9 @@ export function createPlaceOrderFlow(deps: PlaceOrderDeps): PlaceOrderFlow {
 
   return {
     onPlaceOrder(event) {
-      if (bypass) return true
+      if (bypass) return undefined
       const status = deps.status()
-      if (status === null || status === "passed") return true
+      if (status === null || status === "passed") return undefined
       event.stopImmediatePropagation()
       if (!running) void run()
       return false

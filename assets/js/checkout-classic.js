@@ -206,9 +206,9 @@
     }
     return {
       onPlaceOrder(event) {
-        if (bypass) return true;
+        if (bypass) return void 0;
         const status = deps.status();
-        if (status === null || status === "passed") return true;
+        if (status === null || status === "passed") return void 0;
         event.stopImmediatePropagation();
         if (!running) void run();
         return false;

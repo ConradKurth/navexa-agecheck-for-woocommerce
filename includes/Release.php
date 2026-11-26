@@ -568,13 +568,16 @@ final class Release {
 			Client::log( 'warning', sprintf( 'agecheck release order=%d cleared after denial', $order->get_id() ) );
 			return self::finish_review( $order, 'passed_after_denial' );
 		}
-		Meta::mark_released( $order, Meta::STATUS_CLEARED );
+		$unlisted = Meta::mark_released( $order, Meta::STATUS_CLEARED );
 		Meta::set( $order, Meta::CLEARED_AT, time() );
 		Meta::set( $order, Meta::VERIFICATION_STATUS, 'passed' );
 		foreach ( array( Meta::REASON, Meta::CLEARANCE_KEY, Meta::NEXT_CHECK_AT ) as $key ) {
 			Meta::set( $order, $key, '' );
 		}
 		$order->save_meta_data();
+		if ( $unlisted ) {
+			Admin\Notices::flush_counts();
+		}
 		$note = $replayed
 			? __( 'AgeCheck: age check passed (confirmed on a repeated clearance answer). Order released.', 'navexa-agecheck-for-woocommerce' )
 			: __( 'AgeCheck: age check passed. Order released.', 'navexa-agecheck-for-woocommerce' );

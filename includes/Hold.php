@@ -313,9 +313,9 @@ final class Hold {
 		if ( $user_id <= 0 || '' === $reason || self::STATUS !== $order->get_status( 'edit' ) ) {
 			return false;
 		}
-		$user = get_userdata( $user_id );
-		$name = $user instanceof \WP_User ? $user->display_name : '';
-		Meta::mark_released( $order, Meta::STATUS_OVERRIDE );
+		$user     = get_userdata( $user_id );
+		$name     = $user instanceof \WP_User ? $user->display_name : '';
+		$unlisted = Meta::mark_released( $order, Meta::STATUS_OVERRIDE );
 		Meta::set( $order, Meta::REASON, 'override' );
 		Meta::set( $order, Meta::OVERRIDE_BY, $user_id );
 		Meta::set( $order, Meta::OVERRIDE_AT, time() );
@@ -327,11 +327,14 @@ final class Hold {
 			$user_id,
 			$reason
 		);
-		if ( self::release( $order, $note ) ) {
-			return true;
+		$released = self::release( $order, $note );
+		if ( ! $released ) {
+			$order->save();
 		}
-		$order->save();
-		return false;
+		if ( $unlisted ) {
+			Notices::flush_counts();
+		}
+		return $released;
 	}
 
 	/**

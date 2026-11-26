@@ -367,20 +367,25 @@ final class Meta {
 	 * Records that the order may leave the hold (unsaved): STATUS_CLEARED or
 	 * STATUS_OVERRIDE, tied to this order. Drops RETRY_OPEN and a manual
 	 * refund listing (a denied order released by a merchant override in
-	 * AgeCheck's dashboard, or by staff), which no longer apply.
+	 * AgeCheck's dashboard, or by staff), which no longer apply. A caller
+	 * told the listing was dropped flushes the notice count once it saved the
+	 * order (Admin\Notices::flush_counts()): flushed earlier, a count taken
+	 * before the save would cache the order as still listed.
 	 *
 	 * @param \WC_Order $order Order (with an id).
 	 * @param string    $state STATUS_CLEARED or STATUS_OVERRIDE.
+	 * @return bool Whether a manual refund listing was dropped.
 	 */
-	public static function mark_released( \WC_Order $order, string $state ): void {
+	public static function mark_released( \WC_Order $order, string $state ): bool {
 		self::set( $order, self::STATUS, $state );
 		self::set( $order, self::RELEASED_FOR, self::owner_tag( $order ) );
 		// Nothing waits on a retry or a refund once the order ships.
 		self::set( $order, self::RETRY_OPEN, '' );
-		if ( self::REFUND_MANUAL === self::get( $order, self::REFUND ) ) {
-			self::set( $order, self::REFUND, '' );
-			Admin\Notices::flush_counts();
+		if ( self::REFUND_MANUAL !== self::get( $order, self::REFUND ) ) {
+			return false;
 		}
+		self::set( $order, self::REFUND, '' );
+		return true;
 	}
 
 	/**

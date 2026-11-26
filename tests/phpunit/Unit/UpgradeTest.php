@@ -96,14 +96,14 @@ final class UpgradeTest extends TestCase {
 		// Released before it was listed (a note order no release run writes): left alone.
 		$earlier = $this->listed_order( 'processing', Meta::STATUS_CLEARED, array( self::RELEASE, self::LISTING ) );
 		// The release note typed by a staff member: not the plugin's.
-		$typed                                   = $this->listed_order( 'processing', Meta::STATUS_CLEARED, array( self::LISTING, self::RELEASE ) );
+		$typed                                 = $this->listed_order( 'processing', Meta::STATUS_CLEARED, array( self::LISTING, self::RELEASE ) );
 		$this->added_by[ $typed->get_id() ][1] = 'shop_manager';
 		// Released by staff without age check: not the plugin's own release.
 		$staff = $this->listed_order( 'processing', Meta::STATUS_OVERRIDE, array( self::LISTING, self::RELEASE ) );
 		// Still held, or the release state copied from another order: left alone.
-		$held                                   = $this->listed_order( Hold::STATUS, Meta::STATUS_CLEARED, array( self::LISTING, self::RELEASE ) );
-		$copied                                 = $this->listed_order( 'processing', Meta::STATUS_CLEARED, array( self::LISTING, self::RELEASE ) );
-		$copied->meta[ Meta::RELEASED_FOR ]     = '1:9999';
+		$held                               = $this->listed_order( Hold::STATUS, Meta::STATUS_CLEARED, array( self::LISTING, self::RELEASE ) );
+		$copied                             = $this->listed_order( 'processing', Meta::STATUS_CLEARED, array( self::LISTING, self::RELEASE ) );
+		$copied->meta[ Meta::RELEASED_FOR ] = '1:9999';
 		$copied->save_meta_data();
 		// Denied and still listed: the list's own order.
 		$denied = $this->listed_order( Hold::STATUS, Meta::STATUS_DENIED, array( self::LISTING ) );
@@ -136,7 +136,7 @@ final class UpgradeTest extends TestCase {
 		$order                           = \WC_Order::make( Hold::STATUS );
 		$order->meta[ Meta::REFUND ]     = Meta::REFUND_MANUAL;
 		$order->meta[ Meta::RETRY_OPEN ] = 'yes';
-		Meta::mark_released( $order, Meta::STATUS_OVERRIDE );
+		$this->assertTrue( Meta::mark_released( $order, Meta::STATUS_OVERRIDE ), 'the listing was dropped' );
 		$this->assertArrayNotHasKey( Meta::REFUND, $order->meta );
 		$this->assertArrayNotHasKey( Meta::RETRY_OPEN, $order->meta );
 		$this->assertTrue( Meta::is_released( $order ) );
@@ -144,7 +144,7 @@ final class UpgradeTest extends TestCase {
 		// A refund already recorded is history: kept.
 		$refunded                       = \WC_Order::make( Hold::STATUS );
 		$refunded->meta[ Meta::REFUND ] = Meta::REFUND_RESOLVED;
-		Meta::mark_released( $refunded, Meta::STATUS_CLEARED );
+		$this->assertFalse( Meta::mark_released( $refunded, Meta::STATUS_CLEARED ) );
 		$this->assertSame( Meta::REFUND_RESOLVED, $refunded->meta[ Meta::REFUND ] );
 	}
 

@@ -8,6 +8,7 @@
 
 namespace Navexa\AgeCheck\Tests\Unit;
 
+use Brain\Monkey\Functions;
 use Navexa\AgeCheck\Binding;
 use Navexa\AgeCheck\ConnectError;
 use Navexa\AgeCheck\Hold;
@@ -84,8 +85,8 @@ final class ReleaseTest extends TestCase {
 	}
 
 	public function test_the_clearance_key_is_persisted_before_get_clearance_is_called(): void {
-		$order     = $this->held_bound_order();
-		$persisted = null;
+		$order             = $this->held_bound_order();
+		$persisted         = null;
 		$this->before_http = static function ( $url ) use ( $order, &$persisted ) {
 			if ( '/GetClearance' === substr( $url, -13 ) ) {
 				$persisted = isset( $order->saved_meta[ Meta::CLEARANCE_KEY ] ) ? $order->saved_meta[ Meta::CLEARANCE_KEY ] : null;
@@ -99,12 +100,26 @@ final class ReleaseTest extends TestCase {
 	}
 
 	public function test_a_run_never_asks_about_another_orders_external_id(): void {
-		$source = $this->held_bound_order();
-		$copy   = $this->restricted_order( Hold::STATUS );
+		$source     = $this->held_bound_order();
+		$copy       = $this->restricted_order( Hold::STATUS );
 		$copy->meta = $source->meta; // Copied straight into the hold: mark_held never ran.
 		$this->respond( 200, $this->live_info() );
-		$this->respond( 200, array( 'verification' => array( 'id' => 'acv_OWNCHECK', 'status' => 'VERIFICATION_STATUS_NEEDS_DOC' ) ) );
-		$this->respond( 200, array( 'linkId' => 'acl_OWN', 'emailQueued' => true ) );
+		$this->respond(
+			200,
+			array(
+				'verification' => array(
+					'id'     => 'acv_OWNCHECK',
+					'status' => 'VERIFICATION_STATUS_NEEDS_DOC',
+				),
+			)
+		);
+		$this->respond(
+			200,
+			array(
+				'linkId'      => 'acl_OWN',
+				'emailQueued' => true,
+			)
+		);
 		$this->respond( 200, $this->clearance( 'DENIED', 'replayed' ) );
 		$outcome = Release::run( $copy->get_id(), Release::TRIGGER_SWEEP );
 		$this->assertSame( array( 'GetIntegrationInfo', 'CreateVerification', 'SendVerificationLink', 'GetClearance' ), $this->rpcs() );
@@ -143,7 +158,15 @@ final class ReleaseTest extends TestCase {
 		$order = $this->held_bound_order();
 		$this->respond( 200, $this->live_info() );
 		$this->respond( 200, $this->clearance( 'DENIED', 'not_verified' ) );
-		$this->respond( 200, array( 'verification' => array( 'id' => self::VID, 'status' => 'VERIFICATION_STATUS_FAILED' ) ) );
+		$this->respond(
+			200,
+			array(
+				'verification' => array(
+					'id'     => self::VID,
+					'status' => 'VERIFICATION_STATUS_FAILED',
+				),
+			)
+		);
 		$this->assertSame( Release::DENIED, Release::run( $order->get_id(), Release::TRIGGER_WEBHOOK ) );
 		$this->assertSame( Meta::STATUS_DENIED, $order->meta[ Meta::STATUS ] );
 		$this->assertSame( Meta::REFUND_MANUAL, $order->meta[ Meta::REFUND ], 'the gateway cannot refund' );
@@ -156,9 +179,25 @@ final class ReleaseTest extends TestCase {
 		$order = $this->held_bound_order();
 		$this->respond( 200, $this->live_info() );
 		$this->respond( 200, $this->clearance( 'DENIED', 'not_verified' ) );
-		$this->respond( 200, array( 'verification' => array( 'id' => self::VID, 'status' => 'VERIFICATION_STATUS_PASSED' ) ) );
+		$this->respond(
+			200,
+			array(
+				'verification' => array(
+					'id'     => self::VID,
+					'status' => 'VERIFICATION_STATUS_PASSED',
+				),
+			)
+		);
 		$this->respond( 200, $this->clearance( 'DENIED', 'not_verified' ) );
-		$this->respond( 200, array( 'verification' => array( 'id' => self::VID, 'status' => 'VERIFICATION_STATUS_PASSED' ) ) );
+		$this->respond(
+			200,
+			array(
+				'verification' => array(
+					'id'     => self::VID,
+					'status' => 'VERIFICATION_STATUS_PASSED',
+				),
+			)
+		);
 		$this->assertSame( Release::PENDING, Release::run( $order->get_id(), Release::TRIGGER_WEBHOOK ) );
 		$this->assertSame( array( 'GetIntegrationInfo', 'GetClearance', 'GetVerification', 'GetClearance', 'GetVerification' ), $this->rpcs() );
 		$this->assertNotSame( $this->request_body( 1 )['idempotencyKey'], $this->request_body( 3 )['idempotencyKey'], 'a fresh key' );
@@ -169,7 +208,15 @@ final class ReleaseTest extends TestCase {
 
 		$still = $this->held_bound_order();
 		$this->respond( 200, $this->clearance( 'DENIED', 'not_verified' ) );
-		$this->respond( 200, array( 'verification' => array( 'id' => self::VID, 'status' => 'VERIFICATION_STATUS_DOC_PENDING' ) ) );
+		$this->respond(
+			200,
+			array(
+				'verification' => array(
+					'id'     => self::VID,
+					'status' => 'VERIFICATION_STATUS_DOC_PENDING',
+				),
+			)
+		);
 		$this->assertSame( Release::PENDING, Release::run( $still->get_id(), Release::TRIGGER_WEBHOOK ) );
 		$this->assertSame( 'pending', $still->meta[ Meta::REASON ] );
 	}
@@ -192,7 +239,13 @@ final class ReleaseTest extends TestCase {
 		$order                              = $this->held_bound_order();
 		$order->meta[ Meta::CLEARANCE_KEY ] = 'clr:k';
 		$this->respond( 200, $this->live_info() );
-		$this->respond( 200, array( 'decision' => 'CLEARANCE_DECISION_CLEARED', 'reason' => 'verified' ) ); // livemode omitted: false.
+		$this->respond(
+			200,
+			array(
+				'decision' => 'CLEARANCE_DECISION_CLEARED',
+				'reason'   => 'verified',
+			)
+		); // livemode omitted: false.
 		$this->assertSame( Release::REVIEW, Release::run( $order->get_id(), Release::TRIGGER_HOLD ) );
 		$this->assertSame( 'livemode_mismatch', $order->meta[ Meta::REASON ] );
 		$this->assertSame( Hold::STATUS, $order->get_status() );
@@ -202,7 +255,15 @@ final class ReleaseTest extends TestCase {
 	public function test_a_test_key_never_asks_for_a_clearance_without_the_constant(): void {
 		$order = $this->held_bound_order();
 		$this->respond( 200, $this->live_info( array( 'livemode' => false ) ) );
-		$this->respond( 200, array( 'verification' => array( 'id' => self::VID, 'status' => 'VERIFICATION_STATUS_NEEDS_DOC' ) ) );
+		$this->respond(
+			200,
+			array(
+				'verification' => array(
+					'id'     => self::VID,
+					'status' => 'VERIFICATION_STATUS_NEEDS_DOC',
+				),
+			)
+		);
 		$this->assertSame( Release::TEST_MODE, Release::run( $order->get_id(), Release::TRIGGER_HOLD ) );
 		$this->assertSame( array( 'GetIntegrationInfo', 'GetVerification' ), $this->rpcs() );
 		$this->assertSame( 'test_mode', $order->meta[ Meta::REASON ] );
@@ -238,7 +299,15 @@ final class ReleaseTest extends TestCase {
 	public function test_a_test_key_records_a_failure_and_never_denies(): void {
 		$order = $this->held_bound_order();
 		$this->respond( 200, $this->live_info( array( 'livemode' => false ) ) );
-		$this->respond( 200, array( 'verification' => array( 'id' => self::VID, 'status' => 'VERIFICATION_STATUS_FAILED' ) ) );
+		$this->respond(
+			200,
+			array(
+				'verification' => array(
+					'id'     => self::VID,
+					'status' => 'VERIFICATION_STATUS_FAILED',
+				),
+			)
+		);
 		$this->assertSame( Release::TEST_MODE, Release::run( $order->get_id(), Release::TRIGGER_WEBHOOK ) );
 		$this->assertSame( 'failed', $order->meta[ Meta::VERIFICATION_STATUS ] );
 		$this->assertSame( Hold::STATUS, $order->get_status() );
@@ -249,7 +318,13 @@ final class ReleaseTest extends TestCase {
 	public function test_a_test_key_run_goes_on_when_the_verification_read_fails(): void {
 		$order = $this->held_bound_order();
 		$this->respond( 200, $this->live_info( array( 'livemode' => false ) ) );
-		$this->respond( 503, array( 'code' => 'unavailable', 'message' => 'down' ) );
+		$this->respond(
+			503,
+			array(
+				'code'    => 'unavailable',
+				'message' => 'down',
+			)
+		);
 		$this->assertSame( Release::TEST_MODE, Release::run( $order->get_id(), Release::TRIGGER_HOLD ) );
 		$this->assertSame( 'test_mode', $order->meta[ Meta::REASON ] );
 		$this->assertSame( Hold::STATUS, $order->get_status() );
@@ -259,12 +334,24 @@ final class ReleaseTest extends TestCase {
 		$order                              = $this->held_bound_order();
 		$order->meta[ Meta::CLEARANCE_KEY ] = 'clr:k';
 		$this->respond( 200, $this->live_info() );
-		$this->respond( 400, array( 'code' => 'invalid_argument', 'message' => 'same key, different request' ) );
+		$this->respond(
+			400,
+			array(
+				'code'    => 'invalid_argument',
+				'message' => 'same key, different request',
+			)
+		);
 		$this->assertSame( Release::REVIEW, Release::run( $order->get_id(), Release::TRIGGER_HOLD ) );
 		$this->assertSame( 'clearance_rejected', $order->meta[ Meta::REASON ] );
 		$this->assertSame( 'clr:k', $order->meta[ Meta::CLEARANCE_KEY ] );
 
-		$this->respond( 403, array( 'code' => 'permission_denied', 'message' => 'missing scope' ) );
+		$this->respond(
+			403,
+			array(
+				'code'    => 'permission_denied',
+				'message' => 'missing scope',
+			)
+		);
 		try {
 			Release::run( $order->get_id(), Release::TRIGGER_HOLD );
 			$this->fail( 'refusals are rethrown' );
@@ -275,21 +362,49 @@ final class ReleaseTest extends TestCase {
 		$this->assertStringContainsString( 'AgeCheck refused the request (permission_denied)', end( $order->notes ) );
 		$this->assertArrayNotHasKey( 'navexa_agecheck_lock_' . $order->get_id(), $this->options, 'the lock is released on failure too' );
 
-		$this->respond( 200, array( 'decision' => 'CLEARANCE_DECISION_SOMETHING_NEW', 'livemode' => true ) );
+		$this->respond(
+			200,
+			array(
+				'decision' => 'CLEARANCE_DECISION_SOMETHING_NEW',
+				'livemode' => true,
+			)
+		);
 		$this->assertSame( Release::REVIEW, Release::run( $order->get_id(), Release::TRIGGER_HOLD ) );
 		$this->assertSame( 'unexpected_decision', $order->meta[ Meta::REASON ] );
 
-		$this->respond( 200, array( 'decision' => 1, 'livemode' => true ) );
+		$this->respond(
+			200,
+			array(
+				'decision' => 1,
+				'livemode' => true,
+			)
+		);
 		$this->assertSame( Release::RELEASED, Release::run( $order->get_id(), Release::TRIGGER_HOLD ), 'an enum number is read too' );
 	}
 
 	public function test_an_unbound_order_gets_an_order_bound_verification_and_a_link(): void {
-		$order = $this->restricted_order( Hold::STATUS );
+		$order                     = $this->restricted_order( Hold::STATUS );
 		$order->meta[ Meta::HELD ] = 'yes';
 		Binding::external_id( $order );
 		$this->respond( 200, $this->live_info() );
-		$this->respond( 200, array( 'verification' => array( 'id' => self::VID, 'status' => 'VERIFICATION_STATUS_NEEDS_DOC', 'livemode' => true ) ) );
-		$this->respond( 200, array( 'linkId' => 'acl_RELEASE', 'expiresAt' => '2026-11-22T00:00:00Z', 'emailQueued' => true ) );
+		$this->respond(
+			200,
+			array(
+				'verification' => array(
+					'id'       => self::VID,
+					'status'   => 'VERIFICATION_STATUS_NEEDS_DOC',
+					'livemode' => true,
+				),
+			)
+		);
+		$this->respond(
+			200,
+			array(
+				'linkId'      => 'acl_RELEASE',
+				'expiresAt'   => '2026-11-22T00:00:00Z',
+				'emailQueued' => true,
+			)
+		);
 		$this->respond( 200, $this->clearance( 'HOLD', 'pending' ) );
 		$this->assertSame( Release::PENDING, Release::run( $order->get_id(), Release::TRIGGER_HOLD ) );
 		$this->assertSame( array( 'GetIntegrationInfo', 'CreateVerification', 'SendVerificationLink', 'GetClearance' ), $this->rpcs() );
@@ -307,12 +422,27 @@ final class ReleaseTest extends TestCase {
 	}
 
 	public function test_links_off_keeps_the_order_held_and_polls_it_every_sweep(): void {
-		$order = $this->restricted_order( Hold::STATUS );
+		$order                     = $this->restricted_order( Hold::STATUS );
 		$order->meta[ Meta::HELD ] = 'yes';
 		Binding::external_id( $order );
 		$this->respond( 200, $this->live_info() );
-		$this->respond( 200, array( 'verification' => array( 'id' => self::VID, 'status' => 'VERIFICATION_STATUS_NEEDS_DOC', 'livemode' => true ) ) );
-		$this->respond( 400, array( 'code' => 'failed_precondition', 'message' => 'agecheck: verification links are not enabled' ) );
+		$this->respond(
+			200,
+			array(
+				'verification' => array(
+					'id'       => self::VID,
+					'status'   => 'VERIFICATION_STATUS_NEEDS_DOC',
+					'livemode' => true,
+				),
+			)
+		);
+		$this->respond(
+			400,
+			array(
+				'code'    => 'failed_precondition',
+				'message' => 'agecheck: verification links are not enabled',
+			)
+		);
 		$this->respond( 200, $this->clearance( 'HOLD', 'pending' ) );
 		$this->assertSame( Release::PENDING, Release::run( $order->get_id(), Release::TRIGGER_HOLD ) );
 		$this->assertSame( Hold::STATUS, $order->get_status() );
@@ -360,7 +490,13 @@ final class ReleaseTest extends TestCase {
 		$this->assertStringStartsWith( 'vl:' . self::VID . ':', $key, 'kept: the retry replays it' );
 		$this->assertSame( 'pending', $order->meta[ Meta::REASON ], 'the HOLD answer is recorded' );
 
-		$this->respond( 200, array( 'linkId' => 'acl_RETRY', 'emailQueued' => true ) );
+		$this->respond(
+			200,
+			array(
+				'linkId'      => 'acl_RETRY',
+				'emailQueued' => true,
+			)
+		);
 		$this->respond( 200, $this->clearance( 'HOLD', 'pending' ) );
 		$this->assertSame( Release::PENDING, Release::run( $order->get_id(), Release::TRIGGER_RETRY ) );
 		$this->assertSame( $key, $this->request_body( 3 )['idempotencyKey'], 'the same key: one email at most' );
@@ -369,7 +505,13 @@ final class ReleaseTest extends TestCase {
 		$other                                    = $this->held_bound_order();
 		$other->meta[ Meta::BOUND_BY ]            = 'create';
 		$other->meta[ Meta::VERIFICATION_STATUS ] = 'needs_doc';
-		$this->respond( 403, array( 'code' => 'permission_denied', 'message' => 'agecheck: AgeCheck is not enabled for this organization' ) );
+		$this->respond(
+			403,
+			array(
+				'code'    => 'permission_denied',
+				'message' => 'agecheck: AgeCheck is not enabled for this organization',
+			)
+		);
 		$this->respond( 200, $this->clearance( 'HOLD', 'pending' ) );
 		try {
 			Release::run( $other->get_id(), Release::TRIGGER_HOLD );
@@ -395,37 +537,45 @@ final class ReleaseTest extends TestCase {
 	}
 
 	public function test_a_pending_checkout_verification_is_attached_before_the_clearance(): void {
-		$order                                = $this->held_bound_order();
-		$order->meta[ Meta::ATTACH_PENDING ]  = 'yes';
+		$order                               = $this->held_bound_order();
+		$order->meta[ Meta::ATTACH_PENDING ] = 'yes';
 		unset( $order->meta[ Meta::BOUND_AT ] );
 		$this->respond( 200, $this->live_info() );
-		$this->respond( 200, array( 'verification' => array( 'id' => self::VID, 'status' => 'VERIFICATION_STATUS_PASSED' ) ) );
+		$this->respond(
+			200,
+			array(
+				'verification' => array(
+					'id'     => self::VID,
+					'status' => 'VERIFICATION_STATUS_PASSED',
+				),
+			)
+		);
 		$this->respond( 200, $this->clearance( 'CLEARED', 'verified' ) );
 		$this->assertSame( Release::RELEASED, Release::run( $order->get_id(), Release::TRIGGER_HOLD ) );
 		$this->assertSame( array( 'GetIntegrationInfo', 'AttachOrder', 'GetClearance' ), $this->rpcs() );
 	}
 
 	public function test_binding_outcomes_short_of_a_clearance(): void {
-		$abroad = $this->held_bound_order();
+		$abroad                               = $this->held_bound_order();
 		$abroad->meta[ Meta::ATTACH_PENDING ] = 'yes';
-		$abroad->data['shipping']['country'] = 'DE'; // AddressGuard would revert an edit.
+		$abroad->data['shipping']['country']  = 'DE'; // AddressGuard would revert an edit.
 		$this->respond( 200, $this->live_info() );
 		$this->assertSame( Release::DENIED, Release::run( $abroad->get_id(), Release::TRIGGER_HOLD ) );
 		$this->assertSame( 'not_us', $abroad->meta[ Meta::REASON ] );
 
-		$nameless = $this->restricted_order( Hold::STATUS );
+		$nameless                     = $this->restricted_order( Hold::STATUS );
 		$nameless->meta[ Meta::HELD ] = 'yes';
 		$nameless->set_billing_first_name( '' );
 		$nameless->set_billing_last_name( '' );
 		$this->assertSame( Release::REVIEW, Release::run( $nameless->get_id(), Release::TRIGGER_HOLD ) );
 		$this->assertSame( 'no_billing_name', $nameless->meta[ Meta::REASON ] );
 
-		$mexico = $this->restricted_order( Hold::STATUS );
+		$mexico                     = $this->restricted_order( Hold::STATUS );
 		$mexico->meta[ Meta::HELD ] = 'yes';
 		$mexico->set_shipping_country( 'MX' );
 		$this->assertSame( Release::DENIED, Release::run( $mexico->get_id(), Release::TRIGGER_HOLD ) );
 
-		$lost = $this->held_bound_order();
+		$lost                               = $this->held_bound_order();
 		$lost->meta[ Meta::ATTACH_PENDING ] = 'yes';
 		$this->respond( 404, array( 'code' => 'not_found' ) );
 		$this->assertSame( Release::REVIEW, Release::run( $lost->get_id(), Release::TRIGGER_HOLD ) );
@@ -466,12 +616,59 @@ final class ReleaseTest extends TestCase {
 		// A webhook after a dashboard override still clears a denied order.
 		$this->respond( 200, $this->live_info() );
 		$this->respond( 200, $this->clearance( 'CLEARED', 'verified' ) );
-		$this->respond( 200, array( 'verification' => array( 'id' => self::VID, 'status' => 'VERIFICATION_STATUS_PASSED', 'passClass' => 'PASS_CLASS_MERCHANT_OVERRIDE' ) ) );
+		$this->respond(
+			200,
+			array(
+				'verification' => array(
+					'id'        => self::VID,
+					'status'    => 'VERIFICATION_STATUS_PASSED',
+					'passClass' => 'PASS_CLASS_MERCHANT_OVERRIDE',
+				),
+			)
+		);
 		$this->assertSame( Release::RELEASED, Release::run( $denied->get_id(), Release::TRIGGER_WEBHOOK ) );
 	}
 
+	public function test_a_listed_order_cleared_by_a_dashboard_override_recounts_after_the_save(): void {
+		$listed                       = $this->held_bound_order();
+		$listed->meta[ Meta::STATUS ] = Meta::STATUS_DENIED;
+		$listed->meta[ Meta::REFUND ] = Meta::REFUND_MANUAL;
+		$this->transients[ \Navexa\AgeCheck\Admin\Notices::COUNTS_TRANSIENT ] = array(
+			'value' => array(
+				'denied' => 1,
+				'stale'  => 0,
+			),
+			'ttl'   => 600,
+		);
+		$saved_at_flush = null;
+		Functions\when( 'delete_transient' )->alias(
+			function ( $name ) use ( $listed, &$saved_at_flush ) {
+				if ( null === $saved_at_flush ) { // The first flush.
+					$saved_at_flush = array_key_exists( Meta::REFUND, $listed->saved_meta ) ? $listed->saved_meta[ Meta::REFUND ] : '';
+				}
+				unset( $this->transients[ $name ] );
+				return true;
+			}
+		);
+		$this->respond( 200, $this->live_info() );
+		$this->respond( 200, $this->clearance( 'CLEARED', 'verified' ) );
+		$this->respond(
+			200,
+			array(
+				'verification' => array(
+					'id'        => self::VID,
+					'status'    => 'VERIFICATION_STATUS_PASSED',
+					'passClass' => 'PASS_CLASS_MERCHANT_OVERRIDE',
+				),
+			)
+		);
+		$this->assertSame( Release::RELEASED, Release::run( $listed->get_id(), Release::TRIGGER_WEBHOOK ) );
+		$this->assertArrayNotHasKey( \Navexa\AgeCheck\Admin\Notices::COUNTS_TRANSIENT, $this->transients, 'the notice recounts' );
+		$this->assertSame( '', $saved_at_flush, 'flushed once the dropped listing was saved' );
+	}
+
 	public function test_already_cleared_or_renewal_orders_make_no_call(): void {
-		$cleared                       = $this->held_bound_order();
+		$cleared = $this->held_bound_order();
 		Meta::mark_released( $cleared, Meta::STATUS_CLEARED );
 		$this->assertSame( Release::RELEASED, Release::run( $cleared->get_id(), Release::TRIGGER_SWEEP ) );
 		$this->assertSame( 'processing', $cleared->get_status() );
@@ -504,7 +701,7 @@ final class ReleaseTest extends TestCase {
 	}
 
 	public function test_a_busy_lock_reschedules_shortly(): void {
-		$order                                                  = $this->held_bound_order();
+		$order = $this->held_bound_order();
 		$this->options[ 'navexa_agecheck_lock_' . $order->get_id() ] = ( time() + 100 ) . ':other';
 		$this->assertSame( Release::LOCKED, Release::run( $order->get_id(), Release::TRIGGER_WEBHOOK ) );
 		Release::run_job( $order->get_id(), 0, Release::TRIGGER_WEBHOOK );
@@ -604,7 +801,7 @@ final class ReleaseTest extends TestCase {
 	}
 
 	private function held_bound_order(): \WC_Order {
-		$order                                = $this->restricted_order( Hold::STATUS );
+		$order                                   = $this->restricted_order( Hold::STATUS );
 		$order->meta[ Meta::REQUIRED ]           = 'yes';
 		$order->meta[ Meta::HELD ]               = 'yes';
 		$order->meta[ Meta::INTERCEPTED_STATUS ] = 'processing';

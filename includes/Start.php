@@ -44,8 +44,12 @@ defined( 'ABSPATH' ) || exit;
  * as the residential address, only when both are filled in, the address is
  * a US one and the order ships there, never a DOB; for a signed-in shopper
  * also customer_ref (CustomerRef, E12a: a returning customer may come back
- * PASSED with PASS_CLASS_REUSED at once, which clears like any pass); then
- * CreateHostedSession for a fresh link. Only the start key is used.
+ * PASSED with PASS_CLASS_REUSED at once, which clears like any pass); for a
+ * guest, while GetIntegrationInfo's guest_reuse_code is true, also the
+ * billing email (guest_email(), TAX-1839: AgeCheck's page then offers a
+ * returning guest an emailed one-time code; a refused email is retried once
+ * without it); then CreateHostedSession for a fresh link. Only the start key
+ * is used.
  * Refresh calls GetVerification and mints the checkout guard on PASSED with a
  * clearing pass class. Any error answers unavailable.
  *
@@ -518,6 +522,41 @@ final class Start {
 			// change with the request, or AgeCheck refuses the replay.
 			$key .= ':c' . substr( $customer, strlen( CustomerRef::PREFIX ), 16 );
 		}
+		$email = self::guest_email();
+		$tag   = '' === $email ? '' : self::email_tag( $email );
+		if ( '' !== $tag ) {
+			try {
+				// The key changes with the email too: a guest who corrects
+				// the address never replays the earlier create.
+				return self::create_call( $client, $ship_to, $key . ':e' . $tag, $customer, $email );
+			} catch ( ConnectError $e ) {
+				// AgeCheck checks an email more strictly than is_email() in
+				// places. A refused email must not block the checkout: start
+				// once more without it (the US-only refusal is about the
+				// address, so it is not retried).
+				if ( '' !== $e->local_reason() || 'invalid_argument' !== $e->connect_code() || false !== stripos( $e->server_message(), 'US addresses only' ) ) {
+					throw $e;
+				}
+				Client::log( 'warning', 'agecheck start retried without the guest email code=' . $e->connect_code() );
+			}
+		}
+		return self::create_call( $client, $ship_to, $key, $customer, '' );
+	}
+
+	/**
+	 * One CreateVerification call: the pre-order check (document name check
+	 * NONE, the intended ship-to), with identity() plus $email when given and
+	 * customer_ref when given.
+	 *
+	 * @param Client $client   Start-key client.
+	 * @param ShipTo $ship_to  Ship-to.
+	 * @param string $key      Idempotency key.
+	 * @param string $customer CustomerRef, or ''.
+	 * @param string $email    The guest's billing email (guest_email()), or ''.
+	 * @return array<string, mixed> The verification.
+	 * @throws ConnectError On an AgeCheck error.
+	 */
+	private static function create_call( Client $client, ShipTo $ship_to, string $key, string $customer, string $email ): array {
 		$request  = array(
 			'idempotencyKey'    => $key,
 			'intendedShipTo'    => $ship_to->engine_address(),
@@ -525,6 +564,9 @@ final class Start {
 			'returnUrl'         => ReturnPage::url( true ),
 		);
 		$identity = self::identity( $ship_to );
+		if ( '' !== $email ) {
+			$identity['email'] = $email;
+		}
 		if ( array() !== $identity ) {
 			$request['identity'] = $identity;
 		}
@@ -533,6 +575,61 @@ final class Start {
 		}
 		$body = $client->call( 'CreateVerification', $request );
 		return isset( $body['verification'] ) && is_array( $body['verification'] ) ? $body['verification'] : array();
+	}
+
+	/**
+	 * The billing email a guest's start sends (TAX-1839, owner decision #23),
+	 * or ''. With it, AgeCheck's page offers a returning guest a one-time code
+	 * emailed to that address, which passes them (PASS_CLASS_REUSED) when they
+	 * passed at this store within its reuse window; nothing else changes, and
+	 * the page reads the same whether or not they passed before.
+	 *
+	 * Only for a guest (a signed-in customer is matched by customer_ref), only
+	 * while GetIntegrationInfo's guest_reuse_code is true for the start key
+	 * (AgeCheck decides: reuse on for the store and a store name; no answer
+	 * means none), and only for an address that is_email() and
+	 * sanitize_email() leave as it is, at most OrderAddress::MAX_FIELD_RUNES
+	 * characters. Read from the session customer, as identity() reads the
+	 * name (Classic::remember_billing_name() copies it on the classic
+	 * checkout). Never logged.
+	 */
+	private static function guest_email(): string {
+		if ( 0 !== (int) get_current_user_id() ) {
+			return '';
+		}
+		$info = Mode::info( Client::KEY_START );
+		if ( null === $info || ! $info->guest_reuse_code ) {
+			return '';
+		}
+		$customer = Session::customer();
+		if ( null === $customer ) {
+			return '';
+		}
+		$email = trim( (string) $customer->get_billing_email() );
+		if ( '' === $email || 1 !== preg_match( '//u', $email ) || mb_strlen( $email, 'UTF-8' ) > OrderAddress::MAX_FIELD_RUNES ) {
+			return '';
+		}
+		if ( sanitize_email( $email ) !== $email || false === is_email( $email ) ) {
+			return '';
+		}
+		return $email;
+	}
+
+	/**
+	 * The idempotency key's email part: 16 hex of an HMAC of the lower-cased
+	 * address under a key derived from the guard secret (purpose
+	 * navexa-agecheck/guest-email/v1), so the key never carries the address;
+	 * '' without a guard secret (then no email is sent). Never logged.
+	 *
+	 * @param string $email guest_email().
+	 */
+	private static function email_tag( string $email ): string {
+		$secret = Install::guard_secret();
+		if ( '' === $secret ) {
+			return '';
+		}
+		$key = hash_hmac( 'sha256', 'navexa-agecheck/guest-email/v1', $secret, true );
+		return substr( hash_hmac( 'sha256', strtolower( $email ), $key ), 0, 16 );
 	}
 
 	/**
@@ -571,9 +668,10 @@ final class Start {
 	 * compared with the ID either, so sending it would only hand AgeCheck
 	 * personal data it cannot use.
 	 *
-	 * Never a date of birth (the shopper types it only on AgeCheck's page),
-	 * and no email: a check started at checkout is never emailed (links are
-	 * for order-bound checks, Binding).
+	 * Never a date of birth (the shopper types it only on AgeCheck's page).
+	 * No email here: a check started at checkout is never sent a link (links
+	 * are for order-bound checks, Binding); create_call() adds a guest's
+	 * email only for the returning-guest code (guest_email()).
 	 *
 	 * @param ShipTo $ship_to The intended ship-to (accepted: a US address).
 	 * @return array<string, mixed> {name, residentialAddress} or empty.

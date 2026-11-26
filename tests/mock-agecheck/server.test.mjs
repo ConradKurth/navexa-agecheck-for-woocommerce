@@ -623,6 +623,54 @@ test("RevokeVerificationLinks withdraws the open links, any status (E8c)", async
   assert.match(absent.headers.get("content-type"), /^text\/plain/)
 })
 
+test("guest reuse: GetIntegrationInfo's reuse fields and the emailed code on a NONE check with an email (TAX-1839)", async () => {
+  const info = async () => (await call("GetIntegrationInfo", {}, { key: FIXTURE_KEYS.liveStart.key })).json()
+  const off = await info()
+  assert.equal(off.reuseWindowDays, undefined, "reuse off: 0, omitted")
+  assert.equal(off.guestReuseCode, undefined)
+  await control("config", { reuse: "on" })
+  assert.deepEqual([(await info()).reuseWindowDays, (await info()).guestReuseCode], [30, true])
+  await control("config", { org: { displayName: "" } })
+  assert.deepEqual([(await info()).reuseWindowDays, (await info()).guestReuseCode], [30, undefined], "no store name: no code")
+  await control("config", { org: { displayName: "Mock Store", passPolicy: "default" } })
+  assert.equal((await info()).reuseWindowDays, undefined, "the default policy reuses nothing")
+  await control("config", { org: { passPolicy: "no_gov_db" } })
+
+  const url = (v) => v.hostedUrl.replace(/^http:\/\/[^/]+/, base)
+  const create = async (key, email) => {
+    const identity = email ? { email } : undefined
+    const { verification } = await (await call("CreateVerification", createBody({ idempotencyKey: key, identity }), { key: FIXTURE_KEYS.liveStart.key })).json()
+    return verification
+  }
+  const otp = (v) => fetch(url(v), { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "decision=otp", redirect: "manual" })
+
+  // No email: no offer. An email with no earlier pass: the same offer, and the code finds nothing.
+  const anonymous = await create("g:0")
+  assert.doesNotMatch(await (await fetch(url(anonymous))).text(), /Verified at this store before/)
+  const first = await create("g:1", "Guest@Example.com")
+  assert.match(await (await fetch(url(first))).text(), /Verified at this store before/)
+  const none = await otp(first)
+  assert.equal(none.status, 200)
+  assert.match(await none.text(), /No earlier verification found/)
+  assert.equal((await (await call("GetVerification", { id: first.id })).json()).verification.status, "VERIFICATION_STATUS_NEEDS_DOC")
+
+  // The first guest passes; the next check under the same email passes reused on the code.
+  await control("verifications", { id: first.id, status: "passed", passClass: "doc_only" })
+  const second = await create("g:2", "guest@example.com")
+  const used = await otp(second)
+  assert.equal(used.status, 303)
+  const read = (await (await call("GetVerification", { id: second.id })).json()).verification
+  assert.equal(read.status, "VERIFICATION_STATUS_PASSED")
+  assert.equal(read.passClass, "PASS_CLASS_REUSED")
+
+  // Another email, or reuse off: nothing.
+  const stranger = await create("g:3", "stranger@example.com")
+  assert.match(await (await otp(stranger)).text(), /No earlier verification found/)
+  await control("config", { reuse: "off" })
+  const later = await create("g:4", "guest@example.com")
+  assert.doesNotMatch(await (await fetch(url(later))).text(), /Verified at this store before/)
+})
+
 test("per-store reuse: off by default; on, a returning customer passes as reused (E12a)", async () => {
   const ref = "wpc1_" + "a".repeat(64)
   const first = await (

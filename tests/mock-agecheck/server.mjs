@@ -12,7 +12,9 @@
 // PASS_CLASS_DATA_VERIFIED in tax v0.0.167; AWAITING_IDENTITY is E4b's, served
 // only with config awaitingIdentity: "served"; E12a per-store reuse and E8c
 // verification links at tax d6dead63). Served RPCs:
-//   GetIntegrationInfo {livemode, scopes, originAllowed, minimumAge, displayName, organizationId, docRetry}
+//   GetIntegrationInfo {livemode, scopes, originAllowed, minimumAge, displayName, organizationId, docRetry,
+//     reuseWindowDays, guestReuseCode} (TAX-1839: the window while reuse is on for the org, i.e. config reuse
+//     "on", a policy other than default and a window above 0; the code while that holds and displayName is set)
 //   CreateVerification: identity optional; returnUrl (5), documentNameCheck (6),
 //     intendedShipTo (7) with the proto's rules (order-bound is always REQUIRED
 //     and needs identity.name; NONE needs intendedShipTo; unset is REQUIRED
@@ -54,6 +56,14 @@
 //   SendVerificationLink until 7 days after its first failure (never later
 //   than 26 days after its creation); its hosted
 //   page's "Try again" (decision=retry) moves it back to needs_doc.
+// Guest reuse through an emailed code (E12b, TAX-1839): the hosted page of a
+//   NEEDS_DOC or AWAITING_IDENTITY verification created with
+//   documentNameCheck NONE and an identity.email offers the code while
+//   GetIntegrationInfo's guestReuseCode holds (the offer reads the same with
+//   or without an earlier pass). POST decision=otp stands in for typing the
+//   emailed code: it passes PASS_CLASS_REUSED on the newest earlier pass
+//   under the same email (reuseSource's rules), else answers "No earlier
+//   verification found" and leaves the verification as it was.
 // Mutating RPCs replay their answer per idempotency key (a different request
 // under the same key is invalid_argument), like the engine.
 // A new verification is decided by the org's pass policy (config org.passPolicy):
@@ -535,17 +545,40 @@ function decideByPolicy(state, identity, shipTo) {
   }
 }
 
+/** The reuse window in force for the org: its window while reuse is on for it (reuseOn), else 0. */
+function reuseWindow(state) {
+  const days = Number(state.org.reuseWindowDays ?? 0)
+  return state.reuse === "on" && state.org.passPolicy !== "default" && days > 0 ? days : 0
+}
+
+/** GetIntegrationInfo's guestReuseCode (the engine's guestCodeOffered): reuse on and a display name. */
+function guestReuseCode(state) {
+  return reuseWindow(state) > 0 && String(state.org.displayName ?? "").trim() !== ""
+}
+
 /** The newest verification a create with customerRef may pass on (E12a), or null. */
 function reuseSource(state, key, customerRef, shipTo) {
-  if (state.reuse !== "on" || typeof customerRef !== "string" || state.org.passPolicy === "default") return null
-  const days = Number(state.org.reuseWindowDays ?? 0)
+  if (typeof customerRef !== "string") return null
+  return newestSource(state, key.livemode, (v) => v.customerRef === customerRef, shipTo)
+}
+
+/** The newest earlier pass under the email the emailed code proves (E12b), or null. */
+function emailSource(state, consumer) {
+  const email = state.emails.get(consumer.id)
+  if (!email) return null
+  return newestSource(state, consumer.livemode, (v) => v.id !== consumer.id && state.emails.get(v.id) === email, null, consumer.intendedShipToKey)
+}
+
+/** The newest passed verification matching keyOf in mode livemode that reuse may pass on, or null. */
+function newestSource(state, livemode, keyOf, shipTo, shipToKeyOverride) {
+  const days = reuseWindow(state)
   if (!(days > 0)) return null
   const since = Date.now() - days * 86400e3
-  const target = shipTo ? shipToKey(shipTo) : null
+  const target = shipToKeyOverride ?? (shipTo ? shipToKey(shipTo) : null)
   const sources = [...state.verifications.values()].filter(
     (v) =>
-      v.livemode === key.livemode &&
-      v.customerRef === customerRef &&
+      v.livemode === livemode &&
+      keyOf(v) &&
       v.status === "passed" &&
       REUSE_SOURCE_CLASSES.includes(v.passClass) &&
       Date.parse(v.decidedAt ?? "") >= since &&
@@ -799,6 +832,8 @@ const RPCS = {
         displayName: state.org.displayName,
         organizationId: key.organizationId ?? state.org.id,
         docRetry: state.docRetry === "on",
+        reuseWindowDays: reuseWindow(state),
+        guestReuseCode: guestReuseCode(state),
       }),
     ]
   },
@@ -821,6 +856,21 @@ function retryWindowEnd(createdAt) {
   const created = Date.parse(createdAt)
   const end = Date.now() + 7 * 24 * 3600 * 1000
   return Number.isNaN(created) ? end : Math.min(end, created + 26 * 24 * 3600 * 1000)
+}
+
+/** Whether v's hosted page offers the emailed code (the engine's reuseCodeOffered). */
+function codeOffered(state, v) {
+  return (
+    guestReuseCode(state) &&
+    (v.status === "needs_doc" || v.status === "awaiting_identity") &&
+    v.nameCheck === "DOCUMENT_NAME_CHECK_NONE" &&
+    state.emails.has(v.id)
+  )
+}
+
+/** Whether a page problem is the emailed code's own answer. */
+function decisionWasOtp(problem) {
+  return problem === "No earlier verification found."
 }
 
 /** Moves a verification as the shopper (or a reviewer) would; a decision revokes its links (E8a) but a retryable failure's. */
@@ -884,16 +934,32 @@ async function handleHosted(state, req, res, url) {
         else if (v.dataAnswer === "match") decide(state, v, "passed", "data_verified")
         else decide(state, v, "needs_doc")
       }
-    } else if (decision === "retry") {
+    }
+    if (decision === "otp" && codeOffered(state, v)) {
+      // Stands in for the right emailed code: a reuse on the email's newest earlier pass, or nothing.
+      const source = emailSource(state, v)
+      if (source) {
+        decide(state, v, "passed", "reused")
+        v.reusedFrom = source.id
+      } else problem = "No earlier verification found."
+    } else if (!awaiting && decision === "retry") {
       if (retryable(state, v)) decide(state, v, "needs_doc")
-    } else if (decision === "pass") decide(state, v, "passed", "doc_only")
-    else if (decision === "fail") decide(state, v, "failed")
-    else if (decision === "fail_underage") decide(state, v, "failed", undefined, true)
-    if (claims.ru && (!awaiting || v.status === "passed" || v.status === "failed")) {
+    } else if (!awaiting && decision === "pass") decide(state, v, "passed", "doc_only")
+    else if (!awaiting && decision === "fail") decide(state, v, "failed")
+    else if (!awaiting && decision === "fail_underage") decide(state, v, "failed", undefined, true)
+    if (claims.ru && decision !== "otp" && (!awaiting || v.status === "passed" || v.status === "failed")) {
+      res.writeHead(303, { Location: claims.ru })
+      return res.end()
+    }
+    if (claims.ru && decision === "otp" && v.status === "passed") {
       res.writeHead(303, { Location: claims.ru })
       return res.end()
     }
   }
+  const code = codeOffered(state, v)
+    ? `<section id="reuse"><p>Verified at this store before?</p><p id="reuse-problem">${escapeHTML(problem && decisionWasOtp(problem) ? problem : "")}</p>
+<form method="post"><button name="decision" value="otp">Use the emailed code</button></form></section>`
+    : ""
   const step =
     v.status === "awaiting_identity"
       ? `<form method="post"><p id="problem">${escapeHTML(problem)}</p>
@@ -905,7 +971,7 @@ async function handleHosted(state, req, res, url) {
         : `<form method="post"><button name="decision" value="pass">Pass</button> <button name="decision" value="fail">Fail</button> <button name="decision" value="fail_underage">Fail (under age)</button></form>`
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Mock AgeCheck</title></head><body>
 <h1>Mock AgeCheck (TEST)</h1><p>Status: <strong id="status">${escapeHTML(v.status)}</strong></p>
-${step}
+${code}${step}
 </body></html>`
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "Cross-Origin-Opener-Policy": "same-origin" })
   return res.end(html)

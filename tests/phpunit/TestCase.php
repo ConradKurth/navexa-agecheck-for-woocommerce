@@ -191,6 +191,11 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 				'absint'                       => static function ( $value ) {
 					return abs( (int) $value );
 				},
+				'sanitize_email'               => static function ( $email ) {
+					// WordPress drops characters an address may not hold, and answers '' without an @.
+					$email = trim( (string) $email );
+					return false === strpos( $email, '@' ) ? '' : (string) preg_replace( '/[^a-z0-9!#$%&\'*+\/=?^_`{|}~.@-]/i', '', $email );
+				},
 				'is_email'                     => static function ( $email ) {
 					return false !== filter_var( $email, FILTER_VALIDATE_EMAIL ) ? $email : false;
 				},

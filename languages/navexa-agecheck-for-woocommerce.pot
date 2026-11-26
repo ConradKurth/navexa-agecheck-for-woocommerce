@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-11-26T06:44:32+00:00\n"
+"POT-Creation-Date: 2026-11-26T06:54:35+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: navexa-agecheck-for-woocommerce\n"
@@ -401,24 +401,24 @@ msgstr ""
 msgid "AgeCheck: the shopper's earlier age check cannot be used for this order (%s). A new age check is needed."
 msgstr ""
 
-#: includes/Checkout/Classic.php:141
+#: includes/Checkout/Classic.php:149
 #: includes/Frontend.php:142
 msgid "Age verified."
 msgstr ""
 
-#: includes/Checkout/Classic.php:142
+#: includes/Checkout/Classic.php:150
 #: includes/Frontend.php:140
 #: assets/build/verify-age-no-payment/index.js:1
 #: assets/build/verify-age/index.js:1
 msgid "This order contains age-restricted items. Verify your age to place it."
 msgstr ""
 
-#: includes/Checkout/Classic.php:159
+#: includes/Checkout/Classic.php:167
 #: includes/Frontend.php:150
 msgid "Security check"
 msgstr ""
 
-#: includes/Checkout/Classic.php:164
+#: includes/Checkout/Classic.php:172
 #: includes/Frontend.php:137
 #: assets/build/verify-age-no-payment/index.js:1
 #: assets/build/verify-age/index.js:1
@@ -540,7 +540,7 @@ msgstr ""
 
 #: includes/Frontend.php:144
 #: includes/OrderVerify.php:510
-#: includes/Start.php:749
+#: includes/Start.php:847
 msgid "Age verification is temporarily unavailable. Please try again in a few minutes."
 msgstr ""
 
@@ -850,7 +850,7 @@ msgid "This page has expired. Go back to your order and select Verify now again.
 msgstr ""
 
 #: includes/OrderVerify.php:270
-#: includes/Start.php:211
+#: includes/Start.php:215
 msgid "Too many age check attempts. Please wait a while and try again."
 msgstr ""
 
@@ -893,7 +893,7 @@ msgid "Suggested text:"
 msgstr ""
 
 #: includes/Privacy.php:104
-msgid "We use Navexa AgeCheck to verify the age of customers who order age-restricted products. When you start an age check at checkout, we send Navexa AgeCheck the shipping address of the order you are about to place and, when you have entered them and the order ships to your US billing address, your billing name and billing address, for the age check. When such an order is placed, we send its shipping address and an order reference, and, when no age check was done at checkout, your billing name, billing address and email address, and Navexa AgeCheck may email you a link to verify your age for that order. If you have an account with us, we also send a keyed reference to your account (not your name, email address or account number), so that a returning customer who passed an age check here recently may not have to verify again. You then verify on Navexa's own page (verify.navexa.co), where you enter your date of birth and, when asked, agree to a data check or photograph an ID document and take a selfie; we never see or keep your date of birth or ID images. Navexa uses Didit for the ID, selfie and liveness checks and, when the shipping address is your billing address, to check your billing name, billing address and date of birth against US data sources such as financial and credit-bureau records."
+msgid "We use Navexa AgeCheck to verify the age of customers who order age-restricted products. When you start an age check at checkout, we send Navexa AgeCheck the shipping address of the order you are about to place and, when you have entered them and the order ships to your US billing address, your billing name and billing address, for the age check. When such an order is placed, we send its shipping address and an order reference, and, when no age check was done at checkout, your billing name, billing address and email address, and Navexa AgeCheck may email you a link to verify your age for that order. If you have an account with us, we also send a keyed reference to your account (the reference is not your name, email address or account number), so that a returning customer who passed an age check here recently may not have to verify again. When returning-customer checks are on and you check out as a guest, we also send Navexa AgeCheck your billing email address when you start an age check, so that if you passed a check here recently Navexa can email you a one-time code that lets you skip a new one; Navexa keeps the address encrypted with your check, and a one-way keyed code made from it that is tied to our store. You then verify on Navexa's own page (verify.navexa.co), where you enter your date of birth and, when asked, agree to a data check or photograph an ID document and take a selfie; we never see or keep your date of birth or ID images. Navexa uses Didit for the ID, selfie and liveness checks and, when the shipping address is your billing address, to check your billing name, billing address and date of birth against US data sources such as financial and credit-bureau records."
 msgstr ""
 
 #: includes/Privacy.php:105
@@ -1537,137 +1537,165 @@ msgstr ""
 msgid "Minimum age: %d (set in the Navexa dashboard)."
 msgstr ""
 
-#: includes/Settings.php:753
+#: includes/Settings.php:756
 msgid "No webhook secret: held orders are checked every 15 minutes instead of the moment the shopper passes."
 msgstr ""
 
 #. translators: %s: date and time.
-#: includes/Settings.php:756
+#: includes/Settings.php:759
 #, php-format
 msgid "Last webhook received %s."
 msgstr ""
 
-#: includes/Settings.php:758
+#: includes/Settings.php:761
 msgid "No webhook received yet. Check the endpoint URL and secret in the Navexa dashboard."
 msgstr ""
 
-#: includes/Settings.php:761
+#: includes/Settings.php:764
 msgid "The 15-minute check of held orders has not run in the last hour. WP-Cron may be off: set up a real system cron so held orders are released."
 msgstr ""
 
-#: includes/Settings.php:765
+#: includes/Settings.php:768
 msgid "Age checks are limited to the categories and tags below, but none is chosen (or they were deleted). Only products set to \"Always needs an age check\" in the product editor are checked."
 msgstr ""
 
-#: includes/Settings.php:769
+#: includes/Settings.php:772
 msgid "Cloudflare Turnstile is on, but its site key or secret key is missing, so shoppers cannot start age checks. Add both keys or turn Turnstile off."
 msgstr ""
 
-#: includes/Settings.php:775
+#: includes/Settings.php:778
 msgid "Cloudflare Turnstile uses Cloudflare's test keys, which accept a public dummy token, so it does not stop bots. Enter the site key and secret key of a Turnstile widget for this store's domain before you take live orders."
 msgstr ""
 
-#: includes/Settings.php:777
+#: includes/Settings.php:780
 msgid "Cloudflare Turnstile checks shoppers before an age check starts."
 msgstr ""
 
-#: includes/Settings.php:781
+#: includes/Settings.php:784
 msgid "The age check rate-limit table is missing, so shoppers cannot start age checks. Deactivate and reactivate the plugin; if this stays, ask your host to let the database user create tables."
 msgstr ""
 
 #. translators: %s: a proxy header option, e.g. X-Forwarded-For (last address).
-#: includes/Settings.php:791
+#: includes/Settings.php:794
 #, php-format
 msgid "The latest age checks reached your store through a proxy, load balancer or CDN (they carry the header %s), but the client IP is read from the connection, so shoppers share rate limits. If your store is behind that proxy, choose its header under Client IP address."
 msgstr ""
 
-#: includes/Settings.php:796
+#: includes/Settings.php:799
 msgid "The latest age checks all came from one IP address or from a private network address, which usually means a proxy, load balancer or CDN in front of your store. If it is, choose its header under Client IP address, or shoppers share rate limits."
 msgstr ""
 
-#: includes/Settings.php:800
+#: includes/Settings.php:803
 msgid "Your store ships outside the US. AgeCheck verifies US addresses only (including US territories and APO/FPO), so age-restricted orders shipping elsewhere will be refused."
 msgstr ""
 
-#: includes/Settings.php:813
+#: includes/Settings.php:821
+msgid "Returning customers: reuse is off in Navexa, so every customer is checked each time."
+msgstr ""
+
+#. translators: %d: number of days.
+#: includes/Settings.php:825
+#, php-format
+msgid "%d day"
+msgid_plural "%d days"
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: the reuse window, e.g. "90 days".
+#: includes/Settings.php:833
+#, php-format
+msgid "Returning customers: on (%s) for signed-in customers, matched by their account. Guests need a store name in the Navexa dashboard to get a one-time code."
+msgstr ""
+
+#. translators: %s: the reuse window, e.g. "90 days".
+#: includes/Settings.php:840
+#, php-format
+msgid "Returning customers: on (%s). Signed-in customers are matched by their account, guests by a one-time code AgeCheck emails to their billing address."
+msgstr ""
+
+#: includes/Settings.php:844
+msgid "In test mode, AgeCheck emails codes only to confirmed notification recipients in the Navexa dashboard."
+msgstr ""
+
+#: includes/Settings.php:857
 msgid "not set."
 msgstr ""
 
-#: includes/Settings.php:815
+#: includes/Settings.php:859
 msgid "paused until this site is confirmed."
 msgstr ""
 
-#: includes/Settings.php:817
+#: includes/Settings.php:861
 msgid "AgeCheck refused this key. Check it was copied in full and has not been revoked."
 msgstr ""
 
-#: includes/Settings.php:819
+#: includes/Settings.php:863
 msgid "this key is not allowed to use AgeCheck. Check its scopes in the Navexa dashboard."
 msgstr ""
 
-#: includes/Settings.php:821
+#: includes/Settings.php:865
 msgid "AgeCheck does not offer the connection check this plugin needs yet. Age checks stay off until it does."
 msgstr ""
 
 #. translators: %s: an error code, e.g. unavailable.
-#: includes/Settings.php:824
+#: includes/Settings.php:868
 #, php-format
 msgid "AgeCheck could not be reached (%s). Age checks fail closed until it answers."
 msgstr ""
 
-#: includes/Settings.php:836
+#: includes/Settings.php:880
 msgid "CF-Connecting-IP (Cloudflare)"
 msgstr ""
 
-#: includes/Settings.php:837
+#: includes/Settings.php:881
 msgid "True-Client-IP"
 msgstr ""
 
-#: includes/Settings.php:838
+#: includes/Settings.php:882
 msgid "X-Real-IP"
 msgstr ""
 
-#: includes/Settings.php:839
+#: includes/Settings.php:883
 msgid "X-Forwarded-For (last address)"
 msgstr ""
 
-#: includes/Start.php:180
+#: includes/Start.php:184
 msgid "This page is out of date. Reload it and try again."
 msgstr ""
 
-#: includes/Start.php:322
+#: includes/Start.php:326
 msgid "Contract version."
 msgstr ""
 
-#: includes/Start.php:328
+#: includes/Start.php:332
 msgid "Whether the cart needs an age check before checkout."
 msgstr ""
 
-#: includes/Start.php:334
+#: includes/Start.php:338
 msgid "Age check status."
 msgstr ""
 
-#: includes/Start.php:341
+#: includes/Start.php:345
 msgid "Where the shopper verifies; only in the response to a start."
 msgstr ""
 
-#: includes/Start.php:347
+#: includes/Start.php:351
 msgid "Text to show the shopper."
 msgstr ""
 
-#: includes/Start.php:471
+#: includes/Start.php:475
 msgid "Your age check is being processed. Select Verify age again in a minute to see if it is done."
 msgstr ""
 
-#: includes/Start.php:622
+#: includes/Start.php:720
 msgid "Nothing in your cart needs an age check."
 msgstr ""
 
-#: includes/Start.php:628
+#: includes/Start.php:726
 msgid "Pickup orders are age-checked in store."
 msgstr ""
 
-#: includes/Start.php:740
+#: includes/Start.php:838
 msgid "The security check did not pass. Complete it, then select Verify age again."
 msgstr ""
 

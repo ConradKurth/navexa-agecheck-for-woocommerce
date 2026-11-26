@@ -747,6 +747,9 @@ final class Settings extends \WC_Settings_Page {
 				/* translators: %d: minimum age, e.g. 21. */
 				$lines[] = self::line( 'ok', sprintf( __( 'Minimum age: %d (set in the Navexa dashboard).', 'navexa-agecheck-for-woocommerce' ), $info->minimum_age ) );
 			}
+			// What the start does (TAX-1839): the start key's answer decides
+			// whether a guest's email is sent.
+			$lines[] = self::reuse_line( isset( $infos[ Client::KEY_START ] ) ? $infos[ Client::KEY_START ] : $info );
 		}
 
 		if ( '' === Options::webhook_secret() ) {
@@ -800,6 +803,47 @@ final class Settings extends \WC_Settings_Page {
 			$lines[] = self::line( 'warning', __( 'Your store ships outside the US. AgeCheck verifies US addresses only (including US territories and APO/FPO), so age-restricted orders shipping elsewhere will be refused.', 'navexa-agecheck-for-woocommerce' ) );
 		}
 		return $lines;
+	}
+
+	/**
+	 * The "Returning customers" status line (TAX-1839): whether AgeCheck
+	 * reuses an earlier pass at this store, and how each customer is matched.
+	 * A signed-in customer by their account (customer_ref); a guest by a
+	 * one-time code AgeCheck emails to the billing address, which needs a
+	 * store name in Navexa (guest_reuse_code). In test mode AgeCheck emails a
+	 * code only to a confirmed notification recipient.
+	 *
+	 * @param IntegrationInfo $info The start key's answer.
+	 * @return array{level: string, text: string}
+	 */
+	private static function reuse_line( IntegrationInfo $info ): array {
+		if ( $info->reuse_window_days <= 0 ) {
+			return self::line( 'ok', __( 'Returning customers: reuse is off in Navexa, so every customer is checked each time.', 'navexa-agecheck-for-woocommerce' ) );
+		}
+		$days = sprintf(
+			/* translators: %d: number of days. */
+			_n( '%d day', '%d days', $info->reuse_window_days, 'navexa-agecheck-for-woocommerce' ),
+			$info->reuse_window_days
+		);
+		if ( ! $info->guest_reuse_code ) {
+			return self::line(
+				'warning',
+				sprintf(
+					/* translators: %s: the reuse window, e.g. "90 days". */
+					__( 'Returning customers: on (%s) for signed-in customers, matched by their account. Guests need a store name in the Navexa dashboard to get a one-time code.', 'navexa-agecheck-for-woocommerce' ),
+					$days
+				)
+			);
+		}
+		$text = sprintf(
+			/* translators: %s: the reuse window, e.g. "90 days". */
+			__( 'Returning customers: on (%s). Signed-in customers are matched by their account, guests by a one-time code AgeCheck emails to their billing address.', 'navexa-agecheck-for-woocommerce' ),
+			$days
+		);
+		if ( ! $info->livemode ) {
+			$text .= ' ' . __( 'In test mode, AgeCheck emails codes only to confirmed notification recipients in the Navexa dashboard.', 'navexa-agecheck-for-woocommerce' );
+		}
+		return self::line( 'ok', $text );
 	}
 
 	/**

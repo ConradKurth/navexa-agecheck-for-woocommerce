@@ -5,7 +5,7 @@ Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 7.4
 Requires Plugins: woocommerce
-Stable tag: 1.0.4
+Stable tag: 1.1.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -205,7 +205,14 @@ The plugin sends no telemetry.
 
 == Changelog ==
 
-= Unreleased =
+= 1.1.0 =
+* Checkout: Place order opens the age check in a window on the checkout page. The shopper types their date of birth there and takes the ID check only when needed; the order goes through as soon as they pass. Classic and block checkout. The Verify age button is gone.
+* After a pass, the name and address fields are locked to the check (block checkout: WooCommerce's address cards); changing the address means checking again.
+* If the window cannot load on the page (allowed origins, a Content Security Policy, a blocked frame), it offers a new window, then the same tab.
+* Entry age gate: date-of-birth mode, logo, colours (contrast checked, 4.5:1), title, text and button labels, its own minimum age, and its own settings section. Visitors who answered the 1.0.x gate are not asked again.
+* New "Age verification: Off (entry age gate only)": run only the entry age gate, with no API key; nothing is verified or held. A missing key never turns verification off by itself, and a notice now says checkouts are refused until the keys are added.
+* A Settings link on the Plugins screen.
+* Uses Navexa's shared AgeCheck loader 1.0.0 (MIT), bundled with the plugin.
 * A shopper whose ID check was declined, or whose ID's name did not match the order's, can try again on the same order for 7 days after the first failure (never after an under-age result: that order is denied at once). AgeCheck confirms each time that the retry is still open, and while it is the order stays held and any refund waits; the order page offers Try again, staff can email a new link from Order actions, and the panel says "Failed: the shopper may try again until ..." or "Retrying". Needs AgeCheck's document retry to be on; until then failed orders are handled as before. An order already denied whose shopper passes later is never released on its own: it stays held for staff to check the refund and release or cancel it.
 * Subscribe your AgeCheck webhook to verification.needs_doc as well, so a retry in progress is noted on the order right away.
 * Returning guests: while AgeCheck's returning-customer check is on for your account and your store has a name in the AgeCheck dashboard, the Verify age start sends a guest's billing email, so a guest who passed here recently can skip a new check with a one-time code AgeCheck emails them. Signed-in customers are still matched by their account. If AgeCheck refuses the email, the check starts without it.
@@ -245,6 +252,9 @@ The plugin sends no telemetry.
 * Verification links of orders that will not ship (cancelled, refunded in full, failed, trashed or deleted) are withdrawn automatically in the background, with the result noted on the order (in the WooCommerce log for a deleted one).
 
 == Upgrade Notice ==
+
+= 1.1.0 =
+Age check in a window on the checkout page at Place order, entry gate date of birth and branding, gate-only mode. Clear your page cache after updating.
 
 = 1.0.4 =
 Fixes a second age check (billed by AgeCheck) after a declined payment. Recommended for every store.

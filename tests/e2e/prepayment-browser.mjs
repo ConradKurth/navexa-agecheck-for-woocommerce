@@ -76,8 +76,13 @@ async function mock(path, body) {
   assert.equal(res.status, 200)
 }
 
+/** How many times the mock engine was asked for an RPC so far. */
+async function rpcCount(rpc) {
+  return (await (await fetch(`${MOCK}/__mock/requests`)).json()).filter((r) => r.rpc === rpc).length
+}
+
 /** Fills the cart and the session's addresses through the Store API, in the browser's session. */
-async function prepareCart(context, product = PRODUCT, method = "flat_rate") {
+async function prepareCart(context, product = PRODUCT, method = "flat_rate", address = ADDRESS) {
   const cart = await context.request.get(`${SITE}/wp-json/wc/store/v1/cart`)
   const nonce = cart.headers()["nonce"]
   const headers = { Nonce: nonce, "Content-Type": "application/json" }
@@ -85,7 +90,7 @@ async function prepareCart(context, product = PRODUCT, method = "flat_rate") {
   assert.equal(added.status(), 201)
   const updated = await context.request.post(`${SITE}/wp-json/wc/store/v1/cart/update-customer`, {
     headers,
-    data: { billing_address: ADDRESS, shipping_address: ADDRESS },
+    data: { billing_address: address, shipping_address: address },
   })
   assert.equal(updated.status(), 200)
   const rates = (await updated.json()).shipping_rates?.[0]?.shipping_rates ?? []
@@ -242,6 +247,42 @@ for (const name of BROWSERS) {
       await page.waitForURL(/order-received/, { timeout: 30000 })
       await context.close()
       return `in ${where}; popup.closed after COOP=${seen.closedAfterCoop}, opener kept=${seen.hasOpener}, return page closed itself=${seen.selfClosed}`
+    })
+
+    // 1.0.4: the order is bound to the check before payment and the check
+    // leaves the session; after a declined card WooCommerce resumes that order
+    // and the gate admits it at its bound ship-to, so the block must say
+    // passed (a reload, or any cart update, reads the server's state) and
+    // Place order must go through without a second, billed check.
+    // navexa_test_decline is the wp-env test gateway (tests/wp-env/mu-plugins).
+    await check(`${name}: block checkout: a declined payment keeps the check, and the retry places the order with no second check (1.0.4)`, async () => {
+      const context = await browser.newContext()
+      await context.addInitScript(KEEP_POPUP)
+      await prepareCart(context, PRODUCT, "flat_rate", { ...ADDRESS, email: "retry@example.com" })
+      const page = await context.newPage()
+      await page.goto(`${SITE}/?page_id=${BLOCK}`)
+      await page.locator(".navexa-agecheck__verify").waitFor({ timeout: 20000 })
+      await verifyInPopup(context, page, ".navexa-agecheck__verify")
+      await page.waitForSelector('.navexa-agecheck[data-status="passed"]', { timeout: 30000 })
+      const creates = await rpcCount("CreateVerification")
+
+      await page.click('label[for="radio-control-wc-payment-method-options-navexa_test_decline"]')
+      await page.click(".wc-block-components-checkout-place-order-button")
+      await page.waitForSelector(".wc-block-components-notice-banner.is-error", { timeout: 30000 })
+      await page.waitForTimeout(2000) // any cart refresh the failed checkout causes
+      const afterDecline = await page.locator(".navexa-agecheck").getAttribute("data-status")
+
+      await page.reload()
+      await page.locator(".navexa-agecheck").waitFor({ timeout: 20000 })
+      const afterReload = await page.locator(".navexa-agecheck").getAttribute("data-status")
+      assert.equal(afterReload, "passed", `after a reload the block reads the server's state (right after the decline it showed ${afterDecline})`)
+      assert.equal(await page.locator(".navexa-agecheck__verify").count(), 0, "no Verify age button")
+      await page.click('label[for="radio-control-wc-payment-method-options-cod"]')
+      await page.click(".wc-block-components-checkout-place-order-button")
+      await page.waitForURL(/order-received/, { timeout: 30000 })
+      assert.equal(await rpcCount("CreateVerification"), creates, "no second check")
+      await context.close()
+      return `the block showed ${afterDecline} right after the decline`
     })
 
     await check(`${name}: classic checkout button, popup flow and Place order`, async () => {

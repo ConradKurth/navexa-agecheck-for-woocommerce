@@ -16,6 +16,7 @@ use Brain\Monkey\Functions;
 use Navexa\AgeCheck\Checkout\Session;
 use Navexa\AgeCheck\Client;
 use Navexa\AgeCheck\Install;
+use Navexa\AgeCheck\Meta;
 use Navexa\AgeCheck\Mode;
 use Navexa\AgeCheck\Options;
 use Navexa\AgeCheck\OrderAddress;
@@ -659,6 +660,116 @@ final class StartTest extends TestCase {
 
 		self::$wc->customer = null;
 		$this->assertFalse( Start::state()['required'] );
+	}
+
+	/**
+	 * An order bound to the session's check at checkout (Binding binds before
+	 * payment and drops the check from the session) whose payment was then
+	 * declined: the session's $key (order_awaiting_payment for the classic
+	 * checkout, store_api_draft_order for the Store API) names it.
+	 */
+	private function declined_order( string $key, string $status = 'failed', int $id = 55 ): \WC_Order {
+		$order       = \WC_Order::make( $status, $id );
+		$order->meta = array(
+			Meta::VERIFICATION_ID => 'acv_bound',
+			Meta::SHIP_TO_HASH    => ShipTo::from_wc_address( $this->us_address() )->hash(),
+		);
+		$this->orders[ $id ] = $order;
+		$this->session()->set( $key, $id );
+		return $order;
+	}
+
+	public function test_state_is_passed_for_the_bound_order_a_payment_retry_resumes(): void {
+		// Classic: WC_Checkout::create_order() resumes order_awaiting_payment
+		// (same cart, pending or failed); Classic::validate() admits it at its
+		// bound ship-to.
+		foreach ( array( 'failed', 'pending' ) as $status ) {
+			$this->session()->data = array();
+			$this->declined_order( 'order_awaiting_payment', $status );
+			$this->assertSame(
+				array(
+					'v'        => 1,
+					'required' => true,
+					'status'   => 'passed',
+				),
+				Start::state(),
+				'classic, ' . $status . ': the block and the button must not ask for a second check'
+			);
+		}
+
+		// Store API: the draft WooCommerce resumes (DraftOrderTrait::is_valid_draft_order()),
+		// which Blocks::validate() admits at its bound ship-to.
+		foreach ( array( 'failed', 'pending', 'checkout-draft' ) as $status ) {
+			$this->session()->data = array();
+			$order                 = $this->declined_order( 'store_api_draft_order', $status, 56 );
+			$this->assertSame( 'passed', Start::state()['status'], 'Store API, ' . $status );
+			if ( 'checkout-draft' === $status ) {
+				$order->cart_hash = 'another-cart';
+				$this->assertSame( 'passed', Start::state()['status'], 'a checkout-draft is resumed whatever the cart (WooCommerce\'s rule)' );
+			}
+		}
+
+		$this->customer_at( $this->us_address( array( 'postcode' => '62701-9999' ) ) );
+		$this->assertSame( 'passed', Start::state()['status'], 'ZIP+4 of the same address is the same ship-to' );
+		$this->assertSame( array(), $this->http_requests, 'the session and the order only: no AgeCheck call' );
+	}
+
+	public function test_state_after_a_declined_payment_needs_a_new_check_for_another_ship_to_or_order(): void {
+		foreach ( array( 'order_awaiting_payment', 'store_api_draft_order' ) as $key ) {
+			$this->session()->data = array();
+			$order                 = $this->declined_order( $key );
+			$this->assertSame( 'passed', Start::state()['status'], $key );
+
+			$this->customer_at( $this->us_address( array( 'address_1' => '9 Elm St' ) ) );
+			$this->assertSame( 'none', Start::state()['status'], $key . ': another ship-to needs its own check' );
+			$this->customer_at( $this->us_address() );
+
+			$order->cart_hash = 'another-cart';
+			$this->assertSame( 'none', Start::state()['status'], $key . ': another cart is another order' );
+			$order->cart_hash = 'cart-hash';
+
+			foreach ( array( 'processing', 'completed', 'cancelled', 'agecheck-hold', 'checkout-draft' ) as $status ) {
+				if ( 'store_api_draft_order' === $key && 'checkout-draft' === $status ) {
+					continue;
+				}
+				$order->data['status'] = $status;
+				$this->assertSame( 'none', Start::state()['status'], $key . ': a ' . $status . ' order is not resumed' );
+			}
+			$order->data['status'] = 'failed';
+
+			$order->needs_payment = false;
+			if ( 'store_api_draft_order' === $key ) {
+				$this->assertSame( 'none', Start::state()['status'], $key . ': an order that needs no payment is not resumed' );
+			}
+			$order->needs_payment = null;
+
+			unset( $order->meta[ Meta::SHIP_TO_HASH ] );
+			$this->assertSame( 'none', Start::state()['status'], $key . ': no bound ship-to, fail closed' );
+			$order->meta = array();
+			$this->assertSame( 'none', Start::state()['status'], $key . ': not bound: the gate decides it like any new checkout' );
+		}
+
+		$this->session()->data = array();
+		$this->session()->set( 'order_awaiting_payment', 999 );
+		$this->session()->set( 'store_api_draft_order', 999 );
+		$this->assertSame( 'none', Start::state()['status'], 'an order that does not exist' );
+		self::$wc->cart = null;
+		$this->assertFalse( Start::state()['required'] );
+		$this->assertSame( array(), $this->http_requests );
+	}
+
+	public function test_state_for_a_declined_order_still_says_what_the_cart_needs(): void {
+		$this->declined_order( 'store_api_draft_order' );
+		$this->chosen_methods = array( 'local_pickup' );
+		$this->assertFalse( Start::state()['required'], 'pickup needs no check' );
+		$this->chosen_methods = array( 'flat_rate' );
+
+		$this->customer_at( $this->us_address( array( 'country' => 'DE' ) ) );
+		$this->assertStringContainsString( 'only to US addresses', Start::state()['message'] );
+
+		$this->options[ Options::MODE ] = Options::MODE_ACCEPT_AND_HOLD;
+		$this->customer_at( $this->us_address() );
+		$this->assertFalse( Start::state()['required'], 'accept and hold: no pre-payment check' );
 	}
 
 	public function test_store_api_registration(): void {

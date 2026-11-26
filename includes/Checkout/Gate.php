@@ -26,7 +26,11 @@ defined( 'ABSPATH' ) || exit;
  *
  * A resumed order that is already bound to a verification (a failed payment
  * being retried) is admitted without a guard only when its ship-to is the one
- * it was bound with; release still needs GetClearance CLEARED.
+ * it was bound with; release still needs GetClearance CLEARED. Which order a
+ * retry resumes is resumable_bound_order() (both checkouts) and
+ * bound_awaiting_order() (classic only); Start::state() reports such an order
+ * as passed, so the shopper is never sent through a second check that
+ * nothing would use.
  *
  * Which carts and orders need a check is Requirement's job
  * (Requirement::cart_required() for the session cart,
@@ -193,6 +197,79 @@ final class Gate {
 	public static function is_bound_ship_to( \WC_Order $bound, ShipTo $ship_to ): bool {
 		$bound_hash = Meta::get( $bound, Meta::SHIP_TO_HASH );
 		return '' !== $bound_hash && hash_equals( $bound_hash, $ship_to->hash() );
+	}
+
+	/**
+	 * The bound order a payment retry would resume at $ship_to, or null.
+	 *
+	 * Binding binds the order to the shopper's check before payment and drops
+	 * the check from the session. After a declined payment WooCommerce resumes
+	 * that order for the same cart (bound_awaiting_order() on the classic
+	 * checkout, bound_draft_order() through the Store API), and check()
+	 * admits it at the ship-to it was bound with, without a guard. This is
+	 * that order when $ship_to is its bound ship-to (is_bound_ship_to()),
+	 * so the shopper's state can say passed instead of asking for a second,
+	 * billed check that would never be attached. Another ship-to, another
+	 * cart, or an order that was never bound: null, and the checkout needs
+	 * its own check. Reads the session and the order only.
+	 *
+	 * @param ShipTo $ship_to The checkout's ship-to.
+	 */
+	public static function resumable_bound_order( ShipTo $ship_to ): ?\WC_Order {
+		foreach ( array( self::bound_awaiting_order(), self::bound_draft_order() ) as $order ) {
+			if ( null !== $order && self::is_bound_ship_to( $order, $ship_to ) ) {
+				return $order;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * The order the classic checkout's WC_Checkout::create_order() will
+	 * resume (the session's order_awaiting_payment, with the same cart hash,
+	 * pending or failed), when it is already bound to a verification.
+	 */
+	public static function bound_awaiting_order(): ?\WC_Order {
+		$order = self::session_order( 'order_awaiting_payment' );
+		$cart  = Session::cart();
+		if ( null === $order || null === $cart || ! $order->has_cart_hash( $cart->get_cart_hash() ) || ! $order->has_status( array( 'pending', 'failed' ) ) ) {
+			return null;
+		}
+		return '' !== self::bound_verification_id( $order ) ? $order : null;
+	}
+
+	/**
+	 * The draft the Store API checkout will resume (the session's
+	 * store_api_draft_order, by WooCommerce's own rule,
+	 * DraftOrderTrait::is_valid_draft_order(): a checkout-draft, or an order
+	 * that needs payment with the same cart hash), when it is already bound to
+	 * a verification.
+	 */
+	public static function bound_draft_order(): ?\WC_Order {
+		$order = self::session_order( 'store_api_draft_order' );
+		$cart  = Session::cart();
+		if ( null === $order || null === $cart ) {
+			return null;
+		}
+		if ( ! $order->has_status( 'checkout-draft' ) && ! ( $order->needs_payment() && $order->has_cart_hash( $cart->get_cart_hash() ) ) ) {
+			return null;
+		}
+		return '' !== self::bound_verification_id( $order ) ? $order : null;
+	}
+
+	/**
+	 * The order a WooCommerce session key names, or null.
+	 *
+	 * @param string $key Session key (order_awaiting_payment, store_api_draft_order).
+	 */
+	private static function session_order( string $key ): ?\WC_Order {
+		$session = Session::wc_session();
+		if ( null === $session ) {
+			return null;
+		}
+		$order_id = absint( $session->get( $key ) );
+		$order    = $order_id ? wc_get_order( $order_id ) : null;
+		return $order instanceof \WC_Order ? $order : null;
 	}
 
 	/**

@@ -29,6 +29,9 @@ defined( 'ABSPATH' ) || exit;
  *
  * Statuses: passed | pending | failed | refused | unavailable (the plan's
  * §2.7 contract) plus none (nothing started, or the ship-to changed since).
+ * The cart data also reads passed for a payment retry: the order the
+ * checkout will resume is already bound to the shopper's check at this
+ * ship-to (Gate::resumable_bound_order()), and the gate admits it as it is.
  *
  * The browser sends no PII and no verification id, and never receives the
  * verification id or an API key. Start calls CreateVerification once per
@@ -278,7 +281,10 @@ final class Start {
 		if ( '' === $mac ) {
 			return $state;
 		}
-		if ( null !== Session::guarded_verification_id( $mac ) ) {
+		if ( null !== Session::guarded_verification_id( $mac ) || null !== Gate::resumable_bound_order( $ship_to ) ) {
+			// A guarded pass, or the order a payment retry resumes at the
+			// ship-to it was bound with (its check left the session when the
+			// order was bound, before payment): the gate admits either.
 			$state['status'] = self::STATUS_PASSED;
 			return $state;
 		}

@@ -394,6 +394,8 @@ namespace {
 		public $total_refunded   = 0.0;
 		/** @var string What has_cart_hash() matches. */
 		public $cart_hash        = 'cart-hash';
+		/** @var bool|null needs_payment(); null: pending or failed (a total above zero assumed). */
+		public $needs_payment    = null;
 
 		public function __construct( $id = 0 ) {
 			$this->id = $id;
@@ -603,6 +605,11 @@ namespace {
 
 		public function has_status( $statuses ) {
 			return in_array( $this->get_status(), (array) $statuses, true );
+		}
+
+		/** WC_Order::needs_payment(): pending or failed with a total above zero (unless set). */
+		public function needs_payment() {
+			return null !== $this->needs_payment ? $this->needs_payment : $this->has_status( array( 'pending', 'failed' ) );
 		}
 
 		public function get_address( $type = 'billing' ) {

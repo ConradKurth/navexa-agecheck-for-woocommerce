@@ -4,7 +4,7 @@
 	"name": "navexa-agecheck/verify-age-no-payment",
 	"version": "0.1.0",
 	"title": "Age verification (orders without payment)",
-	"description": "Navexa AgeCheck: the Verify age button for age-restricted orders that need no payment, where WooCommerce hides the payment step. Shown only then.",
+	"description": "Navexa AgeCheck: the age check status for age-restricted orders that need no payment, where WooCommerce hides the payment step. Shown only then.",
 	"category": "woocommerce",
 	"keywords": [
 		"age",

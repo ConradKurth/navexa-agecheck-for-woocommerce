@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-11-26T07:09:30+00:00\n"
+"POT-Creation-Date: 2026-11-26T12:47:14+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: navexa-agecheck-for-woocommerce\n"
@@ -123,6 +123,7 @@ msgstr ""
 #: includes/Admin/OrderPanel.php:118
 #: includes/Admin/OrderPanel.php:123
 #: includes/Admin/ProductField.php:41
+#: includes/Frontend.php:180
 #: includes/OrderVerify.php:121
 #: includes/OrderVerify.php:533
 #: includes/ReturnPage.php:100
@@ -420,32 +421,33 @@ msgstr ""
 msgid "AgeCheck: the shopper's earlier age check cannot be used for this order (%s). A new age check is needed."
 msgstr ""
 
-#: includes/Checkout/Classic.php:149
-#: includes/Frontend.php:142
+#: includes/Checkout/Classic.php:159
+#: includes/Frontend.php:144
 msgid "Age verified."
 msgstr ""
 
-#: includes/Checkout/Classic.php:150
-#: includes/Frontend.php:140
+#: includes/Checkout/Classic.php:160
+#: includes/Frontend.php:142
 #: assets/build/verify-age-no-payment/index.js:1
 #: assets/build/verify-age/index.js:1
-msgid "This order contains age-restricted items. Verify your age to place it."
+msgid "This order contains age-restricted items. When you place it, you'll confirm your age in a secure window on this page."
 msgstr ""
 
-#: includes/Checkout/Classic.php:167
+#: includes/Checkout/Classic.php:175
 #: includes/Frontend.php:151
 msgid "Security check"
 msgstr ""
 
-#: includes/Checkout/Classic.php:172
-#: includes/Frontend.php:137
-#: assets/build/verify-age-no-payment/index.js:1
-#: assets/build/verify-age/index.js:1
-msgid "Verify age"
+#: includes/Checkout/Classic.php:192
+msgid "Your name and address are locked to your age check."
+msgstr ""
+
+#: includes/Checkout/Classic.php:193
+msgid "Change details"
 msgstr ""
 
 #: includes/Checkout/Gate.php:411
-msgid "Your shipping address changed after your age check. Verify your age again for the new address."
+msgid "Your shipping address changed after your age check. Place your order again to confirm your age for the new address."
 msgstr ""
 
 #: includes/Checkout/Gate.php:413
@@ -453,7 +455,7 @@ msgid "Age-restricted items ship only to US addresses, including US territories 
 msgstr ""
 
 #: includes/Checkout/Gate.php:415
-msgid "Enter your full shipping address, then verify your age."
+msgid "Enter your full shipping address, then place your order."
 msgstr ""
 
 #: includes/Checkout/Gate.php:417
@@ -461,7 +463,7 @@ msgid "Age verification is temporarily unavailable, so this order cannot be plac
 msgstr ""
 
 #: includes/Checkout/Gate.php:419
-#: includes/Frontend.php:143
+#: includes/Frontend.php:145
 msgid "We could not verify your age, so this order cannot be placed."
 msgstr ""
 
@@ -545,42 +547,75 @@ msgstr ""
 msgid "Leaving this store…"
 msgstr ""
 
-#: includes/Frontend.php:138
-msgid "Verifying…"
-msgstr ""
-
-#: includes/Frontend.php:139
+#: includes/Frontend.php:141
 msgid "Checking your age verification…"
 msgstr ""
 
-#: includes/Frontend.php:141
-msgid "Finish your age check in the window that opened. This page updates when you are done. If you closed that window, select Verify age to start again."
-msgstr ""
-
-#: includes/Frontend.php:144
-#: includes/OrderVerify.php:519
-#: includes/Start.php:948
-msgid "Age verification is temporarily unavailable. Please try again in a few minutes."
+#: includes/Frontend.php:143
+msgid "Your age check is not finished. Place your order again to continue it."
 msgstr ""
 
 #: includes/Frontend.php:146
-msgid "Verify your age before placing this order."
-msgstr ""
-
-#: includes/Frontend.php:147
-msgid "Opening the secure age check…"
+#: includes/OrderVerify.php:519
+#: includes/Start.php:982
+msgid "Age verification is temporarily unavailable. Please try again in a few minutes."
 msgstr ""
 
 #: includes/Frontend.php:148
-msgid "The age check window was closed. Select Verify age to try again."
+msgid "The age check was closed before it finished. Place your order again to continue."
 msgstr ""
 
 #: includes/Frontend.php:149
-msgid "The security check could not be completed. Reload the page, then select Verify age again."
+msgid "The security check could not be completed. Reload the page, then place your order again."
 msgstr ""
 
 #: includes/Frontend.php:150
-msgid "Complete the security check shown below, then select Verify age again."
+msgid "Complete the security check shown, then place your order again."
+msgstr ""
+
+#: includes/Frontend.php:152
+msgid "If you change your address, you'll confirm your age again when you place the order."
+msgstr ""
+
+#: includes/Frontend.php:153
+msgid "Your age check is tied to this name and address. If you change the address, you'll confirm your age again when you place the order."
+msgstr ""
+
+#: includes/Frontend.php:171
+#: includes/OrderVerify.php:142
+msgid "Verify your age"
+msgstr ""
+
+#: includes/Frontend.php:172
+msgid "Close"
+msgstr ""
+
+#: includes/Frontend.php:173
+msgid "Loading the secure age check…"
+msgstr ""
+
+#: includes/Frontend.php:174
+msgid "The age check is taking longer than usual to load."
+msgstr ""
+
+#: includes/Frontend.php:175
+msgid "Continue in a new window"
+msgstr ""
+
+#: includes/Frontend.php:176
+msgid "The age check is open in another window. Finish it there; this page updates when you are done."
+msgstr ""
+
+#: includes/Frontend.php:177
+msgid "Show the age check window"
+msgstr ""
+
+#: includes/Frontend.php:178
+msgid "Your browser blocked the new window."
+msgstr ""
+
+#: includes/Frontend.php:179
+msgid "Continue the age check on this page"
 msgstr ""
 
 #: includes/Hold.php:94
@@ -823,10 +858,6 @@ msgstr ""
 msgid "You can try again until %s. Use a valid government photo ID in the name on the order."
 msgstr ""
 
-#: includes/OrderVerify.php:142
-msgid "Verify your age"
-msgstr ""
-
 #: includes/OrderVerify.php:144
 msgid "Age verification was unavailable when you placed this order, so the store holds it until you verify your age. Select Verify now; if it is still unavailable, try again later or use the link we email you."
 msgstr ""
@@ -877,7 +908,7 @@ msgid "This page has expired. Go back to your order and select Verify now again.
 msgstr ""
 
 #: includes/OrderVerify.php:279
-#: includes/Start.php:222
+#: includes/Start.php:239
 msgid "Too many age check attempts. Please wait a while and try again."
 msgstr ""
 
@@ -1714,52 +1745,56 @@ msgstr ""
 msgid "X-Forwarded-For (last address)"
 msgstr ""
 
-#: includes/Start.php:191
+#: includes/Start.php:208
 msgid "This page is out of date. Reload it and try again."
 msgstr ""
 
-#: includes/Start.php:280
+#: includes/Start.php:297
 msgid "Age verification is unavailable right now. You can place your order; it will be held until you verify your age with the link we send you by email or on your order page."
 msgstr ""
 
-#: includes/Start.php:288
+#: includes/Start.php:305
 msgid "Age verification is not available for this store right now, so this order cannot be placed. Please try again later."
 msgstr ""
 
-#: includes/Start.php:380
+#: includes/Start.php:400
 msgid "Contract version."
 msgstr ""
 
-#: includes/Start.php:386
+#: includes/Start.php:406
 msgid "Whether the cart needs an age check before checkout."
 msgstr ""
 
-#: includes/Start.php:392
+#: includes/Start.php:412
 msgid "Age check status."
 msgstr ""
 
-#: includes/Start.php:399
+#: includes/Start.php:419
 msgid "Where the shopper verifies; only in the response to a start."
 msgstr ""
 
-#: includes/Start.php:405
+#: includes/Start.php:425
 msgid "Text to show the shopper."
 msgstr ""
 
-#: includes/Start.php:531
-msgid "Your age check is being processed. Select Verify age again in a minute to see if it is done."
+#: includes/Start.php:431
+msgid "Why the age check could not start, when it could not."
 msgstr ""
 
-#: includes/Start.php:821
+#: includes/Start.php:558
+msgid "Your age check is being processed. Place your order again in a minute."
+msgstr ""
+
+#: includes/Start.php:848
 msgid "Nothing in your cart needs an age check."
 msgstr ""
 
-#: includes/Start.php:827
+#: includes/Start.php:854
 msgid "Pickup orders are age-checked in store."
 msgstr ""
 
-#: includes/Start.php:939
-msgid "The security check did not pass. Complete it, then select Verify age again."
+#: includes/Start.php:973
+msgid "The security check did not pass. Complete it, then place your order again."
 msgstr ""
 
 #: includes/Sweep.php:83
@@ -1794,7 +1829,7 @@ msgstr ""
 
 #: assets/build/verify-age-no-payment/block.json
 msgctxt "block description"
-msgid "Navexa AgeCheck: the Verify age button for age-restricted orders that need no payment, where WooCommerce hides the payment step. Shown only then."
+msgid "Navexa AgeCheck: the age check status for age-restricted orders that need no payment, where WooCommerce hides the payment step. Shown only then."
 msgstr ""
 
 #: assets/build/verify-age-no-payment/block.json
@@ -1822,5 +1857,5 @@ msgstr ""
 
 #: assets/build/verify-age/block.json
 msgctxt "block description"
-msgid "Navexa AgeCheck: the Verify age button for orders with age-restricted items. Shown only when the cart needs it."
+msgid "Navexa AgeCheck: the age check status for orders with age-restricted items; the check opens when the shopper places the order. Shown only when the cart needs it."
 msgstr ""

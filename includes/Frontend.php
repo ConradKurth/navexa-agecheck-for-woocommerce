@@ -10,25 +10,29 @@ namespace Navexa\AgeCheck;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Registers the bundled loader (assets/js/agecheck-{LOADER_VERSION}.js, built
- * from assets/src/loader/ with esbuild) and the two pieces of checkout glue
- * that use it:
+ * Registers the shared Navexa AgeCheck loader (@navexa/agecheck-js, vendored
+ * byte for byte in assets/vendor/agecheck-js/ by bin/sync-loader.mjs, pinned
+ * by LOADER_VERSION) and the two pieces of checkout glue that use it:
  *
  * - classic checkout: assets/js/checkout-classic.js (assets/src/loader/classic.ts);
- * - block checkout: the Verify age inner block, assets/build/verify-age/
- *   (assets/src/blocks/verify-age/, built with wp-scripts).
+ * - block checkout: the age check inner block and its Place order observer,
+ *   assets/build/verify-age/ (assets/src/blocks/verify-age/, built with
+ *   wp-scripts).
  *
- * Minified files load unless SCRIPT_DEBUG is on. Nothing is loaded outside
- * checkout except the entry age gate (EntryGate, assets/js/entry-gate.js,
- * only when the merchant turns it on), and nothing from a third-party host
- * except Cloudflare's Turnstile script when the merchant turns Turnstile on
- * (disclosed in readme.txt).
+ * The loader's minified build loads unless SCRIPT_DEBUG is on (then its
+ * .debug.js); the plugin's own glue loads .min.js unless SCRIPT_DEBUG.
+ * Nothing is loaded outside checkout except the entry age gate (EntryGate,
+ * the loader's gate-only build, only when the merchant turns it on), and
+ * nothing from a third-party host except Cloudflare's Turnstile script when
+ * the merchant turns Turnstile on (disclosed in readme.txt). The age check
+ * itself is AgeCheck's page in an iframe on the checkout page (disclosed).
  */
 final class Frontend {
 
 	/**
-	 * The loader's own version: the loader contract (plan §2.7) is shared by
-	 * every platform, so it is versioned apart from the plugin.
+	 * The vendored loader's version (@navexa/agecheck-js): shared by every
+	 * platform, so versioned apart from the plugin. bin/sync-loader.mjs
+	 * writes it; CI checks it against assets/vendor/agecheck-js/.
 	 */
 	const LOADER_VERSION = '1.0.0';
 
@@ -67,7 +71,7 @@ final class Frontend {
 		}
 		wp_register_script(
 			self::HANDLE_LOADER,
-			self::asset_url( 'assets/js/agecheck-' . self::LOADER_VERSION . $min . '.js' ),
+			self::loader_url( 'agecheck' ),
 			array(),
 			self::LOADER_VERSION,
 			array( 'in_footer' => true )
@@ -83,7 +87,7 @@ final class Frontend {
 		wp_register_script(
 			self::HANDLE_BLOCK,
 			self::asset_url( 'assets/build/verify-age/frontend.js' ),
-			array_values( array_unique( array_merge( $asset['dependencies'], array( self::HANDLE_LOADER, 'wc-blocks-checkout', 'wc-blocks-data-store', 'wc-settings' ), $turnstile ) ) ),
+			array_values( array_unique( array_merge( $asset['dependencies'], array( self::HANDLE_LOADER, 'wc-blocks-checkout', 'wc-blocks-checkout-events', 'wc-blocks-data-store', 'wc-settings' ), $turnstile ) ) ),
 			$asset['version'],
 			array( 'in_footer' => true )
 		);
@@ -134,28 +138,58 @@ final class Frontend {
 		$data      = array(
 			'namespace' => Start::STORE_NAMESPACE,
 			'i18n'      => array(
-				'verify'      => __( 'Verify age', 'navexa-agecheck-for-woocommerce' ),
-				'verifying'   => __( 'Verifying…', 'navexa-agecheck-for-woocommerce' ),
 				'checking'    => __( 'Checking your age verification…', 'navexa-agecheck-for-woocommerce' ),
-				'prompt'      => __( 'This order contains age-restricted items. Verify your age to place it.', 'navexa-agecheck-for-woocommerce' ),
-				'pending'     => __( 'Finish your age check in the window that opened. This page updates when you are done. If you closed that window, select Verify age to start again.', 'navexa-agecheck-for-woocommerce' ),
+				'prompt'      => __( 'This order contains age-restricted items. When you place it, you\'ll confirm your age in a secure window on this page.', 'navexa-agecheck-for-woocommerce' ),
+				'pending'     => __( 'Your age check is not finished. Place your order again to continue it.', 'navexa-agecheck-for-woocommerce' ),
 				'passed'      => __( 'Age verified.', 'navexa-agecheck-for-woocommerce' ),
 				'failed'      => __( 'We could not verify your age, so this order cannot be placed.', 'navexa-agecheck-for-woocommerce' ),
 				'unavailable' => __( 'Age verification is temporarily unavailable. Please try again in a few minutes.', 'navexa-agecheck-for-woocommerce' ),
 				'hold'        => Start::hold_message(),
-				'required'    => __( 'Verify your age before placing this order.', 'navexa-agecheck-for-woocommerce' ),
-				'opening'     => __( 'Opening the secure age check…', 'navexa-agecheck-for-woocommerce' ),
-				'closed'      => __( 'The age check window was closed. Select Verify age to try again.', 'navexa-agecheck-for-woocommerce' ),
-				'turnstile'   => __( 'The security check could not be completed. Reload the page, then select Verify age again.', 'navexa-agecheck-for-woocommerce' ),
-				'challenge'   => __( 'Complete the security check shown below, then select Verify age again.', 'navexa-agecheck-for-woocommerce' ),
+				'closed'      => __( 'The age check was closed before it finished. Place your order again to continue.', 'navexa-agecheck-for-woocommerce' ),
+				'turnstile'   => __( 'The security check could not be completed. Reload the page, then place your order again.', 'navexa-agecheck-for-woocommerce' ),
+				'challenge'   => __( 'Complete the security check shown, then place your order again.', 'navexa-agecheck-for-woocommerce' ),
 				'security'    => __( 'Security check', 'navexa-agecheck-for-woocommerce' ),
+				'unlocked'    => __( 'If you change your address, you\'ll confirm your age again when you place the order.', 'navexa-agecheck-for-woocommerce' ),
+				'edited'      => __( 'Your age check is tied to this name and address. If you change the address, you\'ll confirm your age again when you place the order.', 'navexa-agecheck-for-woocommerce' ),
 			),
+			'labels'    => self::modal_labels(),
 		);
 		$turnstile = Turnstile::script_data();
 		if ( null !== $turnstile ) {
 			$data['turnstile'] = $turnstile;
 		}
 		return $data;
+	}
+
+	/**
+	 * The loader modal's strings, translated (the loader's VERIFY_LABEL_KEYS).
+	 *
+	 * @return array<string, string>
+	 */
+	public static function modal_labels(): array {
+		return array(
+			'title'     => __( 'Verify your age', 'navexa-agecheck-for-woocommerce' ),
+			'close'     => __( 'Close', 'navexa-agecheck-for-woocommerce' ),
+			'loading'   => __( 'Loading the secure age check…', 'navexa-agecheck-for-woocommerce' ),
+			'slow'      => __( 'The age check is taking longer than usual to load.', 'navexa-agecheck-for-woocommerce' ),
+			'newWindow' => __( 'Continue in a new window', 'navexa-agecheck-for-woocommerce' ),
+			'popup'     => __( 'The age check is open in another window. Finish it there; this page updates when you are done.', 'navexa-agecheck-for-woocommerce' ),
+			'reopen'    => __( 'Show the age check window', 'navexa-agecheck-for-woocommerce' ),
+			'blocked'   => __( 'Your browser blocked the new window.', 'navexa-agecheck-for-woocommerce' ),
+			'samePage'  => __( 'Continue the age check on this page', 'navexa-agecheck-for-woocommerce' ),
+			'frame'     => __( 'Age check', 'navexa-agecheck-for-woocommerce' ),
+		);
+	}
+
+	/**
+	 * URL of a vendored loader build: $build-<LOADER_VERSION>.js (minified),
+	 * or its .debug.js with SCRIPT_DEBUG.
+	 *
+	 * @param string $build agecheck (verify + gate) or agecheck-gate (the gate only).
+	 */
+	public static function loader_url( string $build ): string {
+		$debug = defined( 'SCRIPT_DEBUG' ) && SCRIPT_DEBUG ? '.debug' : '';
+		return self::asset_url( 'assets/vendor/agecheck-js/' . $build . '-' . self::LOADER_VERSION . $debug . '.js' );
 	}
 
 	/**

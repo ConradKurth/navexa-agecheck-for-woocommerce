@@ -103,6 +103,23 @@ final class Start {
 	const STATUS_HOLD = 'hold';
 
 	/**
+	 * Machine reasons on refusals (the answer's optional code, 1.1.0; v stays
+	 * 1 and older clients ignore it). The classic glue submits anyway on
+	 * CODE_NO_ADDRESS, CODE_NOT_REQUIRED and CODE_PICKUP (WooCommerce shows
+	 * its own field errors; the server still decides), and stops on the rest.
+	 */
+	const CODE_NO_ADDRESS   = 'no_address';
+	const CODE_US_ONLY      = 'us_only';
+	const CODE_NOT_REQUIRED = 'not_required';
+	const CODE_PICKUP       = 'pickup';
+	const CODE_TURNSTILE    = 'turnstile';
+	const CODE_OUTDATED     = 'outdated';
+	const CODE_RATE_LIMITED = 'rate_limited';
+	const CODE_UNAVAILABLE  = 'unavailable';
+
+	const CODES = array( self::CODE_NO_ADDRESS, self::CODE_US_ONLY, self::CODE_NOT_REQUIRED, self::CODE_PICKUP, self::CODE_TURNSTILE, self::CODE_OUTDATED, self::CODE_RATE_LIMITED, self::CODE_UNAVAILABLE );
+
+	/**
 	 * Default limits per hour: starts per session and per client IP (plan
 	 * §5), refreshes per session and per client IP.
 	 */
@@ -188,7 +205,7 @@ final class Start {
 		$version = isset( $data['v'] ) ? $data['v'] : null;
 		$action  = isset( $data['action'] ) && is_string( $data['action'] ) ? $data['action'] : '';
 		if ( self::VERSION !== $version || ! in_array( $action, array( self::ACTION_START, self::ACTION_REFRESH ), true ) ) {
-			return self::reply( self::STATUS_REFUSED, __( 'This page is out of date. Reload it and try again.', 'navexa-agecheck-for-woocommerce' ) );
+			return self::reply( self::STATUS_REFUSED, __( 'This page is out of date. Reload it and try again.', 'navexa-agecheck-for-woocommerce' ), self::CODE_OUTDATED );
 		}
 
 		$context = self::context();
@@ -219,12 +236,12 @@ final class Start {
 			return self::unavailable();
 		}
 		if ( RateLimit::OK !== $rate ) {
-			return self::reply( self::STATUS_UNAVAILABLE, __( 'Too many age check attempts. Please wait a while and try again.', 'navexa-agecheck-for-woocommerce' ) );
+			return self::reply( self::STATUS_UNAVAILABLE, __( 'Too many age check attempts. Please wait a while and try again.', 'navexa-agecheck-for-woocommerce' ), self::CODE_RATE_LIMITED );
 		}
 		if ( self::ACTION_START === $action ) {
 			$turnstile = Turnstile::verify( isset( $data['turnstile'] ) ? $data['turnstile'] : null, RateLimit::client_ip() );
 			if ( Turnstile::FAILED === $turnstile ) {
-				return self::reply( self::STATUS_REFUSED, self::turnstile_message() );
+				return self::reply( self::STATUS_REFUSED, self::turnstile_message(), self::CODE_TURNSTILE );
 			}
 			if ( Turnstile::OK !== $turnstile ) {
 				return self::unavailable();
@@ -240,7 +257,7 @@ final class Start {
 			// The engine's own US-only refusal (E3), e.g. for a territory it does
 			// not accept yet: say so instead of "temporarily unavailable".
 			if ( 'invalid_argument' === $e->connect_code() && false !== stripos( $e->server_message(), 'US addresses only' ) ) {
-				return self::reply( self::STATUS_REFUSED, Gate::message( Gate::REFUSE_US_ONLY ) );
+				return self::reply( self::STATUS_REFUSED, Gate::message( Gate::REFUSE_US_ONLY ), self::CODE_US_ONLY );
 			}
 			// AgeCheck did not answer: a store that takes and holds orders
 			// then lets this shopper pay (never after a failed check).
@@ -303,7 +320,7 @@ final class Start {
 			unset( $state['v'] );
 			$state = array( 'v' => self::VERSION ) + $state;
 			if ( self::STATUS_PASSED === $state['status'] ) {
-				unset( $state['message'] );
+				unset( $state['message'], $state['code'] );
 			}
 		}
 		return $state;
@@ -331,6 +348,9 @@ final class Start {
 		if ( null !== $context['refusal'] ) {
 			if ( $required && isset( $context['refusal']['message'] ) ) {
 				$state['message'] = $context['refusal']['message'];
+			}
+			if ( $required && isset( $context['refusal']['code'] ) ) {
+				$state['code'] = $context['refusal']['code'];
 			}
 			return $state;
 		}
@@ -404,6 +424,13 @@ final class Start {
 			'message'    => array(
 				'description' => __( 'Text to show the shopper.', 'navexa-agecheck-for-woocommerce' ),
 				'type'        => 'string',
+				'context'     => array( 'view', 'edit' ),
+				'readonly'    => true,
+			),
+			'code'       => array(
+				'description' => __( 'Why the age check could not start, when it could not.', 'navexa-agecheck-for-woocommerce' ),
+				'type'        => 'string',
+				'enum'        => self::CODES,
 				'context'     => array( 'view', 'edit' ),
 				'readonly'    => true,
 			),
@@ -528,7 +555,7 @@ final class Start {
 		// E4b's engine release needs no plugin release.
 		if ( ! in_array( $status, array( 'VERIFICATION_STATUS_NEEDS_DOC', 'VERIFICATION_STATUS_DOC_PENDING', 'VERIFICATION_STATUS_AWAITING_IDENTITY' ), true ) ) {
 			// Nothing for the shopper to do on AgeCheck's page (being checked, or held).
-			return self::reply( self::STATUS_PENDING, __( 'Your age check is being processed. Select Verify age again in a minute to see if it is done.', 'navexa-agecheck-for-woocommerce' ) );
+			return self::reply( self::STATUS_PENDING, __( 'Your age check is being processed. Place your order again in a minute.', 'navexa-agecheck-for-woocommerce' ) );
 		}
 
 		$unavailable = self::id_check_unavailable( $client, $status, $mac );
@@ -818,13 +845,13 @@ final class Start {
 		if ( ! Gate::enforces() || null === $cart || null === $customer || ! Gate::cart_required() ) {
 			return array(
 				'ship_to' => null,
-				'refusal' => self::reply( self::STATUS_REFUSED, __( 'Nothing in your cart needs an age check.', 'navexa-agecheck-for-woocommerce' ) ),
+				'refusal' => self::reply( self::STATUS_REFUSED, __( 'Nothing in your cart needs an age check.', 'navexa-agecheck-for-woocommerce' ), self::CODE_NOT_REQUIRED ),
 			);
 		}
 		if ( Requirement::cart_is_pickup() ) {
 			return array(
 				'ship_to' => null,
-				'refusal' => self::reply( self::STATUS_REFUSED, __( 'Pickup orders are age-checked in store.', 'navexa-agecheck-for-woocommerce' ) ),
+				'refusal' => self::reply( self::STATUS_REFUSED, __( 'Pickup orders are age-checked in store.', 'navexa-agecheck-for-woocommerce' ), self::CODE_PICKUP ),
 			);
 		}
 		$needs_shipping = (bool) $cart->needs_shipping_address();
@@ -832,7 +859,7 @@ final class Start {
 		$country        = ShipTo::country_of_customer( $customer, $needs_shipping );
 		if ( null === $ship_to || ! $ship_to->is_accepted() ) {
 			$code    = null === $ship_to && ( '' === $country || ShipTo::is_accepted_country( $country ) ) ? Gate::REFUSE_NO_ADDRESS : Gate::REFUSE_US_ONLY;
-			$refusal = self::reply( self::STATUS_REFUSED, Gate::message( $code ) );
+			$refusal = self::reply( self::STATUS_REFUSED, Gate::message( $code ), Gate::REFUSE_NO_ADDRESS === $code ? self::CODE_NO_ADDRESS : self::CODE_US_ONLY );
 			return array(
 				'ship_to' => null,
 				'refusal' => $refusal + array( '_required' => true ),
@@ -894,8 +921,11 @@ final class Start {
 
 	/**
 	 * Whether $url is a hosted page link the loader can open: an absolute
-	 * https URL (http only for localhost and the configured API host, i.e.
-	 * the mock engine) whose path is /v/{token}.
+	 * https URL (http only for a loopback host, localhost, 127.0.0.1 or
+	 * [::1], and the configured API host, i.e. the mock engine; the browser
+	 * tests serve its pages on 127.0.0.1 for a cross-site frame) whose path
+	 * is /v/{token}. The loader frames it on its own origin (its host
+	 * option), so this check is what keeps the frame on AgeCheck.
 	 *
 	 * @param string $url Candidate.
 	 */
@@ -907,7 +937,7 @@ final class Start {
 		$scheme = strtolower( (string) $parts['scheme'] );
 		if ( 'https' !== $scheme ) {
 			$api_host = wp_parse_url( Client::base_url(), PHP_URL_HOST );
-			if ( 'http' !== $scheme || ( 'localhost' !== $parts['host'] && $api_host !== $parts['host'] ) ) {
+			if ( 'http' !== $scheme || ( ! in_array( $parts['host'], array( 'localhost', '127.0.0.1', '[::1]' ), true ) && $api_host !== $parts['host'] ) ) {
 				return false;
 			}
 		}
@@ -919,15 +949,19 @@ final class Start {
 	 *
 	 * @param string $status  STATUS_*.
 	 * @param string $message Copy, or ''.
+	 * @param string $code    CODE_* on a refusal, or ''.
 	 * @return array<string, mixed>
 	 */
-	private static function reply( string $status, string $message = '' ): array {
+	private static function reply( string $status, string $message = '', string $code = '' ): array {
 		$reply = array(
 			'v'      => self::VERSION,
 			'status' => $status,
 		);
 		if ( '' !== $message ) {
 			$reply['message'] = $message;
+		}
+		if ( '' !== $code ) {
+			$reply['code'] = $code;
 		}
 		return $reply;
 	}
@@ -936,7 +970,7 @@ final class Start {
 	 * Shopper-facing copy when the Turnstile check did not pass.
 	 */
 	public static function turnstile_message(): string {
-		return __( 'The security check did not pass. Complete it, then select Verify age again.', 'navexa-agecheck-for-woocommerce' );
+		return __( 'The security check did not pass. Complete it, then place your order again.', 'navexa-agecheck-for-woocommerce' );
 	}
 
 	/**
@@ -945,6 +979,6 @@ final class Start {
 	 * @return array<string, mixed>
 	 */
 	private static function unavailable(): array {
-		return self::reply( self::STATUS_UNAVAILABLE, __( 'Age verification is temporarily unavailable. Please try again in a few minutes.', 'navexa-agecheck-for-woocommerce' ) );
+		return self::reply( self::STATUS_UNAVAILABLE, __( 'Age verification is temporarily unavailable. Please try again in a few minutes.', 'navexa-agecheck-for-woocommerce' ), self::CODE_UNAVAILABLE );
 	}
 }

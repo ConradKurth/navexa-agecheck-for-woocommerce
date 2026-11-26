@@ -16,7 +16,10 @@ use Navexa\AgeCheck\Turnstile;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Pre-payment enforcement and the Verify age button on the classic checkout.
+ * Pre-payment enforcement and the age check status on the classic checkout.
+ * The check opens at Place order (assets/src/loader/classic.ts, the shared
+ * loader's in-page modal); this class renders the state it starts from and
+ * decides every order on the server.
  *
  * - woocommerce_after_checkout_validation refuses the order unless Gate
  *   admits it, with the ship-to taken from the posted data (shipping_*, or
@@ -31,9 +34,14 @@ defined( 'ABSPATH' ) || exit;
  *   button shows the check as passed (Start::state() for
  *   Gate::ROUTE_CLASSIC, which asks only order_awaiting_payment: a Store API
  *   draft is not what this checkout resumes).
- * - The button renders at woocommerce_review_order_before_submit, inside the
+ * - The status renders at woocommerce_review_order_before_submit, inside the
  *   fragment WooCommerce replaces on every checkout update, so it always
- *   shows the session's current state.
+ *   shows the session's current state (data-status, read by the glue). No
+ *   button: Place order starts the check.
+ * - A lock bar ("Your name and address are locked to your age check" and a
+ *   Change details button) renders above the customer details, outside the
+ *   replaced fragment, hidden until the glue locks the fields after a pass.
+ *   The lock is consistency, not a control: the server binds the ship-to.
  * - Each checkout update copies the form's billing first and last name into
  *   the session customer (remember_billing_name()), as the block checkout's
  *   Store API does, so a start sends the name the shopper typed for the
@@ -46,7 +54,8 @@ final class Classic {
 	 */
 	public static function register(): void {
 		add_action( 'woocommerce_after_checkout_validation', array( self::class, 'validate' ), 10, 2 );
-		add_action( 'woocommerce_review_order_before_submit', array( self::class, 'render_button' ) );
+		add_action( 'woocommerce_review_order_before_submit', array( self::class, 'render_status' ) );
+		add_action( 'woocommerce_checkout_before_customer_details', array( self::class, 'render_lock_bar' ) );
 		add_action( 'wp_enqueue_scripts', array( self::class, 'enqueue' ) );
 		add_action( 'woocommerce_checkout_update_order_review', array( self::class, 'remember_billing_name' ) );
 	}
@@ -131,9 +140,10 @@ final class Classic {
 	}
 
 	/**
-	 * The Verify age block above the Place order button.
+	 * The age check status above the Place order button: no button, the
+	 * check opens when the shopper places the order.
 	 */
-	public static function render_button(): void {
+	public static function render_status(): void {
 		if ( ! Gate::enforces() ) {
 			return;
 		}
@@ -147,33 +157,41 @@ final class Classic {
 		if ( '' === $message ) {
 			$message = $passed
 				? __( 'Age verified.', 'navexa-agecheck-for-woocommerce' )
-				: __( 'This order contains age-restricted items. Verify your age to place it.', 'navexa-agecheck-for-woocommerce' );
+				: __( 'This order contains age-restricted items. When you place it, you\'ll confirm your age in a secure window on this page.', 'navexa-agecheck-for-woocommerce' );
 		}
 		// The status line is not a live region here: WooCommerce replaces this
 		// fragment on every update, so the classic glue announces changes
-		// through one region outside it. tabindex -1 lets the glue move the
-		// focus to the status once the button is gone (after a pass).
+		// through one region outside it. tabindex -1 lets the glue focus it.
 		printf(
 			'<div class="navexa-agecheck" data-navexa-agecheck="1" data-status="%1$s" aria-busy="false" style="margin:0 0 1em">'
 			. '<p class="navexa-agecheck__message" id="navexa-agecheck-message" tabindex="-1" style="margin:0 0 .5em">%2$s</p>',
 			esc_attr( $status ),
 			esc_html( $message )
 		);
-		if ( ! $passed ) {
-			if ( Turnstile::enabled() ) {
-				// A group the glue can focus when Cloudflare shows a challenge in it.
-				printf(
-					'<div class="navexa-agecheck__turnstile" data-navexa-agecheck-turnstile="1" role="group" aria-label="%s" tabindex="-1"></div>',
-					esc_attr__( 'Security check', 'navexa-agecheck-for-woocommerce' )
-				);
-			}
+		if ( ! $passed && Turnstile::enabled() ) {
+			// A group the glue can focus when Cloudflare shows a challenge in it.
 			printf(
-				'<button type="button" class="button alt navexa-agecheck__verify" data-navexa-agecheck-verify="1" aria-describedby="navexa-agecheck-message" aria-disabled="false"%2$s>%1$s</button>',
-				esc_html__( 'Verify age', 'navexa-agecheck-for-woocommerce' ),
-				Start::STATUS_PENDING === $status ? ' data-pending="1"' : ''
+				'<div class="navexa-agecheck__turnstile" data-navexa-agecheck-turnstile="1" role="group" aria-label="%s" tabindex="-1"></div>',
+				esc_attr__( 'Security check', 'navexa-agecheck-for-woocommerce' )
 			);
 		}
 		echo '</div>';
+	}
+
+	/**
+	 * The lock bar above the customer details: hidden until the glue locks
+	 * the name and address fields after a pass; Change details unlocks them.
+	 * Only on a cart that needs a check, in pre-payment mode.
+	 */
+	public static function render_lock_bar(): void {
+		if ( ! Gate::enforces() || ! Gate::cart_required() ) {
+			return;
+		}
+		printf(
+			'<div class="navexa-agecheck-lock woocommerce-info" data-navexa-agecheck-lock="1" hidden style="display:none">%1$s <button type="button" class="button" data-navexa-agecheck-unlock="1">%2$s</button></div>',
+			esc_html__( 'Your name and address are locked to your age check.', 'navexa-agecheck-for-woocommerce' ),
+			esc_html__( 'Change details', 'navexa-agecheck-for-woocommerce' )
+		);
 	}
 
 	/**

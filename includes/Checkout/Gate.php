@@ -408,11 +408,11 @@ final class Gate {
 	public static function message( string $code ): string {
 		switch ( $code ) {
 			case self::REFUSE_SHIP_TO_CHANGED:
-				return __( 'Your shipping address changed after your age check. Verify your age again for the new address.', 'navexa-agecheck-for-woocommerce' );
+				return __( 'Your shipping address changed after your age check. Place your order again to confirm your age for the new address.', 'navexa-agecheck-for-woocommerce' );
 			case self::REFUSE_US_ONLY:
 				return __( 'Age-restricted items ship only to US addresses, including US territories and APO/FPO addresses. Change the shipping address or remove those items.', 'navexa-agecheck-for-woocommerce' );
 			case self::REFUSE_NO_ADDRESS:
-				return __( 'Enter your full shipping address, then verify your age.', 'navexa-agecheck-for-woocommerce' );
+				return __( 'Enter your full shipping address, then place your order.', 'navexa-agecheck-for-woocommerce' );
 			case self::REFUSE_UNAVAILABLE:
 				return __( 'Age verification is temporarily unavailable, so this order cannot be placed right now. Please try again in a few minutes.', 'navexa-agecheck-for-woocommerce' );
 			case self::REFUSE_FAILED:

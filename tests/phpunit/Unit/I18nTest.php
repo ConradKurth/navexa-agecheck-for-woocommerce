@@ -73,7 +73,7 @@ final class I18nTest extends TestCase {
 
 	public function test_javascript_and_block_json_strings_are_in_the_template(): void {
 		$ids = self::pot_msgids();
-		foreach ( array( 'Verify age', 'Navexa AgeCheck shows this only when the cart has age-restricted items.', 'Age verification', 'Age verification (orders without payment)' ) as $text ) {
+		foreach ( array( 'This order contains age-restricted items. When you place it, you\'ll confirm your age in a secure window on this page.', 'Navexa AgeCheck shows this only when the cart has age-restricted items.', 'Age verification', 'Age verification (orders without payment)' ) as $text ) {
 			$this->assertArrayHasKey( $text, $ids, $text );
 		}
 	}

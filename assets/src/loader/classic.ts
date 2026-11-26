@@ -1,34 +1,36 @@
 /**
- * Classic (shortcode) checkout glue: the Verify age button rendered by
- * Checkout\Classic at woocommerce_review_order_before_submit, driving the
- * loader (window.NavexaAgeCheck) over the Store API.
+ * Classic (shortcode) checkout glue (TAX-1874): the age check opens at Place
+ * order in the shared loader's in-page modal (window.NavexaAgeCheck.verify,
+ * vendored in assets/vendor/agecheck-js/), driven over the Store API
+ * (store-api.ts); place-order.ts holds the flow, lock.ts the field lock.
  *
- * The button sits in the fragment WooCommerce replaces on every checkout
- * update, so clicks are delegated from the document, and the server's markup
- * is the state after each update. Before a start, the checkout is updated once
- * so the session holds the address the shopper sees (the guard is bound to
- * the session's ship-to).
- *
- * Accessibility (a11y.ts): status changes are announced through one live
- * region outside the replaced fragment; while a check runs the button stays
- * focusable (aria-disabled, not disabled) and the container is aria-busy;
- * when a check the shopper started ends, the focus goes to the status message
- * on a pass (the button is gone then) or back to the button, also after the
- * fragment was replaced.
- *
- * With Turnstile on, a start first gets a Turnstile token (turnstile.ts,
- * window.NavexaAgeCheckTurnstile), rendered into the fragment's
- * [data-navexa-agecheck-turnstile] element. When Cloudflare shows an
- * interactive challenge there instead, the start is refused at once (the
- * popup closes, nothing reaches the store), the status says to complete the
- * check shown, and the focus goes to it; the next Verify age click uses the
- * solved challenge's token.
+ * - Checkout\Classic renders a status container at
+ *   woocommerce_review_order_before_submit ([data-navexa-agecheck], with
+ *   data-status: the server's state; no button), inside the fragment
+ *   WooCommerce replaces on every checkout update, and a lock bar with
+ *   "Change details" above the customer details.
+ * - After a pass the name and ship-to fields are locked (readOnly, or
+ *   disabled with a hidden mirror). "Change details" unlocks them and says a
+ *   new address means a new check; a checkout update whose state left passed
+ *   (the ship-to changed) unlocks them too. An expired guard (pending) keeps
+ *   the lock: the next Place order mints a new one without the modal.
+ * - Refusals go where WooCommerce puts its own checkout errors (a
+ *   .woocommerce-NoticeGroup-checkout with a role="alert" list, built with
+ *   textContent) and are announced through the live region outside the
+ *   replaced fragment (a11y.ts).
+ * - With Turnstile on, the start carries a Turnstile token rendered into the
+ *   container's [data-navexa-agecheck-turnstile]; an interactive challenge
+ *   refuses the start at once and moves the focus to it (turnstile.ts).
+ * - Back from the loader's full-page redirect fallback (data-status
+ *   "pending" on load): one refresh, no modal.
  */
-import type { LoaderState, Status } from "./agecheck"
-import type { NavexaAgeCheckGlobal } from "./index"
 import { StartRefused, storeApiTransport } from "./store-api.ts"
-import { announce, focusOnReturn, mayRestoreFocus, type DocLike, type ElementLike, type WinLike } from "./a11y.ts"
-import type { TurnstileConfig } from "./turnstile"
+import { announce, focusOnReturn, type DocLike as A11yDoc, type ElementLike, type WinLike } from "./a11y.ts"
+import { createPlaceOrderFlow } from "./place-order.ts"
+import { isLocked, lockForm, unlockForm, type DocLike as LockDoc, type FormLike } from "./lock.ts"
+import { originOf } from "./types.ts"
+import type { NavexaAgeCheckApi } from "./navexa-agecheck.ts"
+import type { TurnstileConfig } from "./turnstile.ts"
 
 interface ClassicData {
   namespace: string
@@ -36,11 +38,18 @@ interface ClassicData {
   restNonce?: string
   turnstile?: TurnstileConfig
   i18n: Record<string, string>
+  labels?: Record<string, string>
 }
 
-interface JQueryLike {
-  (target: unknown): { on(event: string, handler: (...args: unknown[]) => void): unknown; one(event: string, handler: (...args: unknown[]) => void): unknown; off(event: string, handler: (...args: unknown[]) => void): unknown; trigger(event: string): unknown }
+interface JQueryObject {
+  on(event: string, handler: (...args: any[]) => unknown): JQueryObject
+  one(event: string, handler: (...args: any[]) => unknown): JQueryObject
+  off(event: string, handler: (...args: any[]) => unknown): JQueryObject
+  trigger(event: string): JQueryObject
+  block?(options?: Record<string, unknown>): JQueryObject
+  unblock?(): JQueryObject
 }
+type JQueryLike = (target: unknown) => JQueryObject
 
 declare global {
   interface Window {
@@ -50,27 +59,34 @@ declare global {
 }
 
 const CONTAINER = "[data-navexa-agecheck]"
-const BUTTON = "[data-navexa-agecheck-verify]"
 const MESSAGE = ".navexa-agecheck__message"
 const TURNSTILE = "[data-navexa-agecheck-turnstile]"
+const LOCK_BAR = "[data-navexa-agecheck-lock]"
+const UNLOCK = "[data-navexa-agecheck-unlock]"
+const NOTICE = "data-navexa-agecheck-notice"
 const UPDATE_TIMEOUT_MS = 8000
 
 function boot(): void {
   const data = window.navexaAgeCheckClassic
-  const api: NavexaAgeCheckGlobal | undefined = window.NavexaAgeCheck
-  if (!data || !api) return
+  const api: NavexaAgeCheckApi | undefined = window.NavexaAgeCheck
   const $ = window.jQuery
-  const doc = document as unknown as DocLike
+  const formEl = document.querySelector<HTMLFormElement>("form.checkout")
+  if (!data || !api || typeof api.verify !== "function" || !$ || !formEl) return
+  const verify = api.verify
+  const $form = $(formEl)
+  const doc = document as unknown as A11yDoc
   const t = (key: string): string => data.i18n[key] ?? ""
   const turnstile = data.turnstile && window.NavexaAgeCheckTurnstile ? window.NavexaAgeCheckTurnstile.create(data.turnstile) : null
+  const form = formEl as unknown as FormLike
+  /** The shopper unlocked the fields after this pass: do not lock them again until a new pass. */
+  let unlockedByShopper = false
+
+  const container = () => document.querySelector<HTMLElement>(CONTAINER)
+  const status = (): string | null => container()?.getAttribute("data-status") ?? null
 
   /** Runs one WooCommerce checkout update and waits for it (or a timeout). */
   const updateCheckout = (): Promise<void> =>
     new Promise((resolve) => {
-      if (!$ || !document.querySelector("form.checkout")) {
-        resolve()
-        return
-      }
       let done = false
       const finish = () => {
         if (done) return
@@ -93,105 +109,126 @@ function boot(): void {
     return { turnstile: token }
   }
 
-  const initial = (document.querySelector(CONTAINER)?.getAttribute("data-status") ?? "none") as Status
-  let lastPassed = initial === "passed"
-  let lastAnnounced = ""
-  /** The shopper started the running check from the button: its end may move the focus. */
-  let owned = false
-  /** A pass re-renders the fragment: restore the focus after that update. */
-  let focusAfterUpdate = false
-
-  const messageFor = (state: LoaderState): string =>
-    state.message ||
-    (state.reason === "closed"
-      ? t("closed")
-      : state.busy && state.status !== "pending"
-        ? t("checking")
-        : t(state.status === "none" || state.status === "refused" ? "prompt" : state.status))
-
-  /** Puts the focus back on the Verify age control after a check the shopper started. */
-  const restoreFocus = (passed: boolean): void => {
-    const container = document.querySelector(CONTAINER) as unknown as ElementLike | null
-    if (!mayRestoreFocus(doc, container, owned)) {
-      owned = false
-      return
-    }
-    owned = false
-    const target = passed
-      ? document.querySelector(`${CONTAINER} ${MESSAGE}`)
-      : turnstile?.challenging()
-        ? document.querySelector(TURNSTILE)
-        : document.querySelector(BUTTON)
-    focusOnReturn((target ?? document.querySelector(`${CONTAINER} ${MESSAGE}`)) as unknown as ElementLike | null, window as unknown as WinLike, () =>
-      mayRestoreFocus(doc, document.querySelector(CONTAINER) as unknown as ElementLike | null, true),
-    )
+  const setMessage = (text: string) => {
+    const el = container()?.querySelector<HTMLElement>(MESSAGE)
+    if (el && text) el.textContent = text
   }
 
-  const render = (state: LoaderState): void => {
-    const message = messageFor(state)
-    document.querySelectorAll<HTMLElement>(CONTAINER).forEach((container) => {
-      container.setAttribute("data-status", state.status)
-      container.setAttribute("aria-busy", state.busy ? "true" : "false")
-      const text = container.querySelector<HTMLElement>(MESSAGE)
-      if (text && message) text.textContent = message
-      const button = container.querySelector<HTMLButtonElement>(BUTTON)
-      if (button) {
-        // aria-disabled, not disabled: a disabled button drops the focus.
-        button.setAttribute("aria-disabled", state.busy ? "true" : "false")
-        button.textContent = state.busy ? t("verifying") : t("verify")
-        button.hidden = state.status === "passed"
-      }
-    })
-    if (message && message !== lastAnnounced && !(state.busy && state.status === "pending")) {
-      lastAnnounced = announce(doc, message)
-    }
-    if (state.status === "passed" && !state.busy && !lastPassed && $) {
-      // Let the server re-render the review with the verified state, then focus it.
-      focusAfterUpdate = owned
-      $(document.body).trigger("update_checkout")
-    } else if (!state.busy && state.status !== "pending" && owned) {
-      restoreFocus(state.status === "passed")
-    }
-    lastPassed = state.status === "passed"
+  const showLockBar = (show: boolean) => {
+    const bar = document.querySelector<HTMLElement>(LOCK_BAR)
+    if (!bar) return
+    // Inline display too: a theme's .woocommerce-info{display:…} beats [hidden].
+    bar.hidden = !show
+    bar.style.display = show ? "" : "none"
   }
 
-  const loader = api.create({
-    transport: storeApiTransport({ base: data.storeApi, namespace: data.namespace, restNonce: data.restNonce, beforeStart: updateCheckout, startData }),
-    status: initial,
-    openingText: t("opening"),
-    onChange: render,
+  const lock = () => {
+    if (unlockedByShopper) return
+    lockForm(form, document as unknown as LockDoc)
+    showLockBar(isLocked(form))
+  }
+  const unlock = () => {
+    unlockForm(form)
+    showLockBar(false)
+  }
+
+  const clearNotices = () => {
+    document.querySelectorAll(`[${NOTICE}]`).forEach((n) => n.remove())
+  }
+
+  /** A refusal where WooCommerce shows its own checkout errors, announced and focused. */
+  const fail = (message: string, focusChallenge: boolean) => {
+    clearNotices()
+    document.querySelectorAll(".woocommerce-NoticeGroup-checkout").forEach((n) => n.remove())
+    const group = document.createElement("div")
+    group.className = "woocommerce-NoticeGroup woocommerce-NoticeGroup-checkout"
+    group.setAttribute(NOTICE, "1")
+    group.tabIndex = -1
+    const list = document.createElement("ul")
+    list.className = "woocommerce-error"
+    list.setAttribute("role", "alert")
+    const item = document.createElement("li")
+    item.textContent = message
+    list.appendChild(item)
+    group.appendChild(list)
+    formEl.insertBefore(group, formEl.firstChild)
+    setMessage(message)
+    announce(doc, message)
+    const target = focusChallenge ? document.querySelector<HTMLElement>(TURNSTILE) : group
+    focusOnReturn(target as unknown as ElementLike | null, window as unknown as WinLike)
+    $(document.body).trigger("checkout_error")
+  }
+
+  const flow = createPlaceOrderFlow({
+    status,
+    updateCheckout,
+    transport: storeApiTransport({ base: data.storeApi, namespace: data.namespace, restNonce: data.restNonce, startData }),
+    verify: (url) => verify({ url }, { host: originOf(url), labels: data.labels }),
+    block: () => {
+      container()?.setAttribute("aria-busy", "true")
+      $form.block?.({ message: null, overlayCSS: { background: "#fff", opacity: 0.6 } })
+    },
+    unblock: () => {
+      container()?.setAttribute("aria-busy", "false")
+      $form.unblock?.()
+    },
+    submit: () => {
+      clearNotices()
+      $form.trigger("submit")
+    },
+    passed: () => {
+      unlockedByShopper = false
+      container()?.setAttribute("data-status", "passed")
+      setMessage(t("passed"))
+      announce(doc, t("passed"))
+      lock()
+    },
+    fail,
+    t,
+    challenging: () => !!turnstile?.challenging(),
   })
+
+  $form.on("checkout_place_order", (event: { stopImmediatePropagation(): void }) => flow.onPlaceOrder(event))
 
   document.addEventListener("click", (event) => {
     const target = event.target as Element | null
-    if (!target || typeof target.closest !== "function" || !target.closest(BUTTON)) return
+    if (!target || typeof target.closest !== "function" || !target.closest(UNLOCK)) return
     event.preventDefault()
-    if (loader.getState().busy) return
-    owned = true
-    lastAnnounced = "" // Announce this attempt's outcome even when it repeats the last one.
-    loader.verify()
+    unlockedByShopper = true
+    unlock()
+    announce(doc, t("unlocked"))
+    const first = document.querySelector<HTMLElement>('[name="billing_first_name"]')
+    first?.focus()
   })
 
-  if ($) {
-    $(document.body).on("updated_checkout", () => {
-      const state = loader.getState()
-      if (state.busy) {
-        render(state)
-        return
-      }
+  $(document.body).on("updated_checkout", () => {
+    if (flow.busy()) return
+    const now = status()
+    if (now === "passed") lock()
+    else if (now !== "pending") {
+      unlockedByShopper = false
+      if (isLocked(form)) unlock()
       // A message the server rendered (ship-to changed, refused) is news too.
-      const text = document.querySelector(`${CONTAINER} ${MESSAGE}`)?.textContent ?? ""
-      if (text && text !== lastAnnounced) lastAnnounced = announce(doc, text)
-      if (focusAfterUpdate) {
-        focusAfterUpdate = false
-        owned = true
-        restoreFocus(state.status === "passed")
-      }
-    })
-  }
+      const text = container()?.querySelector(MESSAGE)?.textContent ?? ""
+      if (text && now !== null) announce(doc, text)
+    }
+  })
 
-  // Back from a full-page redirect, or a reload mid-check: ask once.
-  if (initial === "pending") void loader.refresh()
+  const initial = status()
+  if (initial === "passed") lock()
+  else if (initial === "pending") {
+    // Back from a full-page redirect, or a reload mid-check: ask once.
+    void storeApiTransport({ base: data.storeApi, namespace: data.namespace, restNonce: data.restNonce })("refresh")
+      .then((answer) => {
+        if (answer.status === "passed") {
+          container()?.setAttribute("data-status", "passed")
+          setMessage(t("passed"))
+          announce(doc, t("passed"))
+          lock()
+        }
+      })
+      .catch(() => undefined)
+  }
 }
 
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot)

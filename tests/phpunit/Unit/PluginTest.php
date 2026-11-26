@@ -78,7 +78,8 @@ final class PluginTest extends TestCase {
 		$this->assertNotFalse( has_action( 'woocommerce_blocks_loaded', array( Start::class, 'register_store_api' ) ) );
 		$this->assertNotFalse( has_action( 'woocommerce_api_navexa_agecheck_return', array( ReturnPage::class, 'render' ) ) );
 		$this->assertNotFalse( has_action( 'woocommerce_after_checkout_validation', array( Classic::class, 'validate' ) ) );
-		$this->assertNotFalse( has_action( 'woocommerce_review_order_before_submit', array( Classic::class, 'render_button' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_review_order_before_submit', array( Classic::class, 'render_status' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_checkout_before_customer_details', array( Classic::class, 'render_lock_bar' ) ) );
 		$this->assertNotFalse( has_action( 'woocommerce_checkout_validate_order_before_payment', array( Blocks::class, 'validate' ) ) );
 		$this->assertNotFalse( has_action( 'woocommerce_store_api_checkout_update_order_meta', array( Blocks::class, 'mark_cart_checkout' ) ) );
 		$this->assertNotFalse( has_action( 'woocommerce_blocks_checkout_block_registration', array( Blocks::class, 'register_integration' ) ) );

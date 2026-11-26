@@ -272,10 +272,9 @@ final class CheckoutTest extends TestCase {
 		$this->declined_after_binding( 'order_awaiting_payment', 55 );
 		$this->assertSame( Start::STATUS_PASSED, Start::state( Gate::ROUTE_CLASSIC )['status'] );
 		ob_start();
-		Classic::render_button();
+		Classic::render_status();
 		$html = ob_get_clean();
-		$this->assertStringContainsString( 'data-status="passed"', $html );
-		$this->assertStringNotContainsString( 'data-navexa-agecheck-verify', $html, 'no Verify age button: pressing it would bill a check nothing uses' );
+		$this->assertStringContainsString( 'data-status="passed"', $html, 'passed: Place order goes through without a second, billed check' );
 
 		$errors = new \WP_Error();
 		Classic::validate( $this->posted( $this->us_address() ), $errors );
@@ -291,8 +290,8 @@ final class CheckoutTest extends TestCase {
 		$this->customer_at( $moved );
 		$this->assertSame( Start::STATUS_NONE, Start::state( Gate::ROUTE_CLASSIC )['status'] );
 		ob_start();
-		Classic::render_button();
-		$this->assertStringContainsString( 'data-navexa-agecheck-verify="1"', ob_get_clean() );
+		Classic::render_status();
+		$this->assertStringContainsString( 'data-status="none"', ob_get_clean(), 'Place order opens the age check again' );
 
 		$errors = new \WP_Error();
 		Classic::validate( $this->posted( $moved ), $errors );
@@ -316,46 +315,57 @@ final class CheckoutTest extends TestCase {
 		$this->assertSame( array(), $this->http_requests );
 	}
 
-	public function test_classic_button_shows_the_sessions_state_escaped(): void {
+	public function test_classic_status_shows_the_sessions_state_escaped_with_no_button(): void {
 		$this->customer_at( $this->us_address() );
 		ob_start();
-		Classic::render_button();
+		Classic::render_status();
 		$html = ob_get_clean();
 		$this->assertStringContainsString( 'data-status="none"', $html );
-		$this->assertStringContainsString( 'data-navexa-agecheck-verify="1"', $html );
-		$this->assertStringContainsString( 'Verify age</button>', $html );
+		$this->assertStringContainsString( 'When you place it, you&#039;ll confirm your age in a secure window on this page.', $html );
+		$this->assertStringNotContainsString( '<button', $html, 'no Verify age button: Place order starts the check' );
 
 		$this->guard_for( $this->us_address() );
 		ob_start();
-		Classic::render_button();
+		Classic::render_status();
 		$html = ob_get_clean();
 		$this->assertStringContainsString( 'data-status="passed"', $html );
 		$this->assertStringContainsString( 'Age verified.', $html );
-		$this->assertStringNotContainsString( '<button', $html );
 
 		$this->chosen_methods = array( 'local_pickup' );
 		ob_start();
-		Classic::render_button();
+		Classic::render_status();
 		$this->assertSame( '', ob_get_clean(), 'nothing for pickup' );
 	}
 
-	public function test_classic_button_markup_is_accessible(): void {
+	public function test_classic_status_markup_is_accessible(): void {
 		$this->customer_at( $this->us_address() );
 		ob_start();
-		Classic::render_button();
+		Classic::render_status();
 		$html = ob_get_clean();
-		$this->assertStringContainsString( '<p class="navexa-agecheck__message" id="navexa-agecheck-message" tabindex="-1"', $html, 'focus target once the button is gone' );
-		$this->assertStringContainsString( 'aria-describedby="navexa-agecheck-message"', $html );
+		$this->assertStringContainsString( '<p class="navexa-agecheck__message" id="navexa-agecheck-message" tabindex="-1"', $html, 'a focus target for the glue' );
 		$this->assertStringContainsString( 'aria-busy="false"', $html );
-		$this->assertStringContainsString( '<button type="button"', $html, 'a native button: keyboard operable' );
-		$this->assertStringNotContainsString( ' disabled', $html );
 		$this->assertStringNotContainsString( 'aria-live', $html, 'the replaced fragment is not the live region; the glue keeps one outside it' );
 		$this->assertStringNotContainsString( 'data-navexa-agecheck-turnstile', $html, 'no Turnstile container while Turnstile is off' );
 
 		$this->options[ \Navexa\AgeCheck\Options::TURNSTILE ] = 'yes';
 		ob_start();
-		Classic::render_button();
+		Classic::render_status();
 		$this->assertStringContainsString( '<div class="navexa-agecheck__turnstile" data-navexa-agecheck-turnstile="1" role="group" aria-label="Security check" tabindex="-1"></div>', ob_get_clean(), 'a focusable, named group for an interactive challenge' );
+	}
+
+	public function test_classic_lock_bar_is_hidden_until_the_glue_locks_and_only_on_a_restricted_cart(): void {
+		$this->customer_at( $this->us_address() );
+		ob_start();
+		Classic::render_lock_bar();
+		$html = ob_get_clean();
+		$this->assertStringContainsString( 'data-navexa-agecheck-lock="1" hidden style="display:none"', $html );
+		$this->assertStringContainsString( 'Your name and address are locked to your age check.', $html );
+		$this->assertStringContainsString( '<button type="button" class="button" data-navexa-agecheck-unlock="1">Change details</button>', $html );
+
+		$this->options[ \Navexa\AgeCheck\Options::MODE ] = \Navexa\AgeCheck\Options::MODE_ACCEPT_AND_HOLD;
+		ob_start();
+		Classic::render_lock_bar();
+		$this->assertSame( '', ob_get_clean(), 'not in after-payment mode' );
 	}
 
 	public function test_classic_enqueues_only_on_the_classic_checkout(): void {
@@ -647,10 +657,10 @@ final class CheckoutTest extends TestCase {
 		$this->assertSame( array( Gate::message( Gate::REFUSE_VERIFY_FIRST ) ), $errors->messages, 'the new draft needs its own check' );
 	}
 
-	/** The classic button's data-status, as rendered. */
+	/** The classic status's data-status, as rendered. */
 	private function classic_status(): string {
 		ob_start();
-		Classic::render_button();
+		Classic::render_status();
 		return preg_match( '/data-status="([a-z]+)"/', (string) ob_get_clean(), $m ) ? $m[1] : '';
 	}
 
@@ -675,7 +685,7 @@ final class CheckoutTest extends TestCase {
 
 		// Back to A. The Store API no longer resumes 56: it creates a new
 		// draft, which the check bound to 56 cannot admit. The block must say
-		// so and offer Verify age, not show passed for a Place order the gate
+		// so and open the age check at Place order, not show passed for a Place order the gate
 		// refuses (the dead end).
 		$this->customer_at( $this->us_address() );
 		$state = Start::endpoint_data();

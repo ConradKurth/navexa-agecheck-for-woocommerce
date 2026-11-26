@@ -395,7 +395,9 @@ final class StartTest extends TestCase {
 		$this->assertArrayNotHasKey( '_required', $answer );
 
 		$this->customer_at( $this->us_address( array( 'address_1' => '' ) ) );
-		$this->assertSame( 'Enter your full shipping address, then verify your age.', $this->start()['message'] );
+		$answer = $this->start();
+		$this->assertSame( 'Enter your full shipping address, then place your order.', $answer['message'] );
+		$this->assertSame( Start::CODE_NO_ADDRESS, $answer['code'], 'the classic glue lets WooCommerce show its field errors' );
 
 		$this->customer_at( $this->us_address( array( 'address_1' => '' ) ), $this->us_address( array( 'country' => 'MX' ) ) );
 		self::$wc->cart->needs_shipping = false;
@@ -414,6 +416,26 @@ final class StartTest extends TestCase {
 		$this->assertStringContainsString( 'reason=no_start_key', $this->all_logs() );
 	}
 
+	public function test_refusals_carry_a_machine_code_for_the_glue(): void {
+		$this->assertSame( Start::CODE_OUTDATED, Start::answer( array( 'v' => 2, 'action' => 'start' ) )['code'] );
+		$this->chosen_methods = array( 'local_pickup' );
+		$this->assertSame( Start::CODE_PICKUP, $this->start()['code'] );
+		$this->chosen_methods = array( 'flat_rate' );
+		$this->options[ Options::MODE ] = Options::MODE_ACCEPT_AND_HOLD;
+		$this->assertSame( Start::CODE_NOT_REQUIRED, $this->start()['code'] );
+		unset( $this->options[ Options::MODE ] );
+		$this->customer_at( $this->us_address( array( 'country' => 'CA', 'state' => 'ON', 'postcode' => 'M5V 2T6' ) ) );
+		$this->assertSame( Start::CODE_US_ONLY, $this->start()['code'] );
+		$state = Start::state( Gate::ROUTE_STORE_API );
+		$this->assertSame( Start::CODE_US_ONLY, $state['code'], 'the cart data says why too' );
+		$this->customer_at( $this->us_address() );
+		$this->respond( 503, array( 'code' => 'unavailable' ) );
+		$answer = $this->start();
+		$this->assertSame( array( 'v', 'status', 'message', 'code' ), array_keys( $answer ) );
+		$this->assertSame( Start::CODE_UNAVAILABLE, $answer['code'] );
+		$this->assertArrayNotHasKey( 'code', Start::state( Gate::ROUTE_STORE_API ), 'no code without a refusal' );
+	}
+
 	public function test_starts_are_rate_limited_per_session_and_per_ip(): void {
 		for ( $i = 0; $i < 10; $i++ ) {
 			$this->respond( 503, array( 'code' => 'unavailable' ) );
@@ -422,6 +444,7 @@ final class StartTest extends TestCase {
 		$answer = $this->start();
 		$this->assertSame( 'unavailable', $answer['status'] );
 		$this->assertStringContainsString( 'Too many age check attempts', $answer['message'] );
+		$this->assertSame( Start::CODE_RATE_LIMITED, $answer['code'] );
 		$this->assertCount( 10, $this->http_requests, 'the 11th start in an hour never reached AgeCheck' );
 
 		// A fresh sid in the same WooCommerce session is the same session.
@@ -832,12 +855,15 @@ final class StartTest extends TestCase {
 		$this->assertSame( 'navexa-agecheck', $registered['data']['namespace'] );
 		$this->assertSame( array( Start::class, 'endpoint_data' ), $registered['data']['data_callback'] );
 		$this->assertSame( array( Start::class, 'handle' ), $registered['update']['callback'] );
-		$this->assertSame( array( 'v', 'required', 'status', 'hosted_url', 'message' ), array_keys( Start::endpoint_schema() ) );
+		$this->assertSame( array( 'v', 'required', 'status', 'hosted_url', 'message', 'code' ), array_keys( Start::endpoint_schema() ) );
+		$this->assertSame( Start::CODES, Start::endpoint_schema()['code']['enum'] );
 	}
 
 	public function test_is_hosted_url(): void {
 		$this->assertTrue( Start::is_hosted_url( self::HOSTED ) );
 		$this->assertTrue( Start::is_hosted_url( 'http://localhost:8787/v/a.b' ) );
+		$this->assertTrue( Start::is_hosted_url( 'http://127.0.0.1:8787/v/a.b' ), 'loopback: the browser tests frame the mock cross-site' );
+		$this->assertFalse( Start::is_hosted_url( 'http://127.0.0.2:8787/v/a.b' ) );
 		$this->assertFalse( Start::is_hosted_url( 'http://shop.example/v/a.b' ) );
 		$this->assertFalse( Start::is_hosted_url( 'https://verify.navexa.co/v/a' ) );
 		$this->assertFalse( Start::is_hosted_url( 'https://verify.navexa.co/v/a.b/c' ) );

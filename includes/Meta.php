@@ -365,7 +365,9 @@ final class Meta {
 
 	/**
 	 * Records that the order may leave the hold (unsaved): STATUS_CLEARED or
-	 * STATUS_OVERRIDE, tied to this order.
+	 * STATUS_OVERRIDE, tied to this order. Drops RETRY_OPEN and a manual
+	 * refund listing (a denied order released by a merchant override in
+	 * AgeCheck's dashboard, or by staff), which no longer apply.
 	 *
 	 * @param \WC_Order $order Order (with an id).
 	 * @param string    $state STATUS_CLEARED or STATUS_OVERRIDE.
@@ -373,6 +375,12 @@ final class Meta {
 	public static function mark_released( \WC_Order $order, string $state ): void {
 		self::set( $order, self::STATUS, $state );
 		self::set( $order, self::RELEASED_FOR, self::owner_tag( $order ) );
+		// Nothing waits on a retry or a refund once the order ships.
+		self::set( $order, self::RETRY_OPEN, '' );
+		if ( self::REFUND_MANUAL === self::get( $order, self::REFUND ) ) {
+			self::set( $order, self::REFUND, '' );
+			Admin\Notices::flush_counts();
+		}
 	}
 
 	/**

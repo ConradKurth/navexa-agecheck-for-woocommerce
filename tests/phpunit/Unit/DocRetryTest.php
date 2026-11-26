@@ -267,6 +267,71 @@ final class DocRetryTest extends TestCase {
 		$this->respond( 200, $this->passed( 'PASS_CLASS_MERCHANT_OVERRIDE' ) );
 		$this->assertSame( Release::RELEASED, Release::run( $order->get_id(), Release::TRIGGER_WEBHOOK ) );
 		$this->assertSame( 'processing', $order->get_status() );
+		// TAX-1887: released, so it leaves the manual refund list.
+		$this->assertArrayNotHasKey( Meta::REFUND, $order->saved_meta );
+	}
+
+	public function test_a_release_clears_the_retry_flag(): void {
+		$order                                    = $this->opted_in_order();
+		$order->meta[ Meta::RETRY_UNTIL ]         = time() + 3600;
+		$order->meta[ Meta::RETRY_OPEN ]          = 'yes';
+		$order->meta[ Meta::VERIFICATION_STATUS ] = 'failed';
+		$order->meta[ Meta::REASON ]              = DocRetry::REASON;
+		$this->respond( 200, $this->live_info( array( 'docRetry' => true ) ) );
+		$this->respond( 200, $this->clearance( 'CLEARED', 'verified' ) );
+		$this->assertSame( Release::RELEASED, Release::run( $order->get_id(), Release::TRIGGER_WEBHOOK ) );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertArrayNotHasKey( Meta::RETRY_OPEN, $order->saved_meta );
+		$this->assertArrayNotHasKey( Meta::REASON, $order->saved_meta );
+	}
+
+	public function test_a_test_verification_window_ends_at_the_test_bound(): void {
+		// AgeCheck caps a test verification's retry at its creation + 3 days
+		// (domain.DocRetryCreatedBound(true)); a live one at + 26 days.
+		$this->assertSame( 3 * DAY_IN_SECONDS, DocRetry::CREATED_BOUND_TEST );
+		$this->assertSame( 26 * DAY_IN_SECONDS, DocRetry::CREATED_BOUND );
+		$this->assertSame( DocRetry::CREATED_BOUND_TEST, DocRetry::created_bound( true ) );
+		$this->assertSame( DocRetry::CREATED_BOUND, DocRetry::created_bound( false ) );
+
+		$created  = time() - DAY_IN_SECONDS;
+		$failed   = time() - 600;
+		$test     = $this->opted_in_order();
+		$live     = $this->opted_in_order();
+		$test->meta[ Meta::BOUND_AT ] = $created;
+		$live->meta[ Meta::BOUND_AT ] = $created;
+		$this->assertSame( $created + DocRetry::CREATED_BOUND_TEST, DocRetry::anchor( $test, $failed, $created, true ) );
+		$this->assertSame( $failed + DocRetry::WINDOW, DocRetry::anchor( $live, $failed, $created ) );
+
+		// A test window already recorded at 7 days moves to the test bound.
+		$old                             = $this->opted_in_order();
+		$old->meta[ Meta::BOUND_AT ]     = $created;
+		$old->meta[ Meta::RETRY_UNTIL ]  = $failed + DocRetry::WINDOW;
+		$this->respond( 200, $this->hosted() );
+		$verification              = $this->failed( gmdate( 'Y-m-d\TH:i:s\Z', $failed ) )['verification'];
+		$verification['createdAt'] = gmdate( 'Y-m-d\TH:i:s\Z', $created );
+		$this->assertTrue( DocRetry::defer( $old, $verification, $this->fulfilment_client(), DocRetry::MODE_TEST ) );
+		$this->assertSame( $created + DocRetry::CREATED_BOUND_TEST, (int) $old->meta[ Meta::RETRY_UNTIL ] );
+		$this->assertSame( DocRetry::REASON_TEST, $old->meta[ Meta::REASON ] );
+		$this->assertTrue( DocRetry::is_reason( DocRetry::REASON_TEST ) );
+		$this->assertTrue( DocRetry::is_reason( DocRetry::REASON ) );
+		$this->assertFalse( DocRetry::is_reason( 'test_mode' ) );
+	}
+
+	public function test_a_test_failure_webhook_anchors_at_the_test_bound(): void {
+		$this->options[ Options::WEBHOOK_SECRET ] = self::SECRET;
+		$order                                    = $this->opted_in_order();
+		$order->meta[ Meta::BOUND_AT ]            = time() - DAY_IN_SECONDS;
+		$failed                                   = time() - 600;
+		$body = json_decode( $this->event( $order, 'failed', 'ace_t1', gmdate( 'Y-m-d\TH:i:s\Z', $failed ) ), true );
+		$body['livemode'] = false;
+		Webhook::handle( $this->signed( wp_json_encode( $body ) ) );
+		$this->assertSame( (int) $order->meta[ Meta::BOUND_AT ] + DocRetry::CREATED_BOUND_TEST, (int) $order->meta[ Meta::RETRY_UNTIL ] );
+
+		// A live event keeps the 7-day window.
+		$live                         = $this->opted_in_order();
+		$live->meta[ Meta::BOUND_AT ] = time() - DAY_IN_SECONDS;
+		Webhook::handle( $this->signed( $this->event( $live, 'failed', 'ace_l1', gmdate( 'Y-m-d\TH:i:s\Z', $failed ) ) ) );
+		$this->assertSame( $failed + DocRetry::WINDOW, (int) $live->meta[ Meta::RETRY_UNTIL ] );
 	}
 
 	/** A held order bound to a verification this plugin created with the opt-in. */

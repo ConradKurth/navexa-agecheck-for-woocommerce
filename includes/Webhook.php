@@ -218,7 +218,12 @@ final class Webhook {
 		if ( 'failed' === $state ) {
 			// TAX-1838: the window runs from this failure's own time, however
 			// late the release run reads it.
-			DocRetry::observe_failure( $order, isset( $event['occurred_at'] ) && is_string( $event['occurred_at'] ) ? $event['occurred_at'] : '' );
+			// A test verification's window has AgeCheck's shorter test bound.
+			DocRetry::observe_failure(
+				$order,
+				isset( $event['occurred_at'] ) && is_string( $event['occurred_at'] ) ? $event['occurred_at'] : '',
+				isset( $event['livemode'] ) && false === $event['livemode']
+			);
 		}
 		if ( ! Release::enqueue( $order->get_id(), Release::TRIGGER_WEBHOOK ) ) {
 			// handle() drops the claim and answers 500, so AgeCheck redelivers.

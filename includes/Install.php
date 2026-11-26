@@ -24,6 +24,9 @@ defined( 'ABSPATH' ) || exit;
  * administrator confirms the site, which rotates the install_id and the guard
  * secret. Orders bound before the rotation keep the external id stored in
  * their meta; it is never recomputed.
+ *
+ * OPTION_VERSION is the running version: written at install, kept current
+ * after updates by Upgrade.
  */
 final class Install {
 

@@ -210,9 +210,12 @@ final class ReleaseRaceTest extends TestCase {
 		$this->assertSame( Release::TEST_MODE, Release::run( $order->get_id(), Release::TRIGGER_WEBHOOK ) );
 		$this->assertSame( array( 'GetIntegrationInfo', 'GetVerification', 'CreateHostedSession' ), $this->rpcs() );
 		$this->reload( $order );
-		$this->assertSame( $decided + DocRetry::WINDOW, (int) $order->meta[ Meta::RETRY_UNTIL ] );
+		// TAX-1887: a test verification's window ends at AgeCheck's test
+		// bound (3 days after its creation), not 7 days after the failure.
+		$this->assertSame( (int) $order->meta[ Meta::BOUND_AT ] + DocRetry::CREATED_BOUND_TEST, (int) $order->meta[ Meta::RETRY_UNTIL ] );
 		$this->assertSame( 'yes', $order->meta[ Meta::RETRY_OPEN ] );
-		$this->assertSame( DocRetry::REASON, $order->meta[ Meta::REASON ] );
+		$this->assertSame( DocRetry::REASON_TEST, $order->meta[ Meta::REASON ] );
+		$this->assertStringNotContainsString( 'refund waits', Release::reason_text( $order->meta[ Meta::REASON ] ), 'the panel promises no refund either' );
 		$this->assertTrue( DocRetry::open( $order ) );
 		$this->assertTrue( OrderVerify::needs_shopper( $order ) );
 		$notes = implode( "\n", $order->notes );
@@ -281,6 +284,16 @@ final class ReleaseRaceTest extends TestCase {
 		$this->assertSame( Release::PENDING, Release::run( $order->get_id(), Release::TRIGGER_WEBHOOK ) );
 		$this->assertSame( Meta::STATUS_PENDING, $order->meta[ Meta::STATUS ], 'not denied while the retry is open' );
 		$this->assertTrue( DocRetry::open( $order ) );
+		// TAX-1887: the test bound, and no refund promised by the note or
+		// the panel's reason (a test key never refunds).
+		$this->assertSame( (int) $order->meta[ Meta::BOUND_AT ] + DocRetry::CREATED_BOUND_TEST, (int) $order->meta[ Meta::RETRY_UNTIL ] );
+		$this->assertSame( DocRetry::REASON_TEST, $order->meta[ Meta::REASON ] );
+		$notes = implode( "\n", $order->notes );
+		$this->assertStringContainsString( 'may try again until', $notes );
+		$this->assertStringContainsString( 'Test keys never refund orders', $notes );
+		$this->assertStringNotContainsString( 'refund waits', $notes );
+		$this->assertStringNotContainsString( 'refund waits', Release::reason_text( DocRetry::REASON_TEST ) );
+		$this->assertStringContainsString( 'refund waits', Release::reason_text( DocRetry::REASON ), 'a live key\'s reason still says so' );
 	}
 
 	/** Emulates the next request's read: only saved meta survives. */

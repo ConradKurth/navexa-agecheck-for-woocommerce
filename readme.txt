@@ -238,6 +238,12 @@ The plugin sends no telemetry.
 
 == Changelog ==
 
+= Unreleased =
+* Test keys: the "may try again until" date matches AgeCheck's (a test age check can be retried for at most 3 days after it started), and the order note and panel no longer say a refund waits: test keys never refund orders.
+* A released order no longer keeps the retry flag, nor a "denied, refund required" listing (a denied order released by a merchant override in the AgeCheck dashboard, or by staff).
+* After the update, orders that 1.1.0 released after listing them under "AgeCheck: denied, refund required" are taken off that list once, with a note. Only orders AgeCheck cleared and the plugin released, as its own order notes show, are changed.
+* The plugin's stored version now follows updates (it kept the version first installed).
+
 = 1.1.1 =
 * Fix: an order that was denied (and refunded, or listed for a refund) is never released on its own when the shopper passes later, whether or not the order's age check could be retried. Staff decide: release it without age check, or cancel it.
 * Fix: a clearance answer AgeCheck repeats from an earlier attempt no longer makes a passed age check look expired. The plugin asks again before it starts a new age check, and it never drops a denied order's age check.

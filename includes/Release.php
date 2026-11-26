@@ -334,11 +334,12 @@ final class Release {
 	 * the order's verification: GetVerification (a read, which spends
 	 * nothing) records its status and pass class for the panel, and a note
 	 * says when the shopper's check has passed or failed. It never releases or
-	 * denies. A failure the shopper may still retry (DocRetry::defer(), the
-	 * same window as a live key's) is recorded as such, so the order page
-	 * offers Try again with a test key too; its note promises no refund. When
-	 * that retry closes with the check still failed, the "cancel it yourself"
-	 * note follows once. Panel-only: a failure is logged and the run goes on.
+	 * denies. A failure the shopper may still retry (DocRetry::defer(), a
+	 * live key's window within AgeCheck's 3-day test bound) is recorded as
+	 * such, so the order page offers Try again with a test key too; its note
+	 * and reason promise no refund. When that retry closes with the check
+	 * still failed, the "cancel it yourself" note follows once. Panel-only: a
+	 * failure is logged and the run goes on.
 	 *
 	 * @param \WC_Order $order  Order.
 	 * @param Client    $client Fulfilment-key client.
@@ -363,13 +364,13 @@ final class Release {
 		}
 		// Waiting on a retry before this run: a reason the caller has not
 		// replaced yet, or AgeCheck's last answer that it may be retried.
-		$was_waiting = DocRetry::REASON === Meta::get( $order, Meta::REASON ) || 'yes' === Meta::get( $order, Meta::RETRY_OPEN );
+		$was_waiting = DocRetry::is_reason( Meta::get( $order, Meta::REASON ) ) || 'yes' === Meta::get( $order, Meta::RETRY_OPEN );
 		$status      = Binding::record_verification( $order, $verification );
 		$retry       = false;
 		$closed      = false;
 		if ( 'failed' === $status && DocRetry::opted_in( $order ) ) {
 			try {
-				$retry  = DocRetry::defer( $order, $verification, $client, false );
+				$retry  = DocRetry::defer( $order, $verification, $client, DocRetry::MODE_TEST );
 				$closed = ! $retry && $was_waiting;
 			} catch ( ConnectError $e ) {
 				Client::log( 'warning', sprintf( 'agecheck release order=%d vid=%s test retry check failed code=%s', $order->get_id(), $vid, $e->connect_code() ) );
@@ -497,8 +498,8 @@ final class Release {
 		$verification = isset( $answer['verification'] ) && is_array( $answer['verification'] ) ? $answer['verification'] : array();
 		$status       = Binding::record_verification( $order, $verification );
 		if ( 'failed' === $status ) {
-			if ( DocRetry::defer( $order, $verification, $client ) ) {
-				// TAX-1838: the shopper may still try again; the refund waits.
+			if ( DocRetry::defer( $order, $verification, $client, $info->livemode ? DocRetry::MODE_LIVE : DocRetry::MODE_TEST_RELEASE ) ) {
+				// TAX-1838: the shopper may still try again; the denial waits.
 				$order->save_meta_data();
 				return self::PENDING;
 			}
@@ -771,6 +772,7 @@ final class Release {
 			'verification_purged'          => __( 'The shopper\'s age check expired before the order was released.', 'navexa-agecheck-for-woocommerce' ),
 			'passed_after_denial'          => __( 'The shopper passed the age check after the order was denied. Check whether it was refunded, then release it without age check or cancel it.', 'navexa-agecheck-for-woocommerce' ),
 			'retry_possible'               => __( 'The shopper did not pass the age check but may try again; a refund waits until then. Do not ship.', 'navexa-agecheck-for-woocommerce' ),
+			'retry_possible_test'          => __( 'The shopper did not pass the age check but may try again. Test keys never refund orders. Do not ship.', 'navexa-agecheck-for-woocommerce' ),
 			'outage_fallback'              => __( 'Taken without an age check while age verification was unavailable at checkout. It stays held until the shopper verifies by the emailed link or from their order page.', 'navexa-agecheck-for-woocommerce' ),
 		);
 		if ( isset( $texts[ $reason ] ) ) {

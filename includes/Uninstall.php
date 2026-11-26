@@ -45,6 +45,7 @@ final class Uninstall {
 	const USER_META_LINKS  = 'navexa_agecheck_dismissed_links';
 	const USER_META_TEST   = 'navexa_agecheck_dismissed_test';
 	const USER_META_PAUSED = 'navexa_agecheck_dismissed_paused';
+	const USER_META_CAPPED = 'navexa_agecheck_dismissed_capped';
 	const HOLD_STATUS      = 'wc-agecheck-hold';
 	const HELD_BATCH       = 100;
 	const HELD_MAX_ORDERS  = 5000;
@@ -73,6 +74,7 @@ final class Uninstall {
 		delete_metadata( 'user', 0, self::USER_META_LINKS, '', true );
 		delete_metadata( 'user', 0, self::USER_META_TEST, '', true );
 		delete_metadata( 'user', 0, self::USER_META_PAUSED, '', true );
+		delete_metadata( 'user', 0, self::USER_META_CAPPED, '', true );
 	}
 
 	/**

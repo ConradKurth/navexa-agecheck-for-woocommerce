@@ -44,6 +44,14 @@ final class Meta {
 	const PREVIOUS_VERIFICATION_IDS = '_navexa_agecheck_previous_vids';
 
 	/**
+	 * Set to outage:{unix time} when pre-payment checkout took the order
+	 * without a check because AgeCheck was down and the store takes and holds
+	 * orders then (TAX-1841, Checkout\Gate::admitted_fallback()). The order
+	 * verifies on the order-bound path like any order placed without the gate.
+	 */
+	const FALLBACK = '_navexa_agecheck_fallback';
+
+	/**
 	 * The order_external_id sent to AgeCheck, wc:{install_id}:{blog_id}:{order_id}.
 	 * Stored once and never recomputed: confirming a copied site rotates the
 	 * install_id.

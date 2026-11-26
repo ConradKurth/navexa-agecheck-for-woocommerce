@@ -126,6 +126,9 @@ final class OrderPanel {
 		if ( '' !== $reason && ! Meta::is_released( $order ) ) {
 			$rows[ __( 'Why', 'navexa-agecheck-for-woocommerce' ) ] = Release::reason_text( $reason );
 		}
+		if ( '' !== Meta::get( $order, Meta::FALLBACK ) ) {
+			$rows[ __( 'Checkout', 'navexa-agecheck-for-woocommerce' ) ] = Release::reason_text( 'outage_fallback' );
+		}
 		$vid = Meta::get( $order, Meta::VERIFICATION_ID );
 		if ( '' !== $vid ) {
 			$status = Meta::get( $order, Meta::VERIFICATION_STATUS );

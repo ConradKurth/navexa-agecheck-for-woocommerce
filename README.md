@@ -15,6 +15,7 @@ Status: **W0 scaffold + W1 hold core + W2 pre-payment**, merged; **W4 hardening*
 | `includes/Settings.php` | WooCommerce > Settings > AgeCheck (`WC_Settings_Page`; loaded only from `woocommerce_get_settings_pages`) |
 | `includes/Client.php`, `ConnectError.php` | Connect unary JSON over `wp_remote_post`; 8 s timeout, one attempt, fail closed |
 | `includes/Mode.php`, `IntegrationInfo.php` | `GetIntegrationInfo` cached 1 h (failures 60 s), last livemode per key kept for the TEST MODE banner; live/test gate rules |
+| `includes/Availability.php` | `GetCheckAvailability` (TAX-1841): AVAILABLE, ORG_DAILY_LIMIT, SERVICE_UNAVAILABLE, or OUTAGE/REFUSED/UNKNOWN when AgeCheck gave no such answer; answers cached 60 s, outages 10 s; feeds the "When AgeCheck is down" fallback (`Options::OUTAGE_FALLBACK`, refuse by default) |
 | `includes/Meta.php` | Every order meta key (`_navexa_agecheck_*`) and the TEST note prefix |
 | `includes/Requirement.php` | Which orders and carts need a check: store rule (all / include / exclude categories and tags), per-product setting, exempt customer roles, local pickup skipped (the one pickup list, `pickup_method_ids()`), orders from before activation skipped; sticky once required |
 | `includes/Hold.php` | `wc-agecheck-hold` status; `payment_complete` interception; the pre-save backstop; refused exits; release to the intercepted status; the logged override |
@@ -61,6 +62,7 @@ Status: **W0 scaffold + W1 hold core + W2 pre-payment**, merged; **W4 hardening*
 | `tests/e2e/prepayment-browser.mjs` | The W2 flow in Chromium, WebKit and Firefox (Playwright), and the W4 keyboard and focus checks |
 | `tests/wp-env/gate-setup.php`, `tests/e2e/gate-browser.mjs` | The entry gate in real WordPress: which pages carry it, page-cache safety and exclusions over HTTP (`--http-only`, in CI), the optimizer opt-out attributes on both script tags, and the dialog in Chromium (ARIA, focus trap, Escape, remember, 0 days per tab with old localStorage answers ignored, the page's own `aria-hidden` put back, a theme's `html{font-size:62.5%}` and button rules not restyling it, exit page, no third-party request) |
 | `tests/wp-env/w3b.php`, `w3b.mjs`, `w3b-setup.php` | W3 PRs 12 and 14 in real WordPress: links on held orders (send, resend through Order actions with a real nonce and capability, the 5-a-day budget, withdraw, links off and no display name recorded once for the store with the notice, the return step, the kill switch), `customer_ref` on order-bound creates and the CLI cart's start, reuse on and off; over HTTP a signed-in shopper's Store API start, reuse at checkout, and "Verify now" from the order-received page through the hosted page and back, and on My account |
+| `tests/wp-env/outage-fallback-setup.php`, `outage-fallback.mjs`, `outage-fallback-orders.php` | TAX-1841 in real WordPress: the store takes and holds orders while AgeCheck is down; classic and block checkout with the engine down and with its ID check unavailable, a refused block draft placed again, a ship-to change, a failed check before and after a restart (never admitted); then each order taken that way held, verified by an order-bound check and its emailed link, and released on CLEARED; the setting off while AgeCheck reports links off |
 | `tests/wp-env/w5.php` | W5 in real WordPress: held orders emailed a link, then cancelled, refunded in part and in full, failed, trashed (`WC_Order::delete()`, and `wp_trash_post()` on the posts table) and deleted for good (straight away, and from the trash before its run); the status change makes no call, Action Scheduler's own runner runs the withdrawal; an outage retried with the same key, a refusal recorded, an order restored before the run, a copied order, a failed order paid again after its link was withdrawn, the sweep re-queuing a withdrawal left pending |
 | `.wordpress-org/` | wordpress.org listing assets (icon, banner, screenshots 1-4 named in readme.txt); uploaded to the plugin's SVN `assets/` directory, never in the zip |
 | `bin/build-zip.sh`, `bin/verify-zip.sh` | W5 release tooling: the reproducible distributable zip with SHA256SUMS, and its install, activate and uninstall check in a throwaway wp-env |
@@ -109,6 +111,14 @@ node tests/wp-env/prepayment.mjs --site http://localhost:8888 --mock http://loca
   --exempt <exempt_product> --order-pay <order_pay>
 # the orders that flow placed: bound by AttachOrder, held, released; reused drafts not held; the order-pay order bound by an order-bound check
 npm run env -- run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp eval-file tests/wp-env/prepayment-orders.php
+# TAX-1841 outage fallback (needs prepayment-setup.php first; waits 61 s once for the cached availability answer)
+npm run env -- run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp eval-file tests/wp-env/outage-fallback-setup.php
+node tests/wp-env/outage-fallback.mjs --site http://localhost:8888 --mock http://localhost:8787 --product <product> --classic <classic_checkout>
+npm run env -- run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp eval-file tests/wp-env/outage-fallback-orders.php
+# the "hold" status in browsers (after the three above, while the setting is still hold)
+node tests/e2e/prepayment-browser.mjs --site http://localhost:8888 --mock http://localhost:8787 \
+  --product <product> --block <block_checkout> --classic <classic_checkout> --browsers chromium,webkit --outage-hold
+# then set it back for the rest: wp option update navexa_agecheck_outage_fallback refuse
 # W3 PRs 12 and 14 (needs prepayment-setup.php first): links, customer_ref and reuse on real orders, then over HTTP
 npm run env -- run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp eval-file tests/wp-env/w3b.php
 node tests/wp-env/w3b.mjs --site http://localhost:8888 --mock http://localhost:8787 --product <product>

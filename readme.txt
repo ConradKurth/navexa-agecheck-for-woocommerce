@@ -102,6 +102,10 @@ With "Hide express checkout buttons on age-restricted carts and products" on (th
 
 If an express order still gets through (another payment plugin, a setting turned off, or a cart that changed after the page loaded): when it goes through WooCommerce's checkout in "Before payment" mode it is refused before payment with "Verify your age on the checkout page"; and whichever way it is placed, a paid age-restricted order is held as "Awaiting age check" until AgeCheck clears it. Some express flows create the order without WooCommerce's checkout (for example PayPal's "Pay now" experience); those are held after payment.
 
+= What happens when AgeCheck is down? =
+
+By default, "Before payment" checkout refuses age-restricted orders while AgeCheck cannot run the check, and the shopper tries again later. With "When AgeCheck is down" set to "Take the order and hold it", a shopper whose check could not run (AgeCheck not answering, or its ID check unavailable) may place the order; it stays "Awaiting age check", unshipped, until they verify with the link AgeCheck emails them or from their order page. It is never offered after a failed check. The setting stays refusing while AgeCheck cannot email your shoppers a link (verification emails off at AgeCheck, or no store display name in the AgeCheck dashboard). When your store has used its own daily ID checks, orders are refused either way.
+
 = What if a shopper fails the age check? =
 
 The order is never released. Depending on your setting, it is refunded through the payment gateway (when the gateway can refund by API) or listed under "AgeCheck: denied, refund required" for you to refund.
@@ -114,7 +118,7 @@ The plugin fails closed: no age-restricted order skips its check because AgeChec
 * Every paid age-restricted order already placed stays in "Awaiting age check": one that passed at checkout (normally released at once), orders accepted in "After payment" mode or on the "pay for order" page, and express orders placed without the checkout. The plugin keeps asking AgeCheck about them, with retries after a failed attempt and a check of held orders every 15 minutes (100 orders at a time), and releases each one once AgeCheck clears it. If AgeCheck answers with an error instead of not answering, the order gets a note and the check of held orders asks about it again after 6 hours. Meanwhile, a shopper who selects "Verify now" on their order page is told "Age verification is temporarily unavailable".
 * You can still release an order yourself with "AgeCheck: release without age check".
 
-There is no setting that lets orders through during an outage.
+No setting ships an order without a passed age check. The one outage setting, "When AgeCheck is down" (above), only lets a new "Before payment" order be placed and held until the shopper verifies.
 
 = Can I release a held order myself? =
 
@@ -188,6 +192,7 @@ The plugin sends no telemetry.
 * Returning guests: while AgeCheck's returning-customer check is on for your account and your store has a name in the AgeCheck dashboard, the Verify age start sends a guest's billing email, so a guest who passed here recently can skip a new check with a one-time code AgeCheck emails them. Signed-in customers are still matched by their account. If AgeCheck refuses the email, the check starts without it.
 * The AgeCheck settings tab shows whether returning customers are reused, and for how many days.
 * The suggested privacy policy text mentions the guest email.
+* New setting "When AgeCheck is down" (Before payment mode; refuses by default): "Take the order and hold it" lets a shopper whose age check could not run, because AgeCheck was not answering or its ID check was unavailable, place the order. It stays "Awaiting age check", unshipped, until they verify with the emailed link or from their order page. It is never offered after a failed check, and stays off while AgeCheck cannot email your shoppers a link. When your store has used its daily ID checks, orders are refused with a generic message.
 
 = 1.0.4 =
 * Fix: after a declined payment, checkout no longer asks the shopper to verify their age again. The order is already tied to their age check, so retrying the payment (for example with another card) places it without a second check, which AgeCheck would have billed. Changing the shipping address or the cart after a declined payment still needs a new age check.

@@ -140,8 +140,9 @@ final class Mode {
 		update_option(
 			Options::STORE_PROFILE,
 			array(
-				'minimum_age'  => $info->minimum_age,
-				'display_name' => $info->display_name,
+				'minimum_age'   => $info->minimum_age,
+				'display_name'  => $info->display_name,
+				'links_enabled' => $info->links_enabled,
 			),
 			true
 		);

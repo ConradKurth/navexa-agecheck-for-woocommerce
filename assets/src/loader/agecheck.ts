@@ -26,7 +26,7 @@
 
 export const LOADER_VERSION = "1.0.0"
 
-export type Status = "none" | "pending" | "passed" | "failed" | "refused" | "unavailable"
+export type Status = "none" | "pending" | "passed" | "failed" | "refused" | "unavailable" | "hold"
 export type Action = "start" | "refresh"
 
 /** The store's answer: {v: 1, status, hosted_url?, message?}. */
@@ -105,7 +105,7 @@ export const RETURN_STORAGE_KEY = "navexa-agecheck-return"
 export const REDIRECT_STORAGE_KEY = "navexa-agecheck-redirect"
 const POPUP_FEATURES = "popup,width=480,height=760"
 const TERMINAL = new Set(["passed", "failed"])
-const STATUSES = new Set<Status>(["none", "pending", "passed", "failed", "refused", "unavailable"])
+const STATUSES = new Set<Status>(["none", "pending", "passed", "failed", "refused", "unavailable", "hold"])
 
 /**
  * The session token and status endpoint of a hosted page link

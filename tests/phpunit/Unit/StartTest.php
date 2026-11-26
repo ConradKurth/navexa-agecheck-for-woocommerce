@@ -37,6 +37,9 @@ final class StartTest extends TestCase {
 		Mode::info( Client::KEY_START );
 		$this->http_requests = array();
 		$this->customer_at( $this->us_address() );
+		// AgeCheck can run the ID check (TAX-1841); the outage tests below
+		// change it.
+		$this->cache_availability();
 	}
 
 	private function start(): array {

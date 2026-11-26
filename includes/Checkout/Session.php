@@ -49,6 +49,31 @@ final class Session {
 	 */
 	const KEY_VID = 'navexa_agecheck_vid';
 
+	/**
+	 * The outage fallback (TAX-1841): {shipto_mac, until}. Set when this
+	 * session's start saw AgeCheck down and the store takes and holds orders
+	 * then; while it is valid for the ship-to, the gate admits an order
+	 * without a check, and that order verifies by link after payment. It
+	 * expires on its own (FALLBACK_TTL), so a payment retried within it is
+	 * admitted again: neither binding nor forget_verification() clears it.
+	 */
+	const KEY_FALLBACK = 'navexa_agecheck_fallback';
+
+	/**
+	 * Set (true) once any check of this session failed, whatever happened to
+	 * its record since (TAX-1841, owner decision #22): a restart replaces the
+	 * FAILED record with the new verification's, and binding and
+	 * forget_verification() drop records, so the record alone cannot say a
+	 * failure happened. Only the session's end clears it; has_failed() reads
+	 * it, so no outage fallback is set or honoured for the rest of the session.
+	 */
+	const KEY_FAILED = 'navexa_agecheck_failed';
+
+	/**
+	 * Seconds a fallback stays valid after the outage was seen.
+	 */
+	const FALLBACK_TTL = 900;
+
 	const STATUS_PENDING = 'pending';
 	const STATUS_PASSED  = 'passed';
 	const STATUS_FAILED  = 'failed';
@@ -164,7 +189,8 @@ final class Session {
 
 	/**
 	 * Stores the session's verification record. A new verification drops the
-	 * guard of the previous one.
+	 * guard of the previous one. A failed one also marks the session failed
+	 * for good (KEY_FAILED).
 	 *
 	 * @param string $vid        Verification id.
 	 * @param string $shipto_mac ShipTo::mac() it was created for.
@@ -180,6 +206,9 @@ final class Session {
 		if ( null !== $previous && $previous['vid'] !== $vid ) {
 			$session->set( self::KEY_GUARD, null );
 			$session->set( self::KEY_VID, null );
+		}
+		if ( self::STATUS_FAILED === $status ) {
+			$session->set( self::KEY_FAILED, true );
 		}
 		$session->set(
 			self::KEY_RECORD,
@@ -237,6 +266,75 @@ final class Session {
 		$session->set( self::KEY_RECORD, null );
 		$session->set( self::KEY_GUARD, null );
 		$session->set( self::KEY_VID, null );
+	}
+
+	/**
+	 * Whether a check of this session failed, for any ship-to: its record is
+	 * a failed check, or one was (KEY_FAILED), even after a restart replaced
+	 * that record with a new verification's or binding dropped it. No
+	 * fallback is ever set or honoured then, so an outage never opens a
+	 * retry after a failure (owner decision #22). (The gate also refuses a
+	 * record for another ship-to before it reads the fallback.)
+	 */
+	public static function has_failed(): bool {
+		$session = self::wc_session();
+		if ( null !== $session && true === $session->get( self::KEY_FAILED ) ) {
+			return true;
+		}
+		$record = self::record();
+		return null !== $record && self::STATUS_FAILED === $record['status'];
+	}
+
+	/**
+	 * Records an outage fallback for ship-to MAC $shipto_mac, valid for
+	 * FALLBACK_TTL. Refused (false) while the session's record is a failed
+	 * check (has_failed()).
+	 *
+	 * @param string   $shipto_mac ShipTo::mac().
+	 * @param int|null $now        Unix time; null for time().
+	 */
+	public static function set_fallback( string $shipto_mac, ?int $now = null ): bool {
+		$session = self::wc_session();
+		if ( null === $session || '' === $shipto_mac || self::has_failed() ) {
+			return false;
+		}
+		$session->set(
+			self::KEY_FALLBACK,
+			array(
+				'shipto_mac' => $shipto_mac,
+				'until'      => ( null === $now ? time() : $now ) + self::FALLBACK_TTL,
+			)
+		);
+		return true;
+	}
+
+	/**
+	 * Whether a fallback is valid for ship-to MAC $shipto_mac: set for it,
+	 * not expired, and the session's record is not a failed check.
+	 *
+	 * @param string   $shipto_mac ShipTo::mac().
+	 * @param int|null $now        Unix time; null for time().
+	 */
+	public static function fallback_for( string $shipto_mac, ?int $now = null ): bool {
+		$session  = self::wc_session();
+		$fallback = null === $session ? null : $session->get( self::KEY_FALLBACK );
+		if ( '' === $shipto_mac || ! is_array( $fallback ) || ! isset( $fallback['shipto_mac'], $fallback['until'] ) || ! is_string( $fallback['shipto_mac'] ) ) {
+			return false;
+		}
+		if ( (int) $fallback['until'] <= ( null === $now ? time() : $now ) || ! hash_equals( $fallback['shipto_mac'], $shipto_mac ) ) {
+			return false;
+		}
+		return ! self::has_failed();
+	}
+
+	/**
+	 * Drops the outage fallback.
+	 */
+	public static function forget_fallback(): void {
+		$session = self::wc_session();
+		if ( null !== $session ) {
+			$session->set( self::KEY_FALLBACK, null );
+		}
 	}
 
 	/**

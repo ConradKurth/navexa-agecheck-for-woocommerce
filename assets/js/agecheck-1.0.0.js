@@ -9,7 +9,7 @@
   var REDIRECT_STORAGE_KEY = "navexa-agecheck-redirect";
   var POPUP_FEATURES = "popup,width=480,height=760";
   var TERMINAL = /* @__PURE__ */ new Set(["passed", "failed"]);
-  var STATUSES = /* @__PURE__ */ new Set(["none", "pending", "passed", "failed", "refused", "unavailable"]);
+  var STATUSES = /* @__PURE__ */ new Set(["none", "pending", "passed", "failed", "refused", "unavailable", "hold"]);
   function parseHostedUrl(hostedUrl) {
     let url;
     try {

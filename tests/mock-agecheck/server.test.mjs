@@ -705,3 +705,44 @@ test("per-store reuse: off by default; on, a returning customer passes as reused
   const configBad = await fetch(`${base}/__mock/config`, { method: "POST", body: JSON.stringify({ reuse: "maybe" }) })
   assert.equal(configBad.status, 400)
 })
+
+test("GetCheckAvailability answers the configured availability; a test key reads AVAILABLE (TAX-1841)", async () => {
+  const read = async (key) => {
+    const res = await call("GetCheckAvailability", {}, { key })
+    assert.equal(res.status, 200)
+    return res.json()
+  }
+  assert.deepEqual(await read(FIXTURE_KEYS.liveStart.key), { idCheck: "ID_CHECK_AVAILABILITY_AVAILABLE", livemode: true })
+  await control("config", { availability: "org_daily_limit" })
+  const capped = await read(FIXTURE_KEYS.liveStart.key)
+  assert.equal(capped.idCheck, "ID_CHECK_AVAILABILITY_ORG_DAILY_LIMIT")
+  assert.match(capped.resumesAt, /T00:00:00\.000Z$/)
+  assert.deepEqual(await read(FIXTURE_KEYS.testStart.key), { idCheck: "ID_CHECK_AVAILABILITY_AVAILABLE" })
+  await control("config", { availability: "service_unavailable" })
+  assert.deepEqual(await read(FIXTURE_KEYS.liveStart.key), { idCheck: "ID_CHECK_AVAILABILITY_SERVICE_UNAVAILABLE", livemode: true })
+  await control("config", { availability: "absent" })
+  const absent = await call("GetCheckAvailability", {}, { key: FIXTURE_KEYS.liveStart.key })
+  assert.equal(absent.status, 404, "an engine without the RPC: connect-go's plain 404")
+  const bad = await fetch(`${base}/__mock/config`, { method: "POST", body: JSON.stringify({ availability: "maybe" }) })
+  assert.equal(bad.status, 400)
+})
+
+test("GetIntegrationInfo says links are enabled only with links on and a display name (TAX-1841)", async () => {
+  const read = async () => (await (await call("GetIntegrationInfo", {})).json()).linksEnabled
+  assert.equal(await read(), undefined, "links off by default: omitted (false)")
+  await control("config", { links: "on" })
+  assert.equal(await read(), true)
+  await control("config", { org: { displayName: "  " } })
+  assert.equal(await read(), undefined, "no display name: no link would go out")
+})
+
+test("down makes every RPC a bodiless 503 until it is turned off (TAX-1841)", async () => {
+  await control("config", { down: true })
+  for (const rpc of ["GetIntegrationInfo", "CreateVerification", "GetCheckAvailability"]) {
+    const res = await call(rpc, {})
+    assert.equal(res.status, 503, rpc)
+    assert.equal(await res.text(), "down\n")
+  }
+  await control("config", { down: false })
+  assert.equal((await call("GetIntegrationInfo", {})).status, 200)
+})

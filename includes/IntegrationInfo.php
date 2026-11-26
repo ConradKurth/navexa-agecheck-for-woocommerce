@@ -12,8 +12,9 @@ defined( 'ABSPATH' ) || exit;
 /**
  * What GetIntegrationInfo (E10a, in production since tax v0.0.164) says
  * about one API key and the store's origin: {livemode, scopes,
- * origin_allowed, minimum_age, display_name, organization_id}, and (TAX-1839)
- * the store's reuse: {reuse_window_days, guest_reuse_code}.
+ * origin_allowed, minimum_age, display_name, organization_id,
+ * links_enabled}, and (TAX-1839) the store's reuse: {reuse_window_days,
+ * guest_reuse_code}.
  *
  * Proto3 JSON omits zero values, so a missing field reads as false, [], 0 or
  * ''. A missing livemode therefore reads as test mode, which the live gate
@@ -106,6 +107,15 @@ final class IntegrationInfo {
 	public $guest_reuse_code = false;
 
 	/**
+	 * Whether AgeCheck would email the store's shoppers a verification link
+	 * now (TAX-1841): links are on at AgeCheck and the org has a display
+	 * name. False when absent, so an engine before the field reads off.
+	 *
+	 * @var bool
+	 */
+	public $links_enabled = false;
+
+	/**
 	 * Builds the value from a decoded response. Accepts proto3 JSON names
 	 * (originAllowed) and the original field names (origin_allowed).
 	 *
@@ -151,6 +161,8 @@ final class IntegrationInfo {
 		}
 
 		$info->guest_reuse_code = true === self::field( $body, 'guestReuseCode', 'guest_reuse_code' );
+
+		$info->links_enabled = true === self::field( $body, 'linksEnabled', 'links_enabled' );
 		return $info;
 	}
 
@@ -171,6 +183,7 @@ final class IntegrationInfo {
 				'doc_retry'         => isset( $data['doc_retry'] ) ? $data['doc_retry'] : false,
 				'reuse_window_days' => isset( $data['reuse_window_days'] ) ? $data['reuse_window_days'] : 0,
 				'guest_reuse_code'  => isset( $data['guest_reuse_code'] ) ? $data['guest_reuse_code'] : false,
+				'links_enabled'     => isset( $data['links_enabled'] ) ? $data['links_enabled'] : false,
 			)
 		);
 	}
@@ -178,7 +191,7 @@ final class IntegrationInfo {
 	/**
 	 * Plain array for caching.
 	 *
-	 * @return array{livemode: bool, scopes: string[], origin_allowed: bool, minimum_age: int|null, display_name: string, organization_id: string, doc_retry: bool, reuse_window_days: int, guest_reuse_code: bool}
+	 * @return array{livemode: bool, scopes: string[], origin_allowed: bool, minimum_age: int|null, display_name: string, organization_id: string, doc_retry: bool, reuse_window_days: int, guest_reuse_code: bool, links_enabled: bool}
 	 */
 	public function to_array(): array {
 		return array(
@@ -191,6 +204,7 @@ final class IntegrationInfo {
 			'doc_retry'         => $this->doc_retry,
 			'reuse_window_days' => $this->reuse_window_days,
 			'guest_reuse_code'  => $this->guest_reuse_code,
+			'links_enabled'     => $this->links_enabled,
 		);
 	}
 

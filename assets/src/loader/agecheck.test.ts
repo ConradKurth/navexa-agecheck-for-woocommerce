@@ -187,6 +187,15 @@ test("a passed start needs no popup", async () => {
   assert.equal(h.last().status, "passed")
 })
 
+test("a hold answer (AgeCheck down, the store takes and holds the order) closes the popup and keeps the store's copy", async () => {
+  const h = harness([{ v: 1, status: "hold", message: "held until you verify" }])
+  h.loader.verify()
+  await settle()
+  assert.equal(h.f.popup.closed, true)
+  assert.deepEqual(h.last(), { status: "hold", busy: false, message: "held until you verify" })
+  assert.equal(h.f.assigned.length, 0)
+})
+
 test("an unusable hosted URL fails closed", async () => {
   for (const url of ["http://verify.navexa.co/v/a.b", "https://verify.navexa.co/other/a.b", "javascript:alert(1)", "not a url"]) {
     const h = harness([{ v: 1, status: "pending", hosted_url: url }])

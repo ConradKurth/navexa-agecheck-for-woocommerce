@@ -96,6 +96,13 @@ final class Start {
 	const STATUS_UNAVAILABLE = 'unavailable';
 
 	/**
+	 * AgeCheck cannot run the check and the store takes and holds orders
+	 * then (TAX-1841): the shopper may place the order, which is held until
+	 * they verify by link. Non-blocking in the browser.
+	 */
+	const STATUS_HOLD = 'hold';
+
+	/**
 	 * Default limits per hour: starts per session and per client IP (plan
 	 * §5), refreshes per session and per client IP.
 	 */
@@ -235,8 +242,50 @@ final class Start {
 			if ( 'invalid_argument' === $e->connect_code() && false !== stripos( $e->server_message(), 'US addresses only' ) ) {
 				return self::reply( self::STATUS_REFUSED, Gate::message( Gate::REFUSE_US_ONLY ) );
 			}
+			// AgeCheck did not answer: a store that takes and holds orders
+			// then lets this shopper pay (never after a failed check).
+			if ( $e->is_outage() ) {
+				$hold = self::fallback( $mac, 'start_outage' );
+				if ( null !== $hold ) {
+					return $hold;
+				}
+			}
 			return self::unavailable();
 		}
+	}
+
+	/**
+	 * The outage fallback's answer for ship-to MAC $mac, or null when it does
+	 * not apply: the store does not take and hold orders
+	 * (Options::holds_on_outage()), or the session's record for this ship-to
+	 * is a failed check (Session::set_fallback() refuses then). Sets the
+	 * session's fallback, which the gate honours for FALLBACK_TTL.
+	 *
+	 * @param string $mac Ship-to MAC.
+	 * @param string $why Log code.
+	 * @return array<string, mixed>|null
+	 */
+	private static function fallback( string $mac, string $why ): ?array {
+		if ( ! Options::holds_on_outage() || ! Session::set_fallback( $mac ) ) {
+			return null;
+		}
+		Client::log( 'warning', 'agecheck checkout outage fallback reason=' . $why );
+		return self::reply( self::STATUS_HOLD, self::hold_message() );
+	}
+
+	/**
+	 * Shopper-facing copy of the outage fallback (plain text).
+	 */
+	public static function hold_message(): string {
+		return __( 'Age verification is unavailable right now. You can place your order; it will be held until you verify your age with the link we send you by email or on your order page.', 'navexa-agecheck-for-woocommerce' );
+	}
+
+	/**
+	 * Shopper-facing copy when the store used its age checks for the day
+	 * (plain text; no detail).
+	 */
+	public static function capped_message(): string {
+		return __( 'Age verification is not available for this store right now, so this order cannot be placed. Please try again later.', 'navexa-agecheck-for-woocommerce' );
 	}
 
 	/**
@@ -303,6 +352,11 @@ final class Start {
 			$state['status'] = self::STATUS_PASSED;
 			return $state;
 		}
+		if ( Options::holds_on_outage() && Session::fallback_for( $mac ) ) {
+			$state['status']  = self::STATUS_HOLD;
+			$state['message'] = self::hold_message();
+			return $state;
+		}
 		$record = Session::record();
 		if ( null === $record ) {
 			return $state;
@@ -337,7 +391,7 @@ final class Start {
 			'status'     => array(
 				'description' => __( 'Age check status.', 'navexa-agecheck-for-woocommerce' ),
 				'type'        => 'string',
-				'enum'        => array( self::STATUS_NONE, self::STATUS_PENDING, self::STATUS_PASSED, self::STATUS_FAILED, self::STATUS_REFUSED, self::STATUS_UNAVAILABLE ),
+				'enum'        => array( self::STATUS_NONE, self::STATUS_PENDING, self::STATUS_PASSED, self::STATUS_FAILED, self::STATUS_REFUSED, self::STATUS_UNAVAILABLE, self::STATUS_HOLD ),
 				'context'     => array( 'view', 'edit' ),
 				'readonly'    => true,
 			),
@@ -448,12 +502,14 @@ final class Start {
 				}
 				Session::set_record( $vid, $mac, $n, Session::STATUS_PASSED );
 				Session::set_guard( $guard, $vid );
+				Session::forget_fallback();
 				Client::log( 'info', 'agecheck checkout verification passed vid=' . $vid );
 				return self::reply( self::STATUS_PASSED );
 			case 'failed':
 			case 'not_clearing':
 				Session::set_record( $vid, $mac, $n, Session::STATUS_FAILED );
 				Session::set_guard( '' );
+				Session::forget_fallback();
 				Client::log( 'info', sprintf( 'agecheck checkout verification refused vid=%s verdict=%s', $vid, $verdict ) );
 				return self::reply( self::STATUS_FAILED, Gate::message( Gate::REFUSE_FAILED ) );
 			case 'mode_unknown':
@@ -474,6 +530,12 @@ final class Start {
 			// Nothing for the shopper to do on AgeCheck's page (being checked, or held).
 			return self::reply( self::STATUS_PENDING, __( 'Your age check is being processed. Select Verify age again in a minute to see if it is done.', 'navexa-agecheck-for-woocommerce' ) );
 		}
+
+		$unavailable = self::id_check_unavailable( $client, $status, $mac );
+		if ( null !== $unavailable ) {
+			return $unavailable;
+		}
+		Session::forget_fallback();
 
 		$url = '';
 		try {
@@ -501,6 +563,45 @@ final class Start {
 			'status'     => self::STATUS_PENDING,
 			'hosted_url' => $url,
 		);
+	}
+
+	/**
+	 * Whether the ID step can run (TAX-1841), for a verification waiting on
+	 * the shopper in $status: the answer to send instead of a hosted link, or
+	 * null to send the link as before.
+	 *
+	 * - NEEDS_DOC (the ID check has not started): the store's own daily limit
+	 *   (Availability::ORG_DAILY_LIMIT) refuses, with a generic line and no
+	 *   detail; AgeCheck unable to run the check (SERVICE_UNAVAILABLE, or no
+	 *   answer) takes the outage fallback when the store chose it.
+	 * - DOC_PENDING (an ID session is already open, and counted): never
+	 *   refused on the limit, which only stops new sessions; AgeCheck down
+	 *   takes the fallback the same way, and the abandoned verification is
+	 *   recorded on the order (Binding).
+	 * - AWAITING_IDENTITY (the data step): unchanged.
+	 *
+	 * Any other answer (available, refused, an engine without the read)
+	 * sends the link as before.
+	 *
+	 * @param Client $client Start-key client.
+	 * @param string $status The verification's status name.
+	 * @param string $mac    Ship-to MAC.
+	 * @return array<string, mixed>|null
+	 */
+	private static function id_check_unavailable( Client $client, string $status, string $mac ): ?array {
+		$needs_doc = 'VERIFICATION_STATUS_NEEDS_DOC' === $status;
+		if ( ! $needs_doc && ( 'VERIFICATION_STATUS_DOC_PENDING' !== $status || ! Options::holds_on_outage() ) ) {
+			return null;
+		}
+		$availability = Availability::read( $client );
+		if ( $needs_doc && Availability::ORG_DAILY_LIMIT === $availability ) {
+			Client::log( 'warning', 'agecheck checkout refused reason=org_daily_limit' );
+			return self::reply( self::STATUS_REFUSED, self::capped_message() );
+		}
+		if ( Availability::is_down( $availability ) ) {
+			return self::fallback( $mac, 'id_check_' . $availability );
+		}
+		return null;
 	}
 
 	/**

@@ -11,6 +11,7 @@ namespace Navexa\AgeCheck\Tests;
 use Brain\Monkey;
 use Brain\Monkey\Functions;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
+use Navexa\AgeCheck\Availability;
 use Navexa\AgeCheck\Client;
 use Navexa\AgeCheck\Install;
 use Navexa\AgeCheck\Options;
@@ -687,6 +688,20 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase {
 	/** The API key the $index-th recorded HTTP request used. */
 	protected function request_key( int $index ): string {
 		return substr( $this->http_requests[ $index ]['args']['headers']['Authorization'], 7 );
+	}
+
+	/**
+	 * Caches GetCheckAvailability's answer for the stored start key
+	 * (Availability::read() then calls nothing), as a start on NEEDS_DOC
+	 * reads it (TAX-1841).
+	 *
+	 * @param string $answer An Availability constant.
+	 */
+	protected function cache_availability( string $answer = Availability::AVAILABLE ): void {
+		$this->transients[ Availability::TRANSIENT_PREFIX . Client::for_key( Client::KEY_START )->key_fingerprint() ] = array(
+			'value' => $answer,
+			'ttl'   => Availability::SUCCESS_TTL,
+		);
 	}
 
 	/** Initializes the install state and stores both live keys. */

@@ -715,6 +715,7 @@ final class Release {
 			'verification_purged'          => __( 'The shopper\'s age check expired before the order was released.', 'navexa-agecheck-for-woocommerce' ),
 			'passed_after_denial'          => __( 'The shopper passed the age check after the order was denied. Check whether it was refunded, then release it without age check or cancel it.', 'navexa-agecheck-for-woocommerce' ),
 			'retry_possible'               => __( 'The shopper did not pass the age check but may try again; a refund waits until then. Do not ship.', 'navexa-agecheck-for-woocommerce' ),
+			'outage_fallback'              => __( 'Taken without an age check while age verification was unavailable at checkout. It stays held until the shopper verifies by the emailed link or from their order page.', 'navexa-agecheck-for-woocommerce' ),
 		);
 		if ( isset( $texts[ $reason ] ) ) {
 			return $texts[ $reason ];

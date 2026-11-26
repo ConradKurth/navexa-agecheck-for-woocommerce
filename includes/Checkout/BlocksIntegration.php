@@ -13,8 +13,9 @@ use Navexa\AgeCheck\Frontend;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Loads the Verify age block's front-end script (and, through its
- * dependencies, the loader) wherever the checkout block renders. Referenced
+ * Loads the age check block's front-end script (the status block and the
+ * Place order observer; through its dependencies, the vendored loader)
+ * wherever the checkout block renders. Referenced
  * only from Blocks::register_integration(), which runs when WooCommerce
  * Blocks is loaded, so the interface always exists.
  */

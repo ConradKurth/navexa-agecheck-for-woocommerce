@@ -44,11 +44,12 @@ defined( 'ABSPATH' ) || exit;
  *
  * The refusal is plain text: WooCommerce escapes it.
  *
- * The Verify age button is a checkout inner block (assets/src/blocks/),
- * registered for the editor and forced into the checkout's fields area on
- * the front end (lock.remove), with the loader as a dependency. Its client
- * check (a validation-store error until the shopper passes) only spares a
- * round trip; this hook is the enforcement.
+ * The age check status is a checkout inner block (assets/src/blocks/),
+ * registered for the editor and forced into the checkout's payment step on
+ * the front end (lock.remove), with the loader as a dependency. The check
+ * itself opens at Place order (an onCheckoutValidation observer, TAX-1874)
+ * in the loader's in-page modal; that only spares the shopper a refused
+ * order, and this hook is the enforcement.
  */
 final class Blocks {
 

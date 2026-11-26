@@ -268,7 +268,7 @@ final class Gate {
 	 * (9.9 does not), Blocks::validate() drops only store_api_draft_order and
 	 * Classic::validate() only order_awaiting_payment. Asking the other
 	 * route's key would read passed for an order this route will not place,
-	 * hide the Verify age control and leave the shopper with a checkout the
+	 * skip the age check at Place order and leave the shopper with a checkout the
 	 * gate refuses. An unknown route resumes nothing.
 	 *
 	 * @param ShipTo $ship_to The checkout's ship-to.

@@ -30,7 +30,7 @@ final class Turnstile {
 
 	/**
 	 * The Turnstile JavaScript API (explicit rendering: the checkout glue
-	 * renders the widget when the shopper selects Verify age).
+	 * renders the widget when Place order starts the age check).
 	 */
 	const SCRIPT_URL = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'; // phpcs:ignore PluginCheck.CodeAnalysis.Offloading.OffloadedContent -- Cloudflare requires its own api.js (no self-hosting); opt-in, off by default (readme: External services).
 

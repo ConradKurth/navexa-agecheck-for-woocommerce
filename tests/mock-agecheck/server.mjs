@@ -51,7 +51,8 @@
 //   (invalid_argument otherwise). A failed verification created with it,
 //   not failed under age (/__mock/decide underage: true, or a docUnderage
 //   name), keeps its links and takes CreateHostedSession and
-//   SendVerificationLink until 7 days after its first failure; its hosted
+//   SendVerificationLink until 7 days after its first failure (never later
+//   than 26 days after its creation); its hosted
 //   page's "Try again" (decision=retry) moves it back to needs_doc.
 // Mutating RPCs replay their answer per idempotency key (a different request
 // under the same key is invalid_argument), like the engine.
@@ -629,7 +630,7 @@ const RPCS = {
             decidedAt: status === "passed" || status === "failed" ? now : undefined,
             // TAX-1838: a failure at creation opens the retry window; an under-age one never retries.
             underage: status === "failed" && /docunderage$/i.test(name) ? true : undefined,
-            retryUntil: status === "failed" ? Date.now() + 7 * 24 * 3600 * 1000 : undefined,
+            retryUntil: status === "failed" ? retryWindowEnd(now) : undefined,
           }
           state.verifications.set(v.id, v)
           if (v.hasEmail) state.emails.set(v.id, identity.email.toLowerCase())
@@ -812,6 +813,16 @@ function retryable(state, v) {
   return state.docRetry === "on" && v.allowDocRetry === true && v.status === "failed" && !v.underage && Date.now() < (v.retryUntil ?? 0)
 }
 
+/**
+ * When a retry window opened now ends (TAX-1838): 7 days after the first
+ * failure, never later than 26 days after the verification was created.
+ */
+function retryWindowEnd(createdAt) {
+  const created = Date.parse(createdAt)
+  const end = Date.now() + 7 * 24 * 3600 * 1000
+  return Number.isNaN(created) ? end : Math.min(end, created + 26 * 24 * 3600 * 1000)
+}
+
 /** Moves a verification as the shopper (or a reviewer) would; a decision revokes its links (E8a) but a retryable failure's. */
 function decide(state, v, status, passClass, underage = false) {
   v.status = status
@@ -819,7 +830,7 @@ function decide(state, v, status, passClass, underage = false) {
   v.decidedAt = status === "passed" || status === "failed" ? new Date().toISOString() : undefined
   if (status === "failed") {
     if (underage) v.underage = true
-    if (v.retryUntil === undefined) v.retryUntil = Date.now() + 7 * 24 * 3600 * 1000
+    if (v.retryUntil === undefined) v.retryUntil = retryWindowEnd(v.createdAt)
   }
   if (v.decidedAt && !retryable(state, v)) revokeLinks(state, v, "decided")
 }

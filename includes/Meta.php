@@ -200,9 +200,18 @@ final class Meta {
 
 	/**
 	 * Unix time the shopper's chance to try the ID check again ends: the
-	 * failure's decidedAt + DocRetry::WINDOW, recorded once, never extended.
+	 * earliest failure the plugin learned of + DocRetry::WINDOW, never past
+	 * the verification's creation + DocRetry::CREATED_BOUND, only ever moved
+	 * earlier (DocRetry::anchor()).
 	 */
 	const RETRY_UNTIL = '_navexa_agecheck_retry_until';
+
+	/**
+	 * 'yes' while AgeCheck last confirmed that the failed verification may be
+	 * retried (DocRetry::defer()'s CreateHostedSession answer); cleared on
+	 * every new failure.
+	 */
+	const RETRY_OPEN = '_navexa_agecheck_retry_open';
 
 	/**
 	 * Unix time the 30-day "still held" note was added.

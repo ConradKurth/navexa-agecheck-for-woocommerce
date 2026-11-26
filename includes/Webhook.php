@@ -215,6 +215,11 @@ final class Webhook {
 			);
 			return 'noted';
 		}
+		if ( 'failed' === $state ) {
+			// TAX-1838: the window runs from this failure's own time, however
+			// late the release run reads it.
+			DocRetry::observe_failure( $order, isset( $event['occurred_at'] ) && is_string( $event['occurred_at'] ) ? $event['occurred_at'] : '' );
+		}
 		if ( ! Release::enqueue( $order->get_id(), Release::TRIGGER_WEBHOOK ) ) {
 			// handle() drops the claim and answers 500, so AgeCheck redelivers.
 			throw new \RuntimeException( 'release run not queued' );

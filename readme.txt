@@ -182,7 +182,7 @@ The plugin sends no telemetry.
 == Changelog ==
 
 = Unreleased =
-* A shopper whose ID check was declined, or whose ID's name did not match the order's, can try again on the same order for 7 days (never after an under-age result). The order stays held and any refund waits until then; the order page offers Try again, staff can email a new link from Order actions, and the panel says "Failed: the shopper may try again until ..." or "Retrying". Needs AgeCheck's document retry to be on; until then failed orders are handled as before.
+* A shopper whose ID check was declined, or whose ID's name did not match the order's, can try again on the same order for 7 days after the first failure (never after an under-age result: that order is denied at once). AgeCheck confirms each time that the retry is still open, and while it is the order stays held and any refund waits; the order page offers Try again, staff can email a new link from Order actions, and the panel says "Failed: the shopper may try again until ..." or "Retrying". Needs AgeCheck's document retry to be on; until then failed orders are handled as before. An order already denied whose shopper passes later is never released on its own: it stays held for staff to check the refund and release or cancel it.
 * Subscribe your AgeCheck webhook to verification.needs_doc as well, so a retry in progress is noted on the order right away.
 
 = 1.0.4 =

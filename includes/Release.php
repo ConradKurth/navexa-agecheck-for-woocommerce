@@ -415,7 +415,7 @@ final class Release {
 
 		switch ( $decision ) {
 			case 'CLEARED':
-				return self::cleared( $order, false );
+				return self::cleared( $order, false, $client );
 			case 'HOLD':
 				self::rotate_key( $order, $external );
 				if ( 'unattested' === $reason ) {
@@ -436,7 +436,7 @@ final class Release {
 				return self::PENDING;
 			case 'DENIED':
 				if ( 'replayed' === $reason ) {
-					return self::cleared( $order, true );
+					return self::cleared( $order, true, $client );
 				}
 				self::rotate_key( $order, $external );
 				if ( 'not_verified' === $reason ) {
@@ -462,7 +462,7 @@ final class Release {
 		$verification = isset( $answer['verification'] ) && is_array( $answer['verification'] ) ? $answer['verification'] : array();
 		$status       = Binding::record_verification( $order, $verification );
 		if ( 'failed' === $status ) {
-			if ( DocRetry::defer( $order, $verification, $info ) ) {
+			if ( DocRetry::defer( $order, $verification, $info, $client ) ) {
 				// TAX-1838: the shopper may still try again; the refund waits.
 				$order->save_meta_data();
 				return self::PENDING;
@@ -510,8 +510,20 @@ final class Release {
 	 *
 	 * @param \WC_Order $order    Order.
 	 * @param bool      $replayed Whether the answer was DENIED replayed.
+	 * @param Client    $client   Fulfilment-key client.
+	 * @throws ConnectError When a denied order's verification cannot be read.
 	 */
-	private static function cleared( \WC_Order $order, bool $replayed ): string {
+	private static function cleared( \WC_Order $order, bool $replayed, Client $client ): string {
+		if ( Meta::STATUS_DENIED === Meta::get( $order, Meta::STATUS ) && DocRetry::opted_in( $order ) && ! self::overridden( $order, $client ) ) {
+			// Denied (refunded, or listed for a refund) and then passed: the
+			// shopper finished a retry after the plugin stopped waiting
+			// (TAX-1838). Never ship it on its own: staff decide. A merchant
+			// override in AgeCheck's dashboard still releases it, as for an
+			// order without the retry.
+			Meta::set( $order, Meta::CLEARANCE_KEY, '' );
+			Client::log( 'warning', sprintf( 'agecheck release order=%d cleared after denial', $order->get_id() ) );
+			return self::finish_review( $order, 'passed_after_denial' );
+		}
 		Meta::mark_released( $order, Meta::STATUS_CLEARED );
 		Meta::set( $order, Meta::CLEARED_AT, time() );
 		Meta::set( $order, Meta::VERIFICATION_STATUS, 'passed' );
@@ -527,6 +539,21 @@ final class Release {
 			$note = sprintf( __( 'TEST %s', 'navexa-agecheck-for-woocommerce' ), $note );
 		}
 		return Hold::release( $order, $note ) ? self::RELEASED : self::CLEARED;
+	}
+
+	/**
+	 * Whether the order's verification passed by a merchant override in
+	 * AgeCheck's dashboard (GetVerification, a read; recorded for the panel).
+	 *
+	 * @param \WC_Order $order  Order.
+	 * @param Client    $client Fulfilment-key client.
+	 * @throws ConnectError When AgeCheck cannot answer.
+	 */
+	private static function overridden( \WC_Order $order, Client $client ): bool {
+		$answer       = $client->call( 'GetVerification', array( 'id' => Meta::get( $order, Meta::VERIFICATION_ID ) ) );
+		$verification = isset( $answer['verification'] ) && is_array( $answer['verification'] ) ? $answer['verification'] : array();
+		return 'passed' === Binding::record_verification( $order, $verification )
+			&& 'MERCHANT_OVERRIDE' === Binding::pass_class_name( $verification );
 	}
 
 	/**
@@ -686,6 +713,7 @@ final class Release {
 			'ship_to_changed'              => __( 'The shopper verified for a different shipping address.', 'navexa-agecheck-for-woocommerce' ),
 			'verification_bound_elsewhere' => __( 'The shopper\'s verification is already used by another order.', 'navexa-agecheck-for-woocommerce' ),
 			'verification_purged'          => __( 'The shopper\'s age check expired before the order was released.', 'navexa-agecheck-for-woocommerce' ),
+			'passed_after_denial'          => __( 'The shopper passed the age check after the order was denied. Check whether it was refunded, then release it without age check or cancel it.', 'navexa-agecheck-for-woocommerce' ),
 			'retry_possible'               => __( 'The shopper did not pass the age check but may try again; a refund waits until then. Do not ship.', 'navexa-agecheck-for-woocommerce' ),
 		);
 		if ( isset( $texts[ $reason ] ) ) {

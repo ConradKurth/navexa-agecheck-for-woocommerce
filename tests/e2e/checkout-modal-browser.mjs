@@ -17,8 +17,11 @@
 //     [--setup-cmd "npx --yes @wordpress/env@12.1.0 run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp eval-file tests/wp-env/w3b-setup.php"]
 //
 // --mock must be the 127.0.0.1 address: it is also the hosted pages' base.
-// Checks: the modal passes and the order is placed without leaving checkout;
-// a fail in the frame; closing the modal ({status:'closed'}), then a second
+// Checks: the modal passes and the order is placed without leaving checkout,
+// after the loader's pass moment (1.0.1: "Verified" over the page, announced
+// politely, for PASS_HOLD_MS = 900 ms before the modal closes); Escape or the
+// close button during that moment resolves the pass at once (the order is
+// placed, nothing says the check was closed); a fail in the frame; closing the modal ({status:'closed'}), then a second
 // Place order on the same verification; a refused frame falls back to a popup
 // opened from a click inside the modal; a blocked popup falls back to a
 // full-page redirect and back; the name and ship-to lock after a pass, a
@@ -215,6 +218,51 @@ async function watchStatus(context) {
     new MutationObserver(report).observe(document, { subtree: true, childList: true, characterData: true, attributes: true })
   })
   return seen
+}
+
+/**
+ * Records the loader's pass moment (1.0.1) in page time: when its "Verified"
+ * panel showed (with its text and the modal's live region), and when the
+ * modal went away. Reported through a binding, so it survives the move to
+ * order-received.
+ */
+async function watchPassMoment(context) {
+  const moment = { shown: null, gone: null, text: "", live: null }
+  await context.exposeBinding("__navexaPass", (_source, kind, at, details) => {
+    if (kind === "shown" && moment.shown === null) Object.assign(moment, { shown: at, ...details })
+    else if (kind === "gone" && moment.shown !== null && moment.gone === null) moment.gone = at
+  })
+  await context.addInitScript(() => {
+    let shown = false
+    const report = () => {
+      const root = document.querySelector('[data-navexa-agecheck="verify"]')
+      const ok = root?.querySelector(".nac-ok")
+      if (!shown && ok && !ok.hidden) {
+        shown = true
+        const live = root.querySelector('.nac-sr[role="status"]')
+        window.__navexaPass("shown", Date.now(), {
+          text: ok.textContent?.trim() ?? "",
+          live: live ? { text: live.textContent?.trim() ?? "", polite: live.getAttribute("aria-live") === "polite" } : null,
+        })
+      } else if (shown && !root?.querySelector(".nac-modal")) {
+        shown = false
+        window.__navexaPass("gone", Date.now(), {})
+      }
+    }
+    new MutationObserver(report).observe(document, { subtree: true, childList: true, characterData: true, attributes: true })
+  })
+  return moment
+}
+
+/** The pass moment held the modal open with "Verified", announced, for PASS_HOLD_MS (900 ms) before it closed; its length. */
+function assertPassMoment(moment) {
+  assert.ok(moment.shown !== null, "the Verified moment showed after the pass")
+  assert.equal(moment.text, "Verified")
+  assert.deepEqual(moment.live, { text: "Verified", polite: true }, "announced in the modal's polite status")
+  assert.ok(moment.gone !== null, "the modal closed after it")
+  const held = moment.gone - moment.shown
+  assert.ok(held >= 850 && held < 5000, `the modal stayed open ${held} ms after the pass (PASS_HOLD_MS 900)`)
+  return held
 }
 
 /** Fills the cart and the session's addresses through the Store API, in the browser's session. */
@@ -459,6 +507,7 @@ for (const name of BROWSERS) {
 
     await check(`${name}: block checkout: Place order opens the modal, a pass in the cross-site frame places the order without leaving checkout`, async () => {
       const context = await newContext(browser)
+      const moment = await watchPassMoment(context)
       await prepareCart(context, { ...ADDRESS, email: "block-pass@example.com" })
       const { page, urls } = await openBlock(context)
       const creates = await requests("CreateVerification")
@@ -474,11 +523,14 @@ for (const name of BROWSERS) {
       assert.ok(before.length > 0 && before.every((u) => u === before[0] || u.startsWith(`${SITE}/?page_id=${BLOCK}`) || u.startsWith(`${SITE}/checkout`)), `stayed on checkout: ${before.join(" ")}`)
       assert.ok(before.every((u) => !u.startsWith(MOCK)), "never on the hosted page")
       assert.equal((await requests("CreateVerification")) - creates, 1, "one verification")
+      const held = assertPassMoment(moment)
       await context.close()
+      return `Verified for ${held} ms`
     })
 
     await check(`${name}: classic checkout: Place order opens the modal, a pass places the order in one click`, async () => {
       const context = await newContext(browser)
+      const moment = await watchPassMoment(context)
       await prepareCart(context, { ...ADDRESS, email: "classic-pass@example.com" })
       const { page, urls } = await openClassic(context)
       const creates = await requests("CreateVerification")
@@ -490,8 +542,51 @@ for (const name of BROWSERS) {
       assert.ok(before.length > 0 && before.every((u) => u === before[0] || u.includes(`page_id=${CLASSIC}`)), `stayed on checkout: ${before.join(" ")}`)
       assert.ok(before.every((u) => !u.startsWith(MOCK)), "never on the hosted page")
       assert.equal((await requests("CreateVerification")) - creates, 1, "one verification")
+      const held = assertPassMoment(moment)
       await context.close()
+      return `Verified for ${held} ms`
     })
+
+    for (const [checkout, open, place, how] of [
+      ["block", openBlock, PLACE_BLOCK, "Escape"],
+      ["classic", openClassic, "#place_order", "Escape"],
+      ["block", openBlock, PLACE_BLOCK, "the close button"],
+    ]) {
+      await check(`${name}: ${checkout} checkout: ${how} during the Verified moment resolves the pass at once: the order is placed, nothing says the check was closed`, async () => {
+        const context = await newContext(browser)
+        const seen = await watchStatus(context)
+        const moment = await watchPassMoment(context)
+        await prepareCart(context, { ...ADDRESS, email: `moment-${checkout}-${how === "Escape" ? "escape" : "close"}@example.com` })
+        const { page } = await open(context)
+        const creates = await requests("CreateVerification")
+        const sessions = await requests("CreateHostedSession")
+        await page.click(place)
+        await answerInFrame(page, "pass")
+        // The click in the frame left the focus there: once "Verified" shows, back on the modal's
+        // close button; its box for a plain mouse click (page.click's actionability waits can
+        // outlast the 900 ms moment on a busy machine).
+        const handle = await page.waitForFunction((sel) => {
+          const ok = document.querySelector(`${sel} .nac-ok`)
+          if (!ok || ok.hidden) return false
+          const x = document.querySelector(`${sel} .nac-x`)
+          x?.focus()
+          const r = x?.getBoundingClientRect()
+          return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : false
+        }, MODAL, { timeout: 30000 })
+        const at = await handle.jsonValue()
+        if (how === "Escape") await page.keyboard.press("Escape")
+        else await page.mouse.click(at.x, at.y)
+        await page.waitForURL(/order-received/, { timeout: 45000 })
+        assert.ok(moment.shown !== null && moment.gone !== null, "the Verified moment showed, then the modal closed")
+        const held = moment.gone - moment.shown
+        assert.ok(held < 800, `${how} closed the modal ${held} ms into the moment, before PASS_HOLD_MS (900)`)
+        assert.ok(!seen.texts.some((t) => /closed before it finished/.test(t.text)), `no closed message: ${JSON.stringify(seen.texts)}`)
+        assert.equal((await requests("CreateVerification")) - creates, 1, "one verification")
+        assert.equal((await requests("CreateHostedSession")) - sessions, 1, "one hosted session: the pass, no second modal")
+        await context.close()
+        return `closed ${held} ms into the moment`
+      })
+    }
 
     await check(`${name}: classic checkout: a fail in the frame places no order, the error is shown, announced and focused`, async () => {
       const context = await newContext(browser)

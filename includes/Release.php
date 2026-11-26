@@ -426,6 +426,12 @@ final class Release {
 				// emailed a link can still pass from the order page (Verify now),
 				// and AgeCheck's page only links back to the store.
 				Meta::set( $order, Meta::NEXT_CHECK_AT, '' );
+				if ( DocRetry::waiting( $order ) && 'failed' === Meta::get( $order, Meta::VERIFICATION_STATUS ) ) {
+					// A failed check now on HOLD: the shopper is trying again
+					// (TAX-1838). Record where it stands for the panel and the
+					// order page (a read).
+					self::refresh_retry( $order, $client );
+				}
 				$order->save_meta_data();
 				return self::PENDING;
 			case 'DENIED':
@@ -456,6 +462,11 @@ final class Release {
 		$verification = isset( $answer['verification'] ) && is_array( $answer['verification'] ) ? $answer['verification'] : array();
 		$status       = Binding::record_verification( $order, $verification );
 		if ( 'failed' === $status ) {
+			if ( DocRetry::defer( $order, $verification, $info ) ) {
+				// TAX-1838: the shopper may still try again; the refund waits.
+				$order->save_meta_data();
+				return self::PENDING;
+			}
 			return self::deny( $order, 'not_verified', $info );
 		}
 		if ( 'passed' === $status ) {
@@ -467,6 +478,31 @@ final class Release {
 		Meta::set( $order, Meta::REASON, 'pending' );
 		$order->save_meta_data();
 		return self::PENDING;
+	}
+
+	/**
+	 * Records the status of a verification that failed and went back to the
+	 * ID check (TAX-1838), with a note. A read: a failure is logged and the
+	 * run goes on.
+	 *
+	 * @param \WC_Order $order  Order.
+	 * @param Client    $client Fulfilment-key client.
+	 */
+	private static function refresh_retry( \WC_Order $order, Client $client ): void {
+		$vid = Meta::get( $order, Meta::VERIFICATION_ID );
+		try {
+			$answer = $client->call( 'GetVerification', array( 'id' => $vid ) );
+		} catch ( ConnectError $e ) {
+			Client::log( 'warning', sprintf( 'agecheck release order=%d vid=%s retry read failed code=%s', $order->get_id(), $vid, $e->connect_code() ) );
+			return;
+		}
+		$verification = isset( $answer['verification'] ) && is_array( $answer['verification'] ) ? $answer['verification'] : array();
+		if ( array() === $verification ) {
+			return;
+		}
+		if ( 'failed' !== Binding::record_verification( $order, $verification ) ) {
+			Meta::note( $order, __( 'AgeCheck: the shopper is trying the age check again. Do not ship yet.', 'navexa-agecheck-for-woocommerce' ) );
+		}
 	}
 
 	/**
@@ -650,6 +686,7 @@ final class Release {
 			'ship_to_changed'              => __( 'The shopper verified for a different shipping address.', 'navexa-agecheck-for-woocommerce' ),
 			'verification_bound_elsewhere' => __( 'The shopper\'s verification is already used by another order.', 'navexa-agecheck-for-woocommerce' ),
 			'verification_purged'          => __( 'The shopper\'s age check expired before the order was released.', 'navexa-agecheck-for-woocommerce' ),
+			'retry_possible'               => __( 'The shopper did not pass the age check but may try again; a refund waits until then. Do not ship.', 'navexa-agecheck-for-woocommerce' ),
 		);
 		if ( isset( $texts[ $reason ] ) ) {
 			return $texts[ $reason ];

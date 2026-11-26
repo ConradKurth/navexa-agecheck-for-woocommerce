@@ -104,6 +104,8 @@ final class Binding {
 		Meta::SHIPMENT_REPORTED,
 		Meta::NEXT_CHECK_AT,
 		Meta::HOLD_STALE_AT,
+		Meta::DOC_RETRY,
+		Meta::RETRY_UNTIL,
 		Meta::STALE_NOTED_AT,
 		Meta::OVERRIDE_BY,
 		Meta::OVERRIDE_AT,
@@ -400,6 +402,10 @@ final class Binding {
 			'shipTo'            => $ship_to,
 			// Always REQUIRED with order_external_id (E4a): the ID's name must match identity.name.
 			'documentNameCheck' => 'DOCUMENT_NAME_CHECK_REQUIRED',
+			// TAX-1838: this plugin keeps a failed order while its shopper may
+			// try the ID check again (DocRetry). An engine before it ignores
+			// the field.
+			'allowDocRetry'     => true,
 		);
 		$return  = self::return_url( $order );
 		if ( '' !== $return ) {
@@ -437,6 +443,7 @@ final class Binding {
 			throw new ConnectError( 'CreateVerification', 'internal', 200, null, '', ConnectError::REASON_UNREADABLE_RESPONSE );
 		}
 		self::mark_bound( $order, $vid, 'create', $ship_to );
+		Meta::set( $order, Meta::DOC_RETRY, 'yes' );
 		self::record_verification( $order, $verification );
 		Meta::note(
 			$order,
@@ -464,7 +471,7 @@ final class Binding {
 			$previous[] = $vid;
 			Meta::set( $order, Meta::PREVIOUS_VERIFICATION_IDS, implode( ',', array_slice( array_unique( $previous ), -10 ) ) );
 		}
-		foreach ( array( Meta::VERIFICATION_ID, Meta::ATTACH_PENDING, Meta::BOUND_AT, Meta::BOUND_BY, Meta::SHIP_TO_HASH, Meta::CLEARANCE_KEY, Meta::LINK, Meta::LINK_ID, Meta::LINK_EXPIRES_AT, Meta::LINK_SENT_AT, Meta::LINK_KEY, Meta::VERIFICATION_STATUS, Meta::PASS_CLASS ) as $key ) {
+		foreach ( array( Meta::VERIFICATION_ID, Meta::ATTACH_PENDING, Meta::BOUND_AT, Meta::BOUND_BY, Meta::SHIP_TO_HASH, Meta::CLEARANCE_KEY, Meta::LINK, Meta::LINK_ID, Meta::LINK_EXPIRES_AT, Meta::LINK_SENT_AT, Meta::LINK_KEY, Meta::VERIFICATION_STATUS, Meta::PASS_CLASS, Meta::DOC_RETRY, Meta::RETRY_UNTIL ) as $key ) {
 			Meta::set( $order, $key, '' );
 		}
 		Meta::set( $order, Meta::CREATE_ATTEMPT, Meta::get_int( $order, Meta::CREATE_ATTEMPT ) + 1 );

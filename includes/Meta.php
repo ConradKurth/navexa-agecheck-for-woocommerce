@@ -193,6 +193,18 @@ final class Meta {
 	const HOLD_STALE_AT = '_navexa_agecheck_hold_stale_at';
 
 	/**
+	 * 'yes' when the order's verification was created with allowDocRetry
+	 * (DocRetry, TAX-1838).
+	 */
+	const DOC_RETRY = '_navexa_agecheck_doc_retry';
+
+	/**
+	 * Unix time the shopper's chance to try the ID check again ends: the
+	 * failure's decidedAt + DocRetry::WINDOW, recorded once, never extended.
+	 */
+	const RETRY_UNTIL = '_navexa_agecheck_retry_until';
+
+	/**
 	 * Unix time the 30-day "still held" note was added.
 	 */
 	const STALE_NOTED_AT = '_navexa_agecheck_stale_noted_at';

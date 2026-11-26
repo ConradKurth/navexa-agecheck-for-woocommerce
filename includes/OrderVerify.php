@@ -92,7 +92,8 @@ final class OrderVerify {
 		if ( '' === Meta::get( $order, Meta::VERIFICATION_ID ) ) {
 			return '' === Meta::get( $order, Meta::REASON );
 		}
-		return in_array( Meta::get( $order, Meta::VERIFICATION_STATUS ), Links::HOSTED_STATES, true );
+		// A failed check its shopper may try again (TAX-1838) waits on them too.
+		return in_array( Meta::get( $order, Meta::VERIFICATION_STATUS ), Links::HOSTED_STATES, true ) || DocRetry::open( $order );
 	}
 
 	/**
@@ -120,9 +121,22 @@ final class OrderVerify {
 			}
 			return;
 		}
-		echo '<section class="navexa-agecheck-order" style="margin:0 0 2em"><h2>' . esc_html__( 'Verify your age', 'navexa-agecheck-for-woocommerce' ) . '</h2>';
-		echo '<p>' . esc_html__( 'This order has age-restricted items. The store ships it once you pass an age check.', 'navexa-agecheck-for-woocommerce' ) . '</p>';
-		if ( Links::STATE_SENT === Links::state( $order ) ) {
+		$retry = DocRetry::open( $order );
+		if ( $retry ) {
+			// TAX-1838: one generic reason, never which check failed or why.
+			echo '<section class="navexa-agecheck-order" style="margin:0 0 2em"><h2>' . esc_html__( 'Your ID check didn\'t pass', 'navexa-agecheck-for-woocommerce' ) . '</h2>';
+			echo '<p>' . esc_html(
+				sprintf(
+					/* translators: %s: a date and time. */
+					__( 'You can try again until %s. Use a valid government photo ID in the name on the order.', 'navexa-agecheck-for-woocommerce' ),
+					DocRetry::date( DocRetry::until( $order ) )
+				)
+			) . '</p>';
+		} else {
+			echo '<section class="navexa-agecheck-order" style="margin:0 0 2em"><h2>' . esc_html__( 'Verify your age', 'navexa-agecheck-for-woocommerce' ) . '</h2>';
+			echo '<p>' . esc_html__( 'This order has age-restricted items. The store ships it once you pass an age check.', 'navexa-agecheck-for-woocommerce' ) . '</p>';
+		}
+		if ( ! $retry && Links::STATE_SENT === Links::state( $order ) ) {
 			echo '<p>' . esc_html__( 'We have also emailed you a link to the age check.', 'navexa-agecheck-for-woocommerce' ) . '</p>';
 		}
 		printf(
@@ -132,7 +146,7 @@ final class OrderVerify {
 			(int) $order->get_id(),
 			esc_attr( (string) $order->get_order_key() ),
 			esc_attr( wp_create_nonce( self::NONCE_PREFIX . $order->get_id() ) ),
-			esc_html__( 'Verify now', 'navexa-agecheck-for-woocommerce' )
+			$retry ? esc_html__( 'Try again', 'navexa-agecheck-for-woocommerce' ) : esc_html__( 'Verify now', 'navexa-agecheck-for-woocommerce' )
 		);
 	}
 
@@ -301,6 +315,13 @@ final class OrderVerify {
 			// and a release run asks GetClearance; one still waiting on the
 			// shopper means the refusal is the store's (or the status could not
 			// be read): fail closed, no release run.
+			if ( DocRetry::open( $order ) ) {
+				// TAX-1838: AgeCheck takes no retry for this verification (its
+				// window, its ID checks, or a reason a retry does not cover):
+				// the same words whatever the reason.
+				Client::log( 'info', sprintf( 'agecheck order verify retry refused order=%d vid=%s', $id, $vid ) );
+				return self::page( 200, __( 'This order\'s age check can\'t be tried again. Contact the store about it.', 'navexa-agecheck-for-woocommerce' ) );
+			}
 			$fresh = self::refresh_status( $id, $vid, $client );
 			if ( null !== $fresh && ! self::needs_shopper( $fresh ) ) {
 				Release::enqueue( $id, Release::TRIGGER_SHOPPER );
@@ -344,7 +365,7 @@ final class OrderVerify {
 			: '' !== $nonce && false !== wp_verify_nonce( $nonce, self::NONCE_PREFIX . $id );
 		if ( Hold::STATUS === $order->get_status( 'edit' ) && RateLimit::OK === RateLimit::check( 'order_return_order', (string) $id, self::LIMITS['return_order'], HOUR_IN_SECONDS ) ) {
 			$vid = Meta::get( $order, Meta::VERIFICATION_ID );
-			if ( $own && '' !== $vid && in_array( Meta::get( $order, Meta::VERIFICATION_STATUS ), Links::HOSTED_STATES, true ) ) {
+			if ( $own && '' !== $vid && ( in_array( Meta::get( $order, Meta::VERIFICATION_STATUS ), Links::HOSTED_STATES, true ) || DocRetry::open( $order ) ) ) {
 				// The order page reads the stored status: record where the
 				// check stands now (before the run is queued, so the two never
 				// meet at the order's lock), so a shopper who just passed is not

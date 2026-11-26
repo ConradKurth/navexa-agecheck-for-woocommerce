@@ -12,7 +12,7 @@
 // PASS_CLASS_DATA_VERIFIED in tax v0.0.167; AWAITING_IDENTITY is E4b's, served
 // only with config awaitingIdentity: "served"; E12a per-store reuse and E8c
 // verification links at tax d6dead63). Served RPCs:
-//   GetIntegrationInfo {livemode, scopes, originAllowed, minimumAge, displayName, organizationId}
+//   GetIntegrationInfo {livemode, scopes, originAllowed, minimumAge, displayName, organizationId, docRetry}
 //   CreateVerification: identity optional; returnUrl (5), documentNameCheck (6),
 //     intendedShipTo (7) with the proto's rules (order-bound is always REQUIRED
 //     and needs identity.name; NONE needs intendedShipTo; unset is REQUIRED
@@ -46,6 +46,13 @@
 //   db_verified, decided within org.reuseWindowDays (30), and, for
 //   data_verified, bound to the same ship-to. Underage blocks are not
 //   modelled.
+// Document retry (TAX-1838; config docRetry "on", default "off" as in
+//   production): allowDocRetry (9) only with orderExternalId
+//   (invalid_argument otherwise). A failed verification created with it,
+//   not failed under age (/__mock/decide underage: true, or a docUnderage
+//   name), keeps its links and takes CreateHostedSession and
+//   SendVerificationLink until 7 days after its first failure; its hosted
+//   page's "Try again" (decision=retry) moves it back to needs_doc.
 // Mutating RPCs replay their answer per idempotency key (a different request
 // under the same key is invalid_argument), like the engine.
 // A new verification is decided by the org's pass policy (config org.passPolicy):
@@ -201,6 +208,8 @@ function defaultState() {
     links: "off",
     // AGECHECK_REUSE: "on" or "off" (production today).
     reuse: "off",
+    // AGECHECK_DOC_RETRY: "on" or "off" (production today).
+    docRetry: "off",
     // E4b's AWAITING_IDENTITY: "served" sends a data-eligible verification
     // without DOB or consent there; "absent" (main today) sends it to NEEDS_DOC.
     awaitingIdentity: "absent",
@@ -488,6 +497,7 @@ function createProblem(state, key, request) {
     if (effective === "DOCUMENT_NAME_CHECK_REQUIRED" && name === "") return "identity.name: is required with document_name_check REQUIRED"
     if (effective === "DOCUMENT_NAME_CHECK_NONE" && request.intendedShipTo == null) return "intended_ship_to: is required with document_name_check NONE"
   }
+  if (request.allowDocRetry === true && !hasOrder) return "allow_doc_retry: is allowed only with order_external_id"
   if (request.returnUrl != null && !returnUrlAllowed(state, request.returnUrl)) return "return_url: must be an absolute URL on one of the organization's allowed origins"
   if (request.customerRef != null && (typeof request.customerRef !== "string" || request.customerRef.trim() === "" || [...request.customerRef].length > 255)) {
     return "customer_ref: must be 1 to 255 characters of valid UTF-8"
@@ -606,6 +616,7 @@ const RPCS = {
             intendedShipToKey: request.intendedShipTo ? shipToKey(request.intendedShipTo) : null,
             hasEmail: typeof identity.email === "string" && identity.email !== "",
             customerRef: typeof request.customerRef === "string" ? request.customerRef : undefined,
+            allowDocRetry: request.allowDocRetry === true,
             reusedFrom: source ? source.id : undefined,
             nameCheck: effectiveNameCheck(request),
             dataMatch,
@@ -616,6 +627,9 @@ const RPCS = {
             consumed: false,
             createdAt: now,
             decidedAt: status === "passed" || status === "failed" ? now : undefined,
+            // TAX-1838: a failure at creation opens the retry window; an under-age one never retries.
+            underage: status === "failed" && /docunderage$/i.test(name) ? true : undefined,
+            retryUntil: status === "failed" ? Date.now() + 7 * 24 * 3600 * 1000 : undefined,
           }
           state.verifications.set(v.id, v)
           if (v.hasEmail) state.emails.set(v.id, identity.email.toLowerCase())
@@ -710,7 +724,7 @@ const RPCS = {
     if (denied) return denied
     const v = findVerification(state, key, request.verificationId)
     if (!v) return ["not_found", "agecheck: verification not found"]
-    if (!HOSTED_STATES.includes(v.status)) return ["failed_precondition", "agecheck: a hosted session needs a verification in needs_doc or doc_pending"]
+    if (!HOSTED_STATES.includes(v.status) && !retryable(state, v)) return ["failed_precondition", "agecheck: a hosted session needs a verification in needs_doc or doc_pending"]
     const returnUrl = request.returnUrl ?? ""
     if (returnUrl !== "" && !returnUrlAllowed(state, returnUrl)) return ["invalid_argument", "return_url: must be an absolute URL on one of the organization's allowed origins"]
     return [
@@ -730,7 +744,7 @@ const RPCS = {
         if (state.links !== "on") return ["failed_precondition", "agecheck: verification links are not enabled"]
         const v = findVerification(state, key, request.verificationId)
         if (!v) return ["not_found", "agecheck: verification not found"]
-        if (!HOSTED_STATES.includes(v.status) || v.nameCheck !== "DOCUMENT_NAME_CHECK_REQUIRED") {
+        if ((!HOSTED_STATES.includes(v.status) && !retryable(state, v)) || v.nameCheck !== "DOCUMENT_NAME_CHECK_REQUIRED") {
           return ["failed_precondition", "agecheck: a verification link needs a verification waiting on the shopper, with the document name check"]
         }
         if (!String(state.org.displayName ?? "").trim()) return ["failed_precondition", "agecheck: set the store's display name in the AgeCheck settings before sending verification links"]
@@ -783,17 +797,31 @@ const RPCS = {
         minimumAge: state.org.minimumAge,
         displayName: state.org.displayName,
         organizationId: key.organizationId ?? state.org.id,
+        docRetry: state.docRetry === "on",
       }),
     ]
   },
 }
 
-/** Moves a verification as the shopper (or a reviewer) would; a decision revokes its links (E8a). */
-function decide(state, v, status, passClass) {
+/**
+ * Whether a failed verification may still be retried (TAX-1838): created with
+ * allowDocRetry, never failed under age, inside 7 days of its first failure,
+ * with the deployment's docRetry on.
+ */
+function retryable(state, v) {
+  return state.docRetry === "on" && v.allowDocRetry === true && v.status === "failed" && !v.underage && Date.now() < (v.retryUntil ?? 0)
+}
+
+/** Moves a verification as the shopper (or a reviewer) would; a decision revokes its links (E8a) but a retryable failure's. */
+function decide(state, v, status, passClass, underage = false) {
   v.status = status
   v.passClass = status === "passed" ? (passClass ? shortName(passClass, "PASS_CLASS_") : v.passClass || "doc_only") : undefined
   v.decidedAt = status === "passed" || status === "failed" ? new Date().toISOString() : undefined
-  if (v.decidedAt) revokeLinks(state, v, "decided")
+  if (status === "failed") {
+    if (underage) v.underage = true
+    if (v.retryUntil === undefined) v.retryUntil = Date.now() + 7 * 24 * 3600 * 1000
+  }
+  if (v.decidedAt && !retryable(state, v)) revokeLinks(state, v, "decided")
 }
 
 function escapeHTML(text) {
@@ -845,8 +873,11 @@ async function handleHosted(state, req, res, url) {
         else if (v.dataAnswer === "match") decide(state, v, "passed", "data_verified")
         else decide(state, v, "needs_doc")
       }
+    } else if (decision === "retry") {
+      if (retryable(state, v)) decide(state, v, "needs_doc")
     } else if (decision === "pass") decide(state, v, "passed", "doc_only")
     else if (decision === "fail") decide(state, v, "failed")
+    else if (decision === "fail_underage") decide(state, v, "failed", undefined, true)
     if (claims.ru && (!awaiting || v.status === "passed" || v.status === "failed")) {
       res.writeHead(303, { Location: claims.ru })
       return res.end()
@@ -858,7 +889,9 @@ async function handleHosted(state, req, res, url) {
 <label>Date of birth <input type="date" name="dob" id="dob"></label>
 <label><input type="checkbox" name="consent" value="yes" id="consent"> I agree to the data check</label>
 <button name="decision" value="identity">Continue</button> <button name="decision" value="use_id">Use my ID instead</button></form>`
-      : `<form method="post"><button name="decision" value="pass">Pass</button> <button name="decision" value="fail">Fail</button></form>`
+      : retryable(state, v)
+        ? `<form method="post"><button name="decision" value="retry">Try again</button></form>`
+        : `<form method="post"><button name="decision" value="pass">Pass</button> <button name="decision" value="fail">Fail</button> <button name="decision" value="fail_underage">Fail (under age)</button></form>`
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Mock AgeCheck</title></head><body>
 <h1>Mock AgeCheck (TEST)</h1><p>Status: <strong id="status">${escapeHTML(v.status)}</strong></p>
 ${step}
@@ -904,6 +937,8 @@ export function createMockAgeCheck() {
         if (body.integrationInfo) state.integrationInfo = body.integrationInfo
         if (body.links !== undefined && !["on", "served", "off", "absent"].includes(body.links)) return sendJSON(res, 400, { error: "links: on, off or absent" })
         if (body.reuse !== undefined && !["on", "off"].includes(body.reuse)) return sendJSON(res, 400, { error: "reuse: on or off" })
+        if (body.docRetry !== undefined && !["on", "off"].includes(body.docRetry)) return sendJSON(res, 400, { error: "docRetry: on or off" })
+        if (body.docRetry) state.docRetry = body.docRetry
         if (body.links) state.links = body.links === "served" ? "on" : body.links
         if (body.reuse) state.reuse = body.reuse
         if (body.awaitingIdentity) state.awaitingIdentity = body.awaitingIdentity
@@ -924,8 +959,9 @@ export function createMockAgeCheck() {
           const status = shortName(body.status, "VERIFICATION_STATUS_")
           if (!STATUS[status]) return sendJSON(res, 400, { error: "unknown status" })
           if (body.passClass !== undefined && !PASS_CLASS[shortName(body.passClass, "PASS_CLASS_")]) return sendJSON(res, 400, { error: "unknown pass class" })
-          decide(state, v, status, body.passClass)
+          decide(state, v, status, body.passClass, body.underage === true)
         }
+        if (typeof body.retryUntil === "string") v.retryUntil = Date.parse(body.retryUntil)
         if (body.consumed !== undefined) v.consumed = Boolean(body.consumed)
         return sendJSON(res, 200, { ok: true, verification: v })
       }

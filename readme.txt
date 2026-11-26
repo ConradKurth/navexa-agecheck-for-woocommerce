@@ -181,6 +181,10 @@ The plugin sends no telemetry.
 
 == Changelog ==
 
+= Unreleased =
+* A shopper whose ID check was declined, or whose ID's name did not match the order's, can try again on the same order for 7 days (never after an under-age result). The order stays held and any refund waits until then; the order page offers Try again, staff can email a new link from Order actions, and the panel says "Failed: the shopper may try again until ..." or "Retrying". Needs AgeCheck's document retry to be on; until then failed orders are handled as before.
+* Subscribe your AgeCheck webhook to verification.needs_doc as well, so a retry in progress is noted on the order right away.
+
 = 1.0.4 =
 * Fix: after a declined payment, checkout no longer asks the shopper to verify their age again. The order is already tied to their age check, so retrying the payment (for example with another card) places it without a second check, which AgeCheck would have billed. Changing the shipping address or the cart after a declined payment still needs a new age check.
 

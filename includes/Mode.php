@@ -183,6 +183,14 @@ final class Mode {
 		if ( $info->livemode ) {
 			return true;
 		}
+		return self::test_release_allowed();
+	}
+
+	/**
+	 * Whether wp-config.php lets test keys release held orders
+	 * (NAVEXA_AGECHECK_ALLOW_TEST_RELEASE defined as true).
+	 */
+	public static function test_release_allowed(): bool {
 		return defined( 'NAVEXA_AGECHECK_ALLOW_TEST_RELEASE' ) && true === NAVEXA_AGECHECK_ALLOW_TEST_RELEASE;
 	}
 
@@ -252,7 +260,11 @@ final class Mode {
 		echo '<div class="notice notice-warning' . ( $settings ? ' is-dismissible' : '' ) . '"><p><strong>';
 		esc_html_e( 'AgeCheck TEST MODE', 'navexa-agecheck-for-woocommerce' );
 		echo '</strong> ';
-		esc_html_e( 'Your Navexa AgeCheck keys are test keys: checks use the simulator, no real age check happens, and held orders are not released automatically. Switch to live keys before selling age-restricted products.', 'navexa-agecheck-for-woocommerce' );
+		if ( self::test_release_allowed() ) {
+			esc_html_e( 'Your Navexa AgeCheck keys are test keys: checks use the simulator and no real age check happens. NAVEXA_AGECHECK_ALLOW_TEST_RELEASE is set in wp-config.php, so held orders whose test check passes are released automatically. Switch to live keys before selling age-restricted products.', 'navexa-agecheck-for-woocommerce' );
+		} else {
+			esc_html_e( 'Your Navexa AgeCheck keys are test keys: checks use the simulator, no real age check happens, and held orders are not released automatically. Switch to live keys before selling age-restricted products.', 'navexa-agecheck-for-woocommerce' );
+		}
 		echo '</p>';
 		if ( ! $settings ) {
 			echo Notices::dismiss_link( 'test', $reason ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- dismiss_link() escapes.

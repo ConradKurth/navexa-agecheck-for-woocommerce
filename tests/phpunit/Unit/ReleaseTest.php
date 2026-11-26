@@ -151,11 +151,17 @@ final class ReleaseTest extends TestCase {
 	}
 
 	public function test_denied_not_verified_after_a_purged_pass_verifies_again(): void {
+		// A pass next to DENIED not_verified is asked about once more on a
+		// fresh key; only the same answer there means the pass was purged.
 		$order = $this->held_bound_order();
 		$this->respond( 200, $this->live_info() );
 		$this->respond( 200, $this->clearance( 'DENIED', 'not_verified' ) );
 		$this->respond( 200, array( 'verification' => array( 'id' => self::VID, 'status' => 'VERIFICATION_STATUS_PASSED' ) ) );
+		$this->respond( 200, $this->clearance( 'DENIED', 'not_verified' ) );
+		$this->respond( 200, array( 'verification' => array( 'id' => self::VID, 'status' => 'VERIFICATION_STATUS_PASSED' ) ) );
 		$this->assertSame( Release::PENDING, Release::run( $order->get_id(), Release::TRIGGER_WEBHOOK ) );
+		$this->assertSame( array( 'GetIntegrationInfo', 'GetClearance', 'GetVerification', 'GetClearance', 'GetVerification' ), $this->rpcs() );
+		$this->assertNotSame( $this->request_body( 1 )['idempotencyKey'], $this->request_body( 3 )['idempotencyKey'], 'a fresh key' );
 		$this->assertArrayNotHasKey( Meta::VERIFICATION_ID, $order->meta );
 		$this->assertSame( 'verification_purged', $order->meta[ Meta::REASON ] );
 		$jobs = $this->scheduled_for( Release::HOOK );
@@ -460,6 +466,7 @@ final class ReleaseTest extends TestCase {
 		// A webhook after a dashboard override still clears a denied order.
 		$this->respond( 200, $this->live_info() );
 		$this->respond( 200, $this->clearance( 'CLEARED', 'verified' ) );
+		$this->respond( 200, array( 'verification' => array( 'id' => self::VID, 'status' => 'VERIFICATION_STATUS_PASSED', 'passClass' => 'PASS_CLASS_MERCHANT_OVERRIDE' ) ) );
 		$this->assertSame( Release::RELEASED, Release::run( $denied->get_id(), Release::TRIGGER_WEBHOOK ) );
 	}
 

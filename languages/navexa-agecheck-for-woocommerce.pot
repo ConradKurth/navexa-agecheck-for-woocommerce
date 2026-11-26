@@ -2,14 +2,14 @@
 # This file is distributed under the GPL-2.0-or-later.
 msgid ""
 msgstr ""
-"Project-Id-Version: Navexa AgeCheck for WooCommerce 1.1.0\n"
+"Project-Id-Version: Navexa AgeCheck for WooCommerce 1.1.1\n"
 "Report-Msgid-Bugs-To: https://github.com/ConradKurth/navexa-agecheck-for-woocommerce/issues\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-11-26T14:55:44+00:00\n"
+"POT-Creation-Date: 2026-11-26T17:37:41+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: navexa-agecheck-for-woocommerce\n"
@@ -334,7 +334,7 @@ msgid "Failed. Do not ship this order."
 msgstr ""
 
 #: includes/Admin/OrderPanel.php:337
-#: includes/Release.php:695
+#: includes/Release.php:742
 msgid "Released by staff without an age check."
 msgstr ""
 
@@ -429,7 +429,7 @@ msgid "AgeCheck: started an age check for this order (%s)."
 msgstr ""
 
 #. translators: %s: machine reason, e.g. ship_to_changed.
-#: includes/Binding.php:518
+#: includes/Binding.php:525
 #, php-format
 msgid "AgeCheck: the shopper's earlier age check cannot be used for this order (%s). A new age check is needed."
 msgstr ""
@@ -492,32 +492,32 @@ msgstr ""
 msgid "This order's shipping address is tied to its age verification and cannot be changed. Pay with the original shipping address, or contact the store."
 msgstr ""
 
-#: includes/Denial.php:66
+#: includes/Denial.php:70
 msgid "AgeCheck: this order ships outside the US, and AgeCheck verifies US addresses only. It stays held and will not ship."
 msgstr ""
 
-#: includes/Denial.php:67
+#: includes/Denial.php:71
 msgid "AgeCheck: the shopper did not pass the age check. The order stays held and will not ship."
 msgstr ""
 
-#: includes/Denial.php:123
+#: includes/Denial.php:127
 msgid "Age check failed (Navexa AgeCheck)."
 msgstr ""
 
-#: includes/Denial.php:135
+#: includes/Denial.php:139
 msgid "AgeCheck: the automatic refund through the payment gateway failed. Refund or cancel this order yourself."
 msgstr ""
 
-#: includes/Denial.php:140
+#: includes/Denial.php:144
 msgid "AgeCheck: refunded through the payment gateway and restocked because the age check failed."
 msgstr ""
 
-#: includes/Denial.php:153
+#: includes/Denial.php:157
 msgid "AgeCheck: refund or cancel this order. It is listed under \"AgeCheck: denied, refund required\" on the Orders screen."
 msgstr ""
 
 #. translators: %s: a date and time.
-#: includes/DocRetry.php:221
+#: includes/DocRetry.php:222
 #, php-format
 msgid "AgeCheck: the shopper's age check did not pass. They may try again until %s; a refund waits until then. Do not ship."
 msgstr ""
@@ -875,16 +875,20 @@ msgstr ""
 
 #. translators: %s: an AgeCheck order note.
 #: includes/Meta.php:323
-#: includes/Release.php:539
+#: includes/Release.php:573
 #, php-format
 msgid "TEST %s"
 msgstr ""
 
-#: includes/Mode.php:253
+#: includes/Mode.php:261
 msgid "AgeCheck TEST MODE"
 msgstr ""
 
-#: includes/Mode.php:255
+#: includes/Mode.php:264
+msgid "Your Navexa AgeCheck keys are test keys: checks use the simulator and no real age check happens. NAVEXA_AGECHECK_ALLOW_TEST_RELEASE is set in wp-config.php, so held orders whose test check passes are released automatically. Switch to live keys before selling age-restricted products."
+msgstr ""
+
+#: includes/Mode.php:266
 msgid "Your Navexa AgeCheck keys are test keys: checks use the simulator, no real age check happens, and held orders are not released automatically. Switch to live keys before selling age-restricted products."
 msgstr ""
 
@@ -1135,152 +1139,152 @@ msgstr ""
 msgid "AgeCheck: releasing an order that was already cleared."
 msgstr ""
 
-#: includes/Release.php:363
+#: includes/Release.php:377
 msgid "AgeCheck: the shopper's age check passed. Test keys never release orders: to try the rest of the flow, release it with \"AgeCheck: release without age check\"."
 msgstr ""
 
-#: includes/Release.php:365
+#: includes/Release.php:379
 msgid "AgeCheck: the shopper's age check failed. Test keys never deny or refund orders: cancel it yourself."
 msgstr ""
 
-#: includes/Release.php:504
+#: includes/Release.php:537
 msgid "AgeCheck: the shopper is trying the age check again. Do not ship yet."
 msgstr ""
 
-#: includes/Release.php:535
+#: includes/Release.php:569
 msgid "AgeCheck: age check passed (confirmed on a repeated clearance answer). Order released."
 msgstr ""
 
-#: includes/Release.php:536
+#: includes/Release.php:570
 msgid "AgeCheck: age check passed. Order released."
 msgstr ""
 
 #. translators: %s: a sentence saying why.
-#: includes/Release.php:588
+#: includes/Release.php:632
 #, php-format
 msgid "AgeCheck: the order stays held. %s"
 msgstr ""
 
-#: includes/Release.php:664
+#: includes/Release.php:711
 msgid "AgeCheck: this order has waited more than 30 days for its age check. Contact the shopper, or cancel and refund it."
 msgstr ""
 
-#: includes/Release.php:691
+#: includes/Release.php:738
 msgid "Waiting for the shopper to verify their age."
 msgstr ""
 
-#: includes/Release.php:692
+#: includes/Release.php:739
 msgid "The shopper did not pass the age check."
 msgstr ""
 
-#: includes/Release.php:693
+#: includes/Release.php:740
 msgid "The order ships outside the US. AgeCheck verifies US addresses only (including US territories and APO/FPO)."
 msgstr ""
 
-#: includes/Release.php:694
+#: includes/Release.php:741
 msgid "AgeCheck refused to clear the order."
 msgstr ""
 
-#: includes/Release.php:696
+#: includes/Release.php:743
 msgid "Subscription renewal: AgeCheck cannot reuse the earlier age check yet, so review the order and release it yourself."
 msgstr ""
 
-#: includes/Release.php:697
+#: includes/Release.php:744
 msgid "AgeCheck is not set up: add the fulfilment key in WooCommerce > Settings > AgeCheck, or confirm this site."
 msgstr ""
 
-#: includes/Release.php:698
+#: includes/Release.php:745
 msgid "Test keys never release orders automatically."
 msgstr ""
 
-#: includes/Release.php:699
+#: includes/Release.php:746
 msgid "The order has no complete shipping address."
 msgstr ""
 
-#: includes/Release.php:700
+#: includes/Release.php:747
 msgid "The order has no billing name to check the ID against."
 msgstr ""
 
-#: includes/Release.php:701
+#: includes/Release.php:748
 msgid "AgeCheck refused the shipping address."
 msgstr ""
 
-#: includes/Release.php:702
+#: includes/Release.php:749
 msgid "AgeCheck does not know the shopper's verification (were the keys changed, or switched between live and test?)."
 msgstr ""
 
-#: includes/Release.php:703
+#: includes/Release.php:750
 msgid "AgeCheck has this order linked to another verification."
 msgstr ""
 
-#: includes/Release.php:704
+#: includes/Release.php:751
 msgid "AgeCheck refused to start an age check for this order. It will try again later."
 msgstr ""
 
-#: includes/Release.php:705
+#: includes/Release.php:752
 msgid "AgeCheck cannot start age checks for this store right now (check billing and live access in the Navexa dashboard)."
 msgstr ""
 
-#: includes/Release.php:706
+#: includes/Release.php:753
 msgid "AgeCheck refused the clearance request (did the shipping address change?)."
 msgstr ""
 
-#: includes/Release.php:707
+#: includes/Release.php:754
 msgid "AgeCheck answered in the other mode (live versus test) than this store's key."
 msgstr ""
 
-#: includes/Release.php:708
+#: includes/Release.php:755
 msgid "The shopper passed a check that cannot clear orders. Ask them to verify with their ID."
 msgstr ""
 
-#: includes/Release.php:709
+#: includes/Release.php:756
 msgid "The shipping address differs from the one the age check covers. Restore it, then check again."
 msgstr ""
 
-#: includes/Release.php:710
+#: includes/Release.php:757
 msgid "AgeCheck has no verification for this order."
 msgstr ""
 
-#: includes/Release.php:711
+#: includes/Release.php:758
 msgid "The order is not linked to an age check."
 msgstr ""
 
-#: includes/Release.php:712
+#: includes/Release.php:759
 msgid "AgeCheck gave an answer this plugin does not know. Update the plugin."
 msgstr ""
 
-#: includes/Release.php:713
+#: includes/Release.php:760
 msgid "The shopper verified for a different shipping address."
 msgstr ""
 
-#: includes/Release.php:714
+#: includes/Release.php:761
 msgid "The shopper's verification is already used by another order."
 msgstr ""
 
-#: includes/Release.php:715
+#: includes/Release.php:762
 msgid "The shopper's age check expired before the order was released."
 msgstr ""
 
-#: includes/Release.php:716
+#: includes/Release.php:763
 msgid "The shopper passed the age check after the order was denied. Check whether it was refunded, then release it without age check or cancel it."
 msgstr ""
 
-#: includes/Release.php:717
+#: includes/Release.php:764
 msgid "The shopper did not pass the age check but may try again; a refund waits until then. Do not ship."
 msgstr ""
 
-#: includes/Release.php:718
+#: includes/Release.php:765
 msgid "Taken without an age check while age verification was unavailable at checkout. It stays held until the shopper verifies by the emailed link or from their order page."
 msgstr ""
 
 #. translators: %s: an error code, e.g. permission_denied.
-#: includes/Release.php:725
+#: includes/Release.php:772
 #, php-format
 msgid "AgeCheck refused the request (%s). Check the fulfilment key and its scopes in the Navexa dashboard."
 msgstr ""
 
 #. translators: %s: a reason code.
-#: includes/Release.php:728
+#: includes/Release.php:775
 #, php-format
 msgid "Reason: %s."
 msgstr ""

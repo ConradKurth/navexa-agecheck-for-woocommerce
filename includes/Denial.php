@@ -38,7 +38,9 @@ final class Denial {
 
 	/**
 	 * Records the denial and handles the refund. Idempotent: a second denial
-	 * of a denied order changes nothing.
+	 * of a denied order changes nothing but still saves what the caller
+	 * recorded on it (a rotated clearance key, the verification's status), so
+	 * no early return leaves a stale key stored.
 	 *
 	 * @param \WC_Order $order    Order.
 	 * @param string    $reason   not_verified, not_us, ...
@@ -47,10 +49,12 @@ final class Denial {
 	 */
 	public static function deny( \WC_Order $order, string $reason, bool $livemode ): string {
 		if ( Meta::is_released( $order ) ) {
+			$order->save_meta_data();
 			return '';
 		}
 		$refund = Meta::get( $order, Meta::REFUND );
 		if ( Meta::STATUS_DENIED === Meta::get( $order, Meta::STATUS ) && '' !== $refund ) {
+			$order->save_meta_data();
 			return $refund;
 		}
 		Meta::set( $order, Meta::STATUS, Meta::STATUS_DENIED );

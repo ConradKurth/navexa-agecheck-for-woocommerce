@@ -395,6 +395,52 @@ await group("block: a different cart after a declined payment is a new order tha
   assert.match(refused.json.message, /Verify your age on the checkout page/)
 })
 
+// WooCommerce 11.x's Store API also records the declined draft as
+// order_awaiting_payment, and a dropped bound draft clears only
+// store_api_draft_order: the cart state must follow the Store API's own key, or
+// it says passed for an order the Store API will not resume and the block hides
+// Verify age while the gate refuses Place order (the 1.0.4 review's dead end).
+await group("block: set aside at another ship-to (place again), then back to the bound one: the cart and the gate agree, and a new check places it", async () => {
+  const { s, order } = await declinedAfterPass()
+  const moved = { ...RETRY, address_1: "9 Elm St" }
+  assert.equal((await s.setAddress(moved)).extensions[NS].status, "none")
+  const startedB = await s.ageCheck("start")
+  await decideOnHostedPage(startedB.hosted_url, "pass")
+  assert.equal((await s.ageCheck("refresh")).status, "passed")
+  const again = await s.checkout(moved)
+  assert.equal(again.status, 400, JSON.stringify(again.json).slice(0, 400))
+  assert.match(again.json.message, /place your order again/)
+
+  const back = (await s.setAddress(RETRY)).extensions[NS]
+  assert.equal(back.status, "none", "the Store API will create a new order: Verify age is offered")
+  assert.match(back.message, /shipping address changed/)
+  const refused = await s.checkout(RETRY)
+  assert.equal(refused.status, 400, "the gate agrees")
+  assert.match(refused.json.message, /shipping address changed/)
+
+  const startedA = await s.ageCheck("start")
+  assert.equal(startedA.status, "pending", "a new check for the new order")
+  await decideOnHostedPage(startedA.hosted_url, "pass")
+  assert.equal((await s.ageCheck("refresh")).status, "passed")
+  const placed = await s.checkout(RETRY)
+  assert.equal(placed.status, 200, JSON.stringify(placed.json).slice(0, 400))
+  assert.notEqual(placed.json.order_id, order, "a new order")
+})
+
+await group("block: a ship-to change refused after a declined payment, then back to the bound ship-to: the cart and the gate agree", async () => {
+  const { s } = await declinedAfterPass()
+  const moved = { ...RETRY, address_1: "9 Elm St" }
+  await s.setAddress(moved)
+  const refused = await s.checkout(moved)
+  assert.equal(refused.status, 400)
+  assert.match(refused.json.message, /shipping address changed/)
+  const state = (await s.setAddress(RETRY)).extensions[NS].status
+  const placed = await s.checkout(RETRY)
+  assert.equal(state, "none", "the dropped draft is not resumed: Verify age is offered")
+  assert.equal(placed.status, 400, "the gate agrees")
+  assert.match(placed.json.message, /Verify your age on the checkout page/)
+})
+
 await group("a refused block checkout's draft is not stuck as required: local pickup next", async () => {
   // WooCommerce 11.3 saves the refused draft and reuses it on the next attempt.
   const s = new Shopper()
@@ -660,7 +706,9 @@ await group("classic: a declined payment keeps the check: the page says passed a
   const order = await lastAttachedOrder()
   const creates = await rpcCount("CreateVerification")
 
-  assert.equal((await s.store("GET", "/cart")).json.extensions[NS].status, "passed")
+  // The cart data is the Store API's view: it never resumes the classic
+  // order_awaiting_payment, so a block checkout would need a new check.
+  assert.equal((await s.store("GET", "/cart")).json.extensions[NS].status, "none")
   const html = await classicPage(s)
   assert.match(html, /data-navexa-agecheck="1" data-status="passed"/, "the page shows the check passed")
   assert.doesNotMatch(html, /data-navexa-agecheck-verify="1"/, "no Verify age button")
@@ -685,6 +733,49 @@ await group("classic: a ship-to change after a declined payment needs a new chec
   const refused = await classicSubmit(s, html, moved)
   assert.equal(refused.result, "failure")
   assert.match(refused.messages, /shipping address changed/)
+})
+
+// Both checkout pages in one session: each page must say what its own
+// checkout's gate does. The classic checkout resumes only order_awaiting_payment
+// (WooCommerce 11.x's Store API writes it too, 9.9's does not), the Store API
+// only store_api_draft_order.
+await group("block decline, then the classic checkout page: the page and the classic gate agree", async () => {
+  const { s, order } = await declinedAfterPass()
+  const html = await classicPage(s)
+  const status = /data-navexa-agecheck="1" data-status="([a-z]+)"/.exec(html)?.[1]
+  const creates = await rpcCount("CreateVerification")
+  const placed = await classicSubmit(s, html, RETRY)
+  console.log(`     classic page after a block decline: ${status}, Place order: ${placed.result}`)
+  assert.equal(placed.result === "success", status === "passed", `the page says ${status}, Place order: ${JSON.stringify(placed).slice(0, 300)}`)
+  if (status === "passed") {
+    // WooCommerce 11.x: the classic checkout resumes the declined draft.
+    assert.match(placed.redirect, new RegExp(`order-received/${order}/`))
+    assert.equal(await rpcCount("CreateVerification"), creates, "no second verification")
+  } else {
+    // WooCommerce 9.9: a new order, which needs its own check; the page offers it.
+    assert.match(html, /data-navexa-agecheck-verify="1"/)
+  }
+})
+
+await group("classic decline, then the block checkout: the cart and the Store API gate agree", async () => {
+  const s = new Shopper()
+  await s.addProduct(RETRY)
+  const started = await s.ageCheck("start")
+  await decideOnHostedPage(started.hosted_url, "pass")
+  assert.equal((await s.ageCheck("refresh")).status, "passed")
+  const declined = await classicSubmit(s, await classicPage(s), RETRY, DECLINE)
+  assert.equal(declined.result, "failure", JSON.stringify(declined).slice(0, 400))
+  const order = await lastAttachedOrder()
+  assert.equal((await s.store("GET", "/cart")).json.extensions[NS].status, "none", "the Store API never resumes order_awaiting_payment")
+  const refused = await s.checkout(RETRY)
+  assert.equal(refused.status, 400, "the gate agrees")
+  assert.match(refused.json.message, /Verify your age on the checkout page/)
+  const again = await s.ageCheck("start")
+  await decideOnHostedPage(again.hosted_url, "pass")
+  assert.equal((await s.ageCheck("refresh")).status, "passed")
+  const placed = await s.checkout(RETRY)
+  assert.equal(placed.status, 200, JSON.stringify(placed.json).slice(0, 400))
+  assert.notEqual(placed.json.order_id, order, "a new order, admitted by the new check")
 })
 
 await group("a signed-out shopper's verification survives nothing it should not: a new session has no guard", async () => {

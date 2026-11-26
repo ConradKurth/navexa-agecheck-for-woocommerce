@@ -27,6 +27,7 @@ How orders are handled:
 * Orders paid on the "pay for order" page, and every order in "After payment" mode, are accepted, then held until the shopper verifies. AgeCheck emails the shopper a link to its page (good for 7 days; the ID must match the order's billing name), and the order-received page and the order in My account show a "Verify now" button. The AgeCheck panel on the order says whether the email went out; Order actions can resend it (at most 5 a day) or withdraw it. When the order is cancelled, refunded in full, marked failed, trashed or deleted, the plugin has AgeCheck withdraw the link by itself, in the background, and notes the result on the order; a partial refund leaves it working. While AgeCheck is not sending verification emails yet, or until you set your store name in the AgeCheck dashboard, the order stays held and a notice tells you so.
 * A signed-in customer who passed an age check at your store recently may not have to verify again when AgeCheck's returning-customer check is on for your account; the order panel then says "Returning customer (reused verification)". The plugin sends AgeCheck only a keyed reference to the customer's account, never their name or email address for this.
 * If the shopper fails, the order is never released. By default it is refunded through the payment gateway when the gateway can refund by API; otherwise it is listed under "AgeCheck: denied, refund required" on the Orders screen.
+* If AgeCheck cannot be reached, the plugin fails closed: no age-restricted order skips its check because AgeCheck did not answer. In "Before payment" mode, Verify age says "Age verification is temporarily unavailable" and a new order cannot be placed until AgeCheck answers again. Every paid age-restricted order, including one that passed at checkout, stays in "Awaiting age check" until AgeCheck clears it (see the FAQ).
 * The shipping address of an order linked to an age check cannot be changed.
 * AgeCheck verifies US addresses only, including Puerto Rico, Guam, the US Virgin Islands, American Samoa, the Northern Mariana Islands, the US Minor Outlying Islands and APO/FPO addresses.
 
@@ -103,6 +104,16 @@ If an express order still gets through (another payment plugin, a setting turned
 = What if a shopper fails the age check? =
 
 The order is never released. Depending on your setting, it is refunded through the payment gateway (when the gateway can refund by API) or listed under "AgeCheck: denied, refund required" for you to refund.
+
+= What happens when AgeCheck can't be reached? =
+
+The plugin fails closed: no age-restricted order skips its check because AgeCheck did not answer.
+
+* In "Before payment" mode, Verify age says "Age verification is temporarily unavailable" and a new order cannot be placed until AgeCheck answers again. Place order asks AgeCheck again even for a shopper who passed earlier, and is refused with the same message; a shopper who has not verified yet is asked to verify first.
+* Every paid age-restricted order already placed stays in "Awaiting age check": one that passed at checkout (normally released at once), orders accepted in "After payment" mode or on the "pay for order" page, and express orders placed without the checkout. The plugin keeps asking AgeCheck about them, with retries after a failed attempt and a check of held orders every 15 minutes (100 orders at a time), and releases each one once AgeCheck clears it. If AgeCheck answers with an error instead of not answering, the order gets a note and the check of held orders asks about it again after 6 hours. Meanwhile, a shopper who selects "Verify now" on their order page is told "Age verification is temporarily unavailable".
+* You can still release an order yourself with "AgeCheck: release without age check".
+
+There is no setting that lets orders through during an outage.
 
 = Can I release a held order myself? =
 

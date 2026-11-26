@@ -165,6 +165,7 @@ final class UninstallTest extends TestCase {
 				array( 'delete_metadata', 'user', 0, 'navexa_agecheck_dismissed_test', '', true ),
 				array( 'delete_metadata', 'user', 0, 'navexa_agecheck_dismissed_paused', '', true ),
 				array( 'delete_metadata', 'user', 0, 'navexa_agecheck_dismissed_capped', '', true ),
+				array( 'delete_metadata', 'user', 0, 'navexa_agecheck_dismissed_setup', '', true ),
 			),
 			$this->calls_to( 'delete_metadata' )
 		);
@@ -172,6 +173,7 @@ final class UninstallTest extends TestCase {
 		$this->assertSame( \Navexa\AgeCheck\Admin\Notices::USER_META_TEST, Uninstall::USER_META_TEST );
 		$this->assertSame( \Navexa\AgeCheck\Admin\Notices::USER_META_PAUSED, Uninstall::USER_META_PAUSED );
 		$this->assertSame( \Navexa\AgeCheck\Admin\Notices::USER_META_CAPPED, Uninstall::USER_META_CAPPED );
+		$this->assertSame( \Navexa\AgeCheck\Admin\Notices::USER_META_SETUP, Uninstall::USER_META_SETUP );
 		$this->assertSame( array(), $this->db->ran( 'DELETE' ), 'order and product meta kept by default' );
 		$this->assertSame( array(), $this->calls_to( 'wp_cache_flush' ) );
 	}

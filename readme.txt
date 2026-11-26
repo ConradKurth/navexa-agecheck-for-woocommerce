@@ -131,7 +131,7 @@ Turn on Cloudflare Turnstile under WooCommerce > Settings > AgeCheck > Checkout 
 
 = Is the age check accessible? =
 
-The age check window is an accessible dialog: it is labelled, keyboard focus stays in it while it is open, Escape or its close button closes it, and the rest of the page is hidden from screen readers meanwhile. A refusal, including a window closed before the check finished, shows where WooCommerce shows its own checkout errors and is announced to screen readers. On the classic checkout the focus then moves to it; on the block checkout it goes back to the Place order button. The entry age gate is an accessible dialog too, and its settings refuse text and button colours under a 4.5:1 contrast ratio (WCAG AA).
+The age check window is an accessible dialog: it is labelled, keyboard focus stays in it while it is open, Escape or its close button closes it, and the rest of the page is hidden from screen readers meanwhile. After a pass it shows "Verified" for about a second, announced to screen readers (without animation when the shopper's device asks for reduced motion), then closes and the order goes through; closing it during that second keeps the pass. A refusal, including a window closed before the check finished, shows where WooCommerce shows its own checkout errors and is announced to screen readers. On the classic checkout the focus then moves to it; on the block checkout it goes back to the Place order button. The entry age gate is an accessible dialog too, and its settings refuse text and button colours under a 4.5:1 contrast ratio (WCAG AA).
 
 = Is the entry age gate an age verification? =
 
@@ -230,7 +230,7 @@ The optional entry age gate contacts no service at all: it needs no API key, sen
 
 The minified scripts in assets/js/ and assets/build/ are built from the sources in assets/src/ (the classic checkout, Place order and lock glue and the Turnstile glue in assets/src/loader/, the entry gate's boot script in assets/src/gate/, the gate settings script in assets/src/admin/, the checkout block in assets/src/blocks/). The full source, including the build configuration, is at https://github.com/ConradKurth/navexa-agecheck-for-woocommerce. To rebuild: `npm ci && npm run build` (Node 24).
 
-Navexa's AgeCheck loader (@navexa/agecheck-js 1.0.0, MIT licence, the same files verify.navexa.co/js/ serves) is bundled unmodified in assets/vendor/agecheck-js/: its minified builds (agecheck-1.0.0.js, the full loader for checkout; agecheck-gate-1.0.0.js, the entry gate), their readable builds (.debug.js, loaded when SCRIPT_DEBUG is on), its TypeScript source in assets/vendor/agecheck-js/src/, and manifest.json with each file's sha384 hash. Its repository is not public yet; the readable builds and the source are shipped for review.
+Navexa's AgeCheck loader (@navexa/agecheck-js 1.0.1, MIT licence, the same files verify.navexa.co/js/ serves) is bundled unmodified in assets/vendor/agecheck-js/: its minified builds (agecheck-1.0.1.js, the full loader for checkout; agecheck-gate-1.0.1.js, the entry gate), their readable builds (.debug.js, loaded when SCRIPT_DEBUG is on), its TypeScript source in assets/vendor/agecheck-js/src/, and manifest.json with each file's sha384 hash. Its repository is not public yet; the readable builds and the source are shipped for review.
 
 Translations: the template is languages/navexa-agecheck-for-woocommerce.pot.
 
@@ -239,13 +239,13 @@ The plugin sends no telemetry.
 == Changelog ==
 
 = 1.1.0 =
-* Checkout: Place order opens the age check in a window on the checkout page. The shopper types their date of birth there and takes the ID check only when needed; the order goes through as soon as they pass. Classic and block checkout. The Verify age button is gone.
+* Checkout: Place order opens the age check in a window on the checkout page. The shopper types their date of birth there and takes the ID check only when needed; once they pass, the window shows "Verified" for a moment, closes, and the order goes through. Classic and block checkout. The Verify age button is gone.
 * After a pass, the name and address fields are locked to the check (block checkout: WooCommerce's address cards); changing the address means checking again.
 * If the window cannot load on the page (allowed origins, a Content Security Policy, a blocked frame), it offers a new window, then the same tab.
 * Entry age gate: date-of-birth mode, logo, colours (contrast checked, 4.5:1), title, text and button labels, its own minimum age, and its own settings section. Visitors who answered the 1.0.x gate are not asked again.
 * New "Age verification: Off (entry age gate only)": run only the entry age gate, with no API key; nothing is verified or held. A missing key never turns verification off by itself, and a notice now says what happens until the keys are added: checkouts refused ("Before payment") or orders held ("After payment").
 * A Settings link on the Plugins screen.
-* Uses Navexa's shared AgeCheck loader 1.0.0 (MIT), bundled with the plugin.
+* Uses Navexa's shared AgeCheck loader 1.0.1 (MIT), bundled with the plugin.
 * A shopper whose ID check was declined, or whose ID's name did not match the order's, can try again on the same order for 7 days after the first failure (never after an under-age result: that order is denied at once). AgeCheck confirms each time that the retry is still open, and while it is the order stays held and any refund waits; the order page offers Try again, staff can email a new link from Order actions, and the panel says "Failed: the shopper may try again until ..." or "Retrying". Needs AgeCheck's document retry to be on; until then failed orders are handled as before. An order already denied whose shopper passes later is never released on its own: it stays held for staff to check the refund and release or cancel it.
 * Subscribe your AgeCheck webhook to verification.needs_doc as well, so a retry in progress is noted on the order right away.
 * Returning guests: while AgeCheck's returning-customer check is on for your account and your store has a name in the AgeCheck dashboard, the age check start at Place order sends a guest's billing email, so a guest who passed here recently can skip a new check with a one-time code AgeCheck emails them. Signed-in customers are still matched by their account. If AgeCheck refuses the email, the check starts without it.

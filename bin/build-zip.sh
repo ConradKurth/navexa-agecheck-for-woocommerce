@@ -161,6 +161,12 @@ loader_version=$(sed -n "s/.*const LOADER_VERSION = '\([0-9.]*\)';.*/\1/p" "$des
 for build in agecheck agecheck-gate; do
 	[ -f "$dest/assets/vendor/agecheck-js/$build-$loader_version.js" ] || die "the vendored loader assets/vendor/agecheck-js/$build-$loader_version.js is missing (Frontend::LOADER_VERSION $loader_version)"
 done
+while IFS= read -r -d '' loader; do
+	case "${loader##*/}" in
+		agecheck-"$loader_version".js | agecheck-"$loader_version".debug.js | agecheck-gate-"$loader_version".js | agecheck-gate-"$loader_version".debug.js) ;;
+		*) die "${loader#"$dest"/} is not the pinned loader $loader_version (the plugin ships one version: sync it with bin/sync-loader.mjs)" ;;
+	esac
+done < <(find "$dest/assets/vendor/agecheck-js" -maxdepth 1 -name 'agecheck*.js' -print0)
 [ ! -d "$dest/assets/vendor/agecheck-js/schema" ] || die "the vendored loader's schema/ is for tests only (export-ignore)"
 ls "$dest"/assets/build/*/block.json > /dev/null 2>&1 || die "the built checkout block (assets/build/) is missing"
 while IFS= read -r -d '' min; do

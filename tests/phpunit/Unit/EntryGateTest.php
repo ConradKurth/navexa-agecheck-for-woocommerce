@@ -529,13 +529,13 @@ final class EntryGateTest extends TestCase {
 	public function test_script_optimizers_are_told_to_leave_only_the_gates_tags_alone(): void {
 		$src = EntryGate::script_attributes(
 			array(
-				'src' => 'https://shop.example/agecheck-gate-1.0.0.js',
+				'src' => 'https://shop.example/agecheck-gate-' . \Navexa\AgeCheck\Frontend::LOADER_VERSION . '.js',
 				'id'  => 'navexa-agecheck-gate-loader-js',
 			)
 		);
 		$this->assertSame( array( 'data-cfasync', 'data-no-optimize', 'data-no-defer', 'data-no-minify', 'nowprocket', 'src', 'id' ), array_keys( $src ), 'data-cfasync before src' );
 		$this->assertSame( 'false', $src['data-cfasync'] );
-		$this->assertSame( 'https://shop.example/agecheck-gate-1.0.0.js', $src['src'] );
+		$this->assertSame( 'https://shop.example/agecheck-gate-' . \Navexa\AgeCheck\Frontend::LOADER_VERSION . '.js', $src['src'] );
 		$boot = EntryGate::script_attributes( array( 'id' => 'navexa-agecheck-entry-gate-js' ) );
 		$this->assertSame( '1', $boot['data-no-defer'] );
 		$this->assertTrue( $boot['nowprocket'] );

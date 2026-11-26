@@ -69,6 +69,9 @@ final class FrontendTest extends TestCase {
 			}
 		}
 		$this->assertFileDoesNotExist( $root . '/assets/js/agecheck-1.0.0.min.js', 'the 1.0.x bundled loader is gone' );
+		$builds = array_map( 'basename', (array) glob( $root . '/assets/vendor/agecheck-js/agecheck*.js' ) );
+		sort( $builds );
+		$this->assertSame( array( 'agecheck-' . Frontend::LOADER_VERSION . '.debug.js', 'agecheck-' . Frontend::LOADER_VERSION . '.js', 'agecheck-gate-' . Frontend::LOADER_VERSION . '.debug.js', 'agecheck-gate-' . Frontend::LOADER_VERSION . '.js' ), $builds, 'the plugin ships one loader version' );
 		foreach ( array( 'block.json', 'index.js', 'index.asset.php', 'frontend.js', 'frontend.asset.php' ) as $file ) {
 			$this->assertFileExists( $root . '/assets/build/verify-age/' . $file );
 		}
@@ -86,8 +89,14 @@ final class FrontendTest extends TestCase {
 
 	public function test_script_data_carries_the_modal_labels_and_no_button_copy(): void {
 		$data = Frontend::script_data();
-		$this->assertSame( array( 'title', 'close', 'loading', 'slow', 'newWindow', 'popup', 'reopen', 'blocked', 'samePage', 'frame' ), array_keys( $data['labels'] ), "the loader's VERIFY_LABEL_KEYS" );
+		$this->assertSame( array( 'title', 'close', 'loading', 'slow', 'newWindow', 'popup', 'reopen', 'blocked', 'samePage', 'frame', 'verified' ), array_keys( $data['labels'] ), "the loader's VERIFY_LABEL_KEYS" );
 		$this->assertSame( 'Verify your age', $data['labels']['title'] );
+		$this->assertSame( 'Verified', $data['labels']['verified'], 'loader 1.0.1: the pass moment' );
+		// Every key of the vendored loader's DEFAULT_VERIFY_LABELS, so a sync that adds one is noticed.
+		$source = (string) file_get_contents( dirname( __DIR__, 3 ) . '/assets/vendor/agecheck-js/src/verify.ts' );
+		$this->assertSame( 1, preg_match( '/DEFAULT_VERIFY_LABELS: Required<VerifyLabels> = \{(.*?)\n\}/s', $source, $block ) );
+		preg_match_all( '/^\s+(\w+):/m', $block[1], $keys );
+		$this->assertSame( $keys[1], array_keys( $data['labels'] ), 'the vendored loader\'s label keys, in order' );
 		foreach ( array( 'verify', 'verifying', 'opening', 'required' ) as $gone ) {
 			$this->assertArrayNotHasKey( $gone, $data['i18n'], $gone );
 		}

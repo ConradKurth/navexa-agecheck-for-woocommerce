@@ -173,11 +173,11 @@ final class EntryGate {
 	}
 
 	/**
-	 * The gate's options (the loader's GateOptions, schema 1.0.0): the same
-	 * for every visitor (page caching). No key, no personal data. The
-	 * merchant's text is passed as typed ({age} and {site} are the loader's
-	 * placeholders); blank text is the translated default, with the age and
-	 * the store name already filled in.
+	 * The gate's options (the loader's GateOptions, the vendored
+	 * schema/<LOADER_VERSION>/): the same for every visitor (page caching).
+	 * No key, no personal data. The merchant's text is passed as typed ({age}
+	 * and {site} are the loader's placeholders); blank text is the translated
+	 * default, with the age and the store name already filled in.
 	 *
 	 * @return array<string, mixed>
 	 */

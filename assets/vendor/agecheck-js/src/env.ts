@@ -26,6 +26,8 @@ export interface Env {
   href(): string
   local(): Storage | null
   session(): Storage | null
+  /** Whether the shopper asked for reduced motion (1.0.1). */
+  reducedMotion(): boolean
 }
 
 const storage = (read: () => Storage): Storage | null => {
@@ -46,4 +48,11 @@ export const env: Env = {
   href: () => window.location.href,
   local: () => storage(() => window.localStorage),
   session: () => storage(() => window.sessionStorage),
+  reducedMotion: () => {
+    try {
+      return typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    } catch {
+      return false
+    }
+  },
 }

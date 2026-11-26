@@ -1,4 +1,4 @@
-/*! @navexa/agecheck-js v1.0.0 | MIT | Copyright (c) 2026 Navexa | entry gate only, debug build | https://verify.navexa.co/js/manifest.json */
+/*! @navexa/agecheck-js v1.0.1 | MIT | Copyright (c) 2026 Navexa | entry gate only, debug build | https://verify.navexa.co/js/manifest.json */
 "use strict";
 (() => {
   // src/age.ts
@@ -74,6 +74,14 @@ html[${GATE_ATTR}] body>:not(.${ROOT}){visibility:hidden!important}
 .${ROOT} .nac-link{color:inherit;text-decoration:underline;font-weight:600}
 .nac-spin{width:2em;height:2em;border:3px solid rgba(0,0,0,.15);border-top-color:currentColor;border-radius:50%;animation:nac-spin 1s linear infinite}
 @keyframes nac-spin{to{transform:rotate(1turn)}}
+.nac-ok{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.75em;padding:1.5em;background:var(--nac-card,#fff);text-align:center;animation:nac-in .2s ease-out}
+.nac-ok p{margin:0;font-size:1.25em;font-weight:700}
+.nac-tick{position:relative;width:3em;height:3em;border-radius:50%;background:#1a7f37;animation:nac-pop .3s ease-out}
+.nac-tick::after{content:"";position:absolute;left:1.08em;top:.62em;width:.75em;height:1.4em;border:solid #fff;border-width:0 .25em .25em 0;transform:rotate(45deg)}
+@keyframes nac-pop{from{transform:scale(.6)}to{transform:scale(1)}}
+.nac-ok.nac-still,.nac-still .nac-tick{animation:none!important}
+@media (prefers-reduced-motion:reduce){.nac-ok,.nac-tick{animation:none!important}}
+.nac-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 @media (min-width:541px){.${ROOT}.nac-v{padding:16px}.nac-modal{width:500px;max-width:100%;height:min(var(--nac-h,640px),100%);border-radius:8px}}
 @media (min-width:1024px){.nac-modal{width:min(960px,90vw);height:min(var(--nac-h,660px),660px,90vh)}}`;
   function addStyle(doc, name, css) {
@@ -211,7 +219,14 @@ html[${GATE_ATTR}] body>:not(.${ROOT}){visibility:hidden!important}
     userAgent: () => typeof navigator === "undefined" ? "" : navigator.userAgent || "",
     href: () => window.location.href,
     local: () => storage(() => window.localStorage),
-    session: () => storage(() => window.sessionStorage)
+    session: () => storage(() => window.sessionStorage),
+    reducedMotion: () => {
+      try {
+        return typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      } catch {
+        return false;
+      }
+    }
   };
 
   // src/contrast.ts
@@ -634,7 +649,7 @@ html[${GATE_ATTR}] body>:not(.${ROOT}){visibility:hidden!important}
   }
 
   // src/version.ts
-  var VERSION = "1.0.0";
+  var VERSION = "1.0.1";
 
   // src/iife-gate.ts
   publish({ version: VERSION, gate, isRemembered });

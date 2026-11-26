@@ -34,7 +34,7 @@ final class Frontend {
 	 * platform, so versioned apart from the plugin. bin/sync-loader.mjs
 	 * writes it; CI checks it against assets/vendor/agecheck-js/.
 	 */
-	const LOADER_VERSION = '1.0.0';
+	const LOADER_VERSION = '1.0.1';
 
 	const HANDLE_LOADER  = 'navexa-agecheck-loader';
 	const HANDLE_CLASSIC = 'navexa-agecheck-classic';
@@ -178,6 +178,8 @@ final class Frontend {
 			'blocked'   => __( 'Your browser blocked the new window.', 'navexa-agecheck-for-woocommerce' ),
 			'samePage'  => __( 'Continue the age check on this page', 'navexa-agecheck-for-woocommerce' ),
 			'frame'     => __( 'Age check', 'navexa-agecheck-for-woocommerce' ),
+			// Loader 1.0.1: shown and announced for a moment after a pass, before the modal closes.
+			'verified'  => _x( 'Verified', 'the age check window after a pass', 'navexa-agecheck-for-woocommerce' ),
 		);
 	}
 

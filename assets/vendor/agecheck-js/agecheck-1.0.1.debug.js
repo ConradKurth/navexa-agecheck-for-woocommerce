@@ -1,4 +1,4 @@
-/*! @navexa/agecheck-js v1.0.0 | MIT | Copyright (c) 2026 Navexa | loader, debug build | https://verify.navexa.co/js/manifest.json */
+/*! @navexa/agecheck-js v1.0.1 | MIT | Copyright (c) 2026 Navexa | loader, debug build | https://verify.navexa.co/js/manifest.json */
 "use strict";
 (() => {
   // src/age.ts
@@ -74,6 +74,14 @@ html[${GATE_ATTR}] body>:not(.${ROOT}){visibility:hidden!important}
 .${ROOT} .nac-link{color:inherit;text-decoration:underline;font-weight:600}
 .nac-spin{width:2em;height:2em;border:3px solid rgba(0,0,0,.15);border-top-color:currentColor;border-radius:50%;animation:nac-spin 1s linear infinite}
 @keyframes nac-spin{to{transform:rotate(1turn)}}
+.nac-ok{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.75em;padding:1.5em;background:var(--nac-card,#fff);text-align:center;animation:nac-in .2s ease-out}
+.nac-ok p{margin:0;font-size:1.25em;font-weight:700}
+.nac-tick{position:relative;width:3em;height:3em;border-radius:50%;background:#1a7f37;animation:nac-pop .3s ease-out}
+.nac-tick::after{content:"";position:absolute;left:1.08em;top:.62em;width:.75em;height:1.4em;border:solid #fff;border-width:0 .25em .25em 0;transform:rotate(45deg)}
+@keyframes nac-pop{from{transform:scale(.6)}to{transform:scale(1)}}
+.nac-ok.nac-still,.nac-still .nac-tick{animation:none!important}
+@media (prefers-reduced-motion:reduce){.nac-ok,.nac-tick{animation:none!important}}
+.nac-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 @media (min-width:541px){.${ROOT}.nac-v{padding:16px}.nac-modal{width:500px;max-width:100%;height:min(var(--nac-h,640px),100%);border-radius:8px}}
 @media (min-width:1024px){.nac-modal{width:min(960px,90vw);height:min(var(--nac-h,660px),660px,90vh)}}`;
   function addStyle(doc, name, css) {
@@ -211,7 +219,14 @@ html[${GATE_ATTR}] body>:not(.${ROOT}){visibility:hidden!important}
     userAgent: () => typeof navigator === "undefined" ? "" : navigator.userAgent || "",
     href: () => window.location.href,
     local: () => storage(() => window.localStorage),
-    session: () => storage(() => window.sessionStorage)
+    session: () => storage(() => window.sessionStorage),
+    reducedMotion: () => {
+      try {
+        return typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      } catch {
+        return false;
+      }
+    }
   };
 
   // src/contrast.ts
@@ -640,6 +655,7 @@ html[${GATE_ATTR}] body>:not(.${ROOT}){visibility:hidden!important}
   var DEFAULT_HOST = "https://verify.navexa.co";
   var REDIRECT_MARKER = "navexa-agecheck-redirect";
   var START_STATUSES = ["passed", "refused", "not_required", "unavailable"];
+  var PASS_HOLD_MS = 900;
   var DEFAULT_VERIFY_LABELS = {
     title: "Verify your age",
     close: "Close",
@@ -650,7 +666,8 @@ html[${GATE_ATTR}] body>:not(.${ROOT}){visibility:hidden!important}
     reopen: "Show the age check window",
     blocked: "Your browser blocked the new window.",
     samePage: "Continue the age check on this page",
-    frame: "Age check"
+    frame: "Age check",
+    verified: "Verified"
   };
   var VERIFY_LABEL_KEYS = Object.keys(DEFAULT_VERIFY_LABELS);
   var TYPE = "navexa-agecheck";
@@ -769,14 +786,25 @@ html[${GATE_ATTR}] body>:not(.${ROOT}){visibility:hidden!important}
     link.href = page;
     wait.append(spin, waitText, action, link);
     body.appendChild(wait);
+    const ok = el(doc, "div", "nac-ok");
+    ok.hidden = true;
+    ok.setAttribute("aria-hidden", "true");
+    ok.append(el(doc, "div", "nac-tick"), el(doc, "p", void 0, labels.verified));
+    body.appendChild(ok);
+    const live = el(doc, "p", "nac-sr");
+    live.setAttribute("role", "status");
+    live.setAttribute("aria-live", "polite");
+    body.appendChild(live);
     head.append(title, x);
     modal.append(head, body);
     root.appendChild(modal);
     let frame = null;
     let popup = null;
     let done = false;
+    let passing = null;
     let readyTimer;
     let pollTimer;
+    let holdTimer;
     let pollDelay = pollMs;
     let polling = false;
     const pollStart = env.now();
@@ -790,9 +818,7 @@ html[${GATE_ATTR}] body>:not(.${ROOT}){visibility:hidden!important}
       link.hidden = !withLink;
     };
     show(labels.loading);
-    const end = (result, callback) => {
-      if (done) return;
-      done = true;
+    const stop = () => {
       clearTimeout(readyTimer);
       clearTimeout(pollTimer);
       win.removeEventListener("message", onMessage);
@@ -806,16 +832,38 @@ html[${GATE_ATTR}] body>:not(.${ROOT}){visibility:hidden!important}
         if (popup && !popup.closed) popup.close?.();
       } catch {
       }
+    };
+    const end = (result, callback) => {
+      if (done) return;
+      done = true;
+      clearTimeout(holdTimer);
+      stop();
       layer.close();
       settle(result, callback);
     };
     const finish = (status, id) => {
+      if (done || passing) return;
       const result = { status };
       const vid = id || verificationId;
       if (vid) result.verificationId = vid;
-      end(result, () => o.onResult?.(result));
+      if (status !== "passed") {
+        end(result, () => o.onResult?.(result));
+        return;
+      }
+      passing = result;
+      stop();
+      wait.hidden = true;
+      if (env.reducedMotion()) ok.classList.add("nac-still");
+      ok.hidden = false;
+      live.textContent = labels.verified;
+      holdTimer = setTimeout(() => end(result, () => o.onResult?.(result)), PASS_HOLD_MS);
     };
     const cancel = () => {
+      if (passing) {
+        const result2 = passing;
+        end(result2, () => o.onResult?.(result2));
+        return;
+      }
       const result = { status: "closed" };
       if (verificationId) result.verificationId = verificationId;
       end(result, () => o.onClose?.());
@@ -845,7 +893,7 @@ html[${GATE_ATTR}] body>:not(.${ROOT}){visibility:hidden!important}
       show(labels.popup, labels.reopen);
     };
     function onMessage(event) {
-      if (done || event.origin !== origin || !event.source) return;
+      if (done || passing || event.origin !== origin || !event.source) return;
       if (event.source !== frame?.contentWindow && event.source !== popup) return;
       const data = event.data;
       if (!data || typeof data !== "object" || data.type !== TYPE) return;
@@ -869,7 +917,7 @@ html[${GATE_ATTR}] body>:not(.${ROOT}){visibility:hidden!important}
       pollTimer = setTimeout(poll, ms);
     };
     async function poll() {
-      if (done || polling || !token) return;
+      if (done || passing || polling || !token) return;
       if (env.now() - pollStart > MAX_POLL_MS) return;
       polling = true;
       let next = Math.min(Math.round(pollDelay * 1.5), MAX_POLL_INTERVAL_MS);
@@ -899,12 +947,12 @@ html[${GATE_ATTR}] body>:not(.${ROOT}){visibility:hidden!important}
       } catch {
       }
       polling = false;
-      if (done || !token) return;
+      if (done || passing || !token) return;
       pollDelay = next;
       schedulePoll(next);
     }
     function pollSoon() {
-      if (!done && token && !polling && doc.visibilityState !== "hidden") schedulePoll(0);
+      if (!done && !passing && token && !polling && doc.visibilityState !== "hidden") schedulePoll(0);
     }
     const layer = openLayer(doc, root, { onEscape: cancel, initialFocus: () => x });
     x.addEventListener("click", cancel);
@@ -936,7 +984,7 @@ html[${GATE_ATTR}] body>:not(.${ROOT}){visibility:hidden!important}
   }
 
   // src/version.ts
-  var VERSION = "1.0.0";
+  var VERSION = "1.0.1";
 
   // src/iife.ts
   publish({ version: VERSION, verify, gate, isRemembered });

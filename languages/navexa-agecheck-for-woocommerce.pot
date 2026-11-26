@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-11-26T12:59:29+00:00\n"
+"POT-Creation-Date: 2026-11-26T14:55:44+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: navexa-agecheck-for-woocommerce\n"
@@ -659,6 +659,11 @@ msgstr ""
 
 #: includes/Frontend.php:179
 msgid "Continue the age check on this page"
+msgstr ""
+
+#: includes/Frontend.php:182
+msgctxt "the age check window after a pass"
+msgid "Verified"
 msgstr ""
 
 #: includes/Hold.php:94

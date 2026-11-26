@@ -49,7 +49,10 @@ html[${GATE_ATTR}] body>:not(.${ROOT}){visibility:hidden!important}
  * The verify modal (brief C1 v2, A7): full screen up to 540px wide; 500px
  * wide from 541px, its height the frame's resize height (--nac-h) plus the
  * header; from 1024px up to 960x660, at most 90% of the viewport. The
- * header with its close button is always visible.
+ * header with its close button is always visible. The pass moment (1.0.1):
+ * .nac-ok over the page (a white tick on #1a7f37, 5.1:1), still under
+ * prefers-reduced-motion (.nac-still, set from the same query), and .nac-sr
+ * for text only assistive technology reads.
  */
 export const MODAL_CSS = `.${ROOT}.nac-v{padding:0}
 .nac-modal{display:flex;flex-direction:column;height:100%;border-radius:0;overflow:hidden}
@@ -64,6 +67,14 @@ export const MODAL_CSS = `.${ROOT}.nac-v{padding:0}
 .${ROOT} .nac-link{color:inherit;text-decoration:underline;font-weight:600}
 .nac-spin{width:2em;height:2em;border:3px solid rgba(0,0,0,.15);border-top-color:currentColor;border-radius:50%;animation:nac-spin 1s linear infinite}
 @keyframes nac-spin{to{transform:rotate(1turn)}}
+.nac-ok{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.75em;padding:1.5em;background:var(--nac-card,#fff);text-align:center;animation:nac-in .2s ease-out}
+.nac-ok p{margin:0;font-size:1.25em;font-weight:700}
+.nac-tick{position:relative;width:3em;height:3em;border-radius:50%;background:#1a7f37;animation:nac-pop .3s ease-out}
+.nac-tick::after{content:"";position:absolute;left:1.08em;top:.62em;width:.75em;height:1.4em;border:solid #fff;border-width:0 .25em .25em 0;transform:rotate(45deg)}
+@keyframes nac-pop{from{transform:scale(.6)}to{transform:scale(1)}}
+.nac-ok.nac-still,.nac-still .nac-tick{animation:none!important}
+@media (prefers-reduced-motion:reduce){.nac-ok,.nac-tick{animation:none!important}}
+.nac-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 @media (min-width:541px){.${ROOT}.nac-v{padding:16px}.nac-modal{width:500px;max-width:100%;height:min(var(--nac-h,640px),100%);border-radius:8px}}
 @media (min-width:1024px){.nac-modal{width:min(960px,90vw);height:min(var(--nac-h,660px),660px,90vh)}}`
 

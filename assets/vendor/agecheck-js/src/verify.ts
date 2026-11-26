@@ -32,7 +32,11 @@
  * - Settles once and never rejects for anything the shopper does: {status,
  *   verificationId} on "decided" or a final poll (passed, failed), {status:
  *   "closed"} when the shopper closes the modal (close button, Escape, the
- *   page's close_requested). It rejects only for the caller's mistakes (no
+ *   page's close_requested). A pass (1.0.1) first holds the modal open for
+ *   PASS_HOLD_MS showing "Verified" over the page, announced through a
+ *   polite live region (no animation under prefers-reduced-motion), then
+ *   closes and resolves; closing it during that moment resolves the pass at
+ *   once. A failure and a close settle at once, as in 1.0.0. It rejects only for the caller's mistakes (no
  *   usable source or host, a URL that is not a hosted page on the host, a
  *   start() answer with neither) and when start() itself fails. Whatever it
  *   says, the store must ask its own server: only GetClearance decides.
@@ -46,6 +50,8 @@ export const DEFAULT_HOST = "https://verify.navexa.co"
 export const REDIRECT_MARKER = "navexa-agecheck-redirect"
 /** The statuses start() may answer with no url. */
 export const START_STATUSES = ["passed", "refused", "not_required", "unavailable"] as const
+/** How long the modal shows "Verified" after a pass before it closes and resolves (1.0.1). */
+export const PASS_HOLD_MS = 900
 
 export interface VerifyLabels {
   /** The modal's heading. */
@@ -68,6 +74,8 @@ export interface VerifyLabels {
   samePage?: string
   /** The frame's accessible title. */
   frame?: string
+  /** Shown, and announced, for a moment after a pass (1.0.1). */
+  verified?: string
 }
 
 export const DEFAULT_VERIFY_LABELS: Required<VerifyLabels> = {
@@ -81,6 +89,7 @@ export const DEFAULT_VERIFY_LABELS: Required<VerifyLabels> = {
   blocked: "Your browser blocked the new window.",
   samePage: "Continue the age check on this page",
   frame: "Age check",
+  verified: "Verified",
 }
 /** Every verify label key (WordPress and other translators pass these). */
 export const VERIFY_LABEL_KEYS = Object.keys(DEFAULT_VERIFY_LABELS) as Array<keyof VerifyLabels>
@@ -270,6 +279,18 @@ function open(
   link.href = page
   wait.append(spin, waitText, action, link)
   body.appendChild(wait)
+  // The pass moment (1.0.1): a panel over the page, hidden from assistive
+  // technology, and a polite live region that is in the page from the start
+  // (so its text is announced when it changes).
+  const ok = el(doc, "div", "nac-ok")
+  ok.hidden = true
+  ok.setAttribute("aria-hidden", "true")
+  ok.append(el(doc, "div", "nac-tick"), el(doc, "p", undefined, labels.verified))
+  body.appendChild(ok)
+  const live = el(doc, "p", "nac-sr")
+  live.setAttribute("role", "status")
+  live.setAttribute("aria-live", "polite")
+  body.appendChild(live)
   head.append(title, x)
   modal.append(head, body)
   root.appendChild(modal)
@@ -277,8 +298,11 @@ function open(
   let frame: HTMLIFrameElement | null = null
   let popup: PopupHandle | null = null
   let done = false
+  /** The pass being shown before the modal closes (1.0.1); null before. */
+  let passing: VerifyResult | null = null
   let readyTimer: ReturnType<typeof setTimeout> | undefined
   let pollTimer: ReturnType<typeof setTimeout> | undefined
+  let holdTimer: ReturnType<typeof setTimeout> | undefined
   let pollDelay = pollMs
   let polling = false
   const pollStart = env.now()
@@ -295,9 +319,8 @@ function open(
   }
   show(labels.loading)
 
-  const end = (result: VerifyResult, callback?: () => void) => {
-    if (done) return
-    done = true
+  /** Stops listening and polling, and closes the window the check moved to. */
+  const stop = () => {
     clearTimeout(readyTimer)
     clearTimeout(pollTimer)
     win.removeEventListener("message", onMessage)
@@ -313,16 +336,40 @@ function open(
     } catch {
       // Gone already.
     }
+  }
+  const end = (result: VerifyResult, callback?: () => void) => {
+    if (done) return
+    done = true
+    clearTimeout(holdTimer)
+    stop()
     layer.close()
     settle(result, callback)
   }
   const finish = (status: string, id?: string) => {
+    if (done || passing) return
     const result: VerifyResult = { status }
     const vid = id || verificationId
     if (vid) result.verificationId = vid
-    end(result, () => o.onResult?.(result))
+    if (status !== "passed") {
+      end(result, () => o.onResult?.(result))
+      return
+    }
+    // The pass moment: nothing more to hear; "Verified" over the page, then close.
+    passing = result
+    stop()
+    wait.hidden = true
+    if (env.reducedMotion()) ok.classList.add("nac-still")
+    ok.hidden = false
+    live.textContent = labels.verified
+    holdTimer = setTimeout(() => end(result, () => o.onResult?.(result)), PASS_HOLD_MS)
   }
   const cancel = () => {
+    if (passing) {
+      // Closed during the pass moment: the pass, at once.
+      const result = passing
+      end(result, () => o.onResult?.(result))
+      return
+    }
     const result: VerifyResult = { status: "closed" }
     if (verificationId) result.verificationId = verificationId
     end(result, () => o.onClose?.())
@@ -356,7 +403,7 @@ function open(
   }
 
   function onMessage(event: MessageEvent): void {
-    if (done || event.origin !== origin || !event.source) return
+    if (done || passing || event.origin !== origin || !event.source) return
     if (event.source !== frame?.contentWindow && event.source !== popup) return
     const data = event.data as { type?: unknown; v?: unknown; event?: unknown; status?: unknown; verification_id?: unknown; height?: unknown }
     if (!data || typeof data !== "object" || data.type !== TYPE) return
@@ -381,7 +428,7 @@ function open(
     pollTimer = setTimeout(poll, ms)
   }
   async function poll(): Promise<void> {
-    if (done || polling || !token) return
+    if (done || passing || polling || !token) return
     if (env.now() - pollStart > MAX_POLL_MS) return
     polling = true
     let next = Math.min(Math.round(pollDelay * 1.5), MAX_POLL_INTERVAL_MS)
@@ -413,12 +460,12 @@ function open(
       // Network error or CORS refusal: back off.
     }
     polling = false
-    if (done || !token) return
+    if (done || passing || !token) return
     pollDelay = next
     schedulePoll(next)
   }
   function pollSoon(): void {
-    if (!done && token && !polling && doc.visibilityState !== "hidden") schedulePoll(0)
+    if (!done && !passing && token && !polling && doc.visibilityState !== "hidden") schedulePoll(0)
   }
 
   const layer = openLayer(doc, root, { onEscape: cancel, initialFocus: () => x })

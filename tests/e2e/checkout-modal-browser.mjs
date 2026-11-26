@@ -13,7 +13,8 @@
 //
 //   node tests/e2e/checkout-modal-browser.mjs --site http://localhost:8888 --mock http://127.0.0.1:8787 \
 //     --product <id> --exempt <id> --free-product <id> --block <page id> --classic <page id> [--browsers chromium,webkit,firefox]
-//     [--only <text>] [--turnstile-interactive]
+//     [--only <text>] [--turnstile-interactive | --outage-hold]
+//     [--setup-cmd "npx --yes @wordpress/env@12.1.0 run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp eval-file tests/wp-env/w3b-setup.php"]
 //
 // --mock must be the 127.0.0.1 address: it is also the hosted pages' base.
 // Checks: the modal passes and the order is placed without leaving checkout;
@@ -37,6 +38,24 @@
 // needs no payment (--free-product: the block checkout's fallback status
 // block, no payment step) opens the modal and places the order on a pass.
 //
+// Also: after a failed check the next Place order opens a new check in the
+// modal (the checkout's retry: there is no Verify age button); with AgeCheck
+// down and the store refusing (the default "When AgeCheck is down"), Place
+// order opens no modal, says so and places no order (fail closed); and a
+// guest's billing email, typed on the page, reaches the start while
+// AgeCheck offers the returning-guest code (TAX-1839; GetIntegrationInfo is
+// flushed through --setup-cmd, tests/wp-env/w3b-setup.php).
+//
+// --outage-hold (TAX-1841; run tests/wp-env/outage-fallback-setup.php first,
+// so the store takes and holds orders while AgeCheck is down): only the hold
+// checks run. With the mock's links on and a display name, a warm-up start
+// records that AgeCheck emails links (the fallback needs that evidence);
+// then AgeCheck is down (the mock's down knob) and Place order, on block and
+// classic checkout, opens no modal, shows the hold copy in the polite status
+// and places the order, which is held ("Awaiting age check") and says on the
+// order-received page why. Set the setting back afterwards
+// (wp option update navexa_agecheck_outage_fallback refuse).
+//
 // --turnstile-interactive: the site runs Turnstile with Cloudflare's
 // force-interactive test site key (3x00000000000000000000FF) and the
 // always-pass secret (1x0000000000000000000000000000000AA), set beforehand;
@@ -47,6 +66,7 @@
 // challenges.cloudflare.com from the browser and from WordPress.
 
 import assert from "node:assert/strict"
+import { spawn } from "node:child_process"
 import { chromium, firefox, webkit } from "playwright-core"
 
 function arg(name, fallback) {
@@ -64,6 +84,12 @@ const CLASSIC = Number(arg("--classic", "0"))
 const BROWSERS = arg("--browsers", "chromium,webkit,firefox").split(",")
 const ONLY = arg("--only", "")
 const TURNSTILE_INTERACTIVE = process.argv.includes("--turnstile-interactive")
+const OUTAGE_HOLD = process.argv.includes("--outage-hold")
+const SETUP = arg(
+  "--setup-cmd",
+  "npx --yes @wordpress/env@12.1.0 run cli --env-cwd=wp-content/plugins/navexa-agecheck-for-woocommerce wp eval-file tests/wp-env/w3b-setup.php",
+)
+const HOLD_COPY = /Age verification is unavailable right now\. You can place your order/
 const ENGINES = { chromium, firefox, webkit }
 const LAUNCH = { chromium: { args: ["--test-third-party-cookie-phaseout"] }, firefox: {}, webkit: {} }
 
@@ -135,6 +161,60 @@ async function requests(rpc) {
 
 async function embedPages() {
   return (await (await fetch(`${MOCK}/__mock/verifications`)).json()).embedPages ?? []
+}
+
+/** The bodies of the mock's recorded calls of one RPC, oldest first. */
+async function calls(rpc) {
+  return (await (await fetch(`${MOCK}/__mock/requests`)).json()).filter((r) => r.rpc === rpc).map((r) => r.body)
+}
+
+/**
+ * Runs tests/wp-env/w3b-setup.php with these arguments (asynchronously, as
+ * tests/wp-env/w3b.mjs does); its JSON answer.
+ */
+function setup(...args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(`${SETUP} ${args.join(" ")}`, { shell: true, stdio: ["ignore", "pipe", "inherit"] })
+    let out = ""
+    child.stdout.setEncoding("utf8").on("data", (chunk) => (out += chunk))
+    child.on("error", reject)
+    child.on("close", (code) => {
+      if (code !== 0) return reject(new Error(`w3b-setup ${args.join(" ")} exited ${code}: ${out}`))
+      const line = out.trim().split("\n").filter((l) => l.startsWith("{")).pop()
+      if (!line) return reject(new Error(`w3b-setup printed no JSON: ${out}`))
+      resolve(JSON.parse(line))
+    })
+  })
+}
+
+/**
+ * Records, across navigations, every text the age check status and the live
+ * region showed (with the region's aria-live) and whether the modal ever
+ * opened, so a check that submits at once can still be asserted after the
+ * page has moved on to order-received.
+ */
+async function watchStatus(context) {
+  const seen = { texts: [], modal: false }
+  await context.exposeBinding("__navexaSeen", (_source, kind, text, live) => {
+    if (kind === "modal") seen.modal = true
+    else seen.texts.push({ kind, text, live })
+  })
+  await context.addInitScript(() => {
+    const report = () => {
+      for (const [kind, sel] of [["status", ".navexa-agecheck__message"], ["live", "#navexa-agecheck-live"]]) {
+        const el = document.querySelector(sel)
+        const text = el?.textContent?.trim() ?? ""
+        if (text && el.__navexaLast !== text) {
+          el.__navexaLast = text
+          const region = el.closest("[aria-live]")
+          window.__navexaSeen(kind, text, region?.getAttribute("aria-live") ?? "")
+        }
+      }
+      if (document.querySelector('[data-navexa-agecheck="verify"] .nac-modal')) window.__navexaSeen("modal", "", "")
+    }
+    new MutationObserver(report).observe(document, { subtree: true, childList: true, characterData: true, attributes: true })
+  })
+  return seen
 }
 
 /** Fills the cart and the session's addresses through the Store API, in the browser's session. */
@@ -322,6 +402,56 @@ for (const name of BROWSERS) {
           await page.waitForURL(/order-received/, { timeout: 45000 })
           await context.close()
           return `refused in ${refusedAfter} ms; challenge solved by ${how}`
+        })
+      }
+      continue
+    }
+
+    if (OUTAGE_HOLD) {
+      // The fallback needs AgeCheck's word that it emails links: flush the
+      // cached GetIntegrationInfo, then one start with the engine up asks it.
+      await mock("config", { links: "on", org: { allowedOrigins: [SITE], displayName: "Mock Store" } })
+      await setup("mode", "prepayment")
+      const warm = await newContext(browser)
+      await prepareCart(warm, { ...ADDRESS, email: "outage-warm@example.com" })
+      const cart = await warm.request.get(`${SITE}/wp-json/wc/store/v1/cart`)
+      const started = await warm.request.post(`${SITE}/wp-json/wc/store/v1/cart/extensions`, {
+        headers: { Nonce: cart.headers()["nonce"], "Content-Type": "application/json" },
+        data: { namespace: "navexa-agecheck", data: { v: 1, action: "start" } },
+      })
+      assert.equal(started.status(), 200)
+      await warm.close()
+      for (const [checkout, open, place] of [
+        ["block", openBlock, PLACE_BLOCK],
+        ["classic", openClassic, "#place_order"],
+      ]) {
+        await check(`${name}: ${checkout} checkout, AgeCheck down, the store takes and holds orders: Place order opens no modal, shows the hold copy politely and places the order, held`, async () => {
+          const context = await newContext(browser)
+          const seen = await watchStatus(context)
+          await prepareCart(context, { ...ADDRESS, email: `outage-${checkout}@example.com` })
+          const { page } = await open(context)
+          await mock("config", { down: true })
+          try {
+            await page.click(place)
+            await page.waitForURL(/order-received/, { timeout: 45000 })
+          } finally {
+            await mock("config", { down: false })
+          }
+          assert.equal(seen.modal, false, "no modal")
+          const held = seen.texts.filter((t) => HOLD_COPY.test(t.text))
+          assert.ok(held.length > 0, `the hold copy was shown: ${JSON.stringify(seen.texts)}`)
+          // Block: the status line is the polite region. Classic: the status sits in the
+          // fragment WooCommerce replaces (no region); the glue announces in its own one.
+          const region = held.filter((t) => t.kind === (checkout === "classic" ? "live" : "status"))
+          assert.ok(region.length > 0 && region.every((t) => t.live === "polite"), `announced politely: ${JSON.stringify(held)}`)
+          await page.waitForSelector("text=Age verification was unavailable when you placed this order", { timeout: 20000 })
+          const id = Number((/order-received[=/](\d+)/.exec(page.url()) ?? [])[1] ?? 0)
+          assert.ok(id > 0, `an order id in ${page.url()}`)
+          const order = await setup("order", String(id))
+          assert.equal(order.status, "agecheck-hold", "held until the shopper verifies")
+          assert.equal(order.vid, "", "no verification bound: verified by link after payment")
+          await context.close()
+          return `order ${id} ${order.status}`
         })
       }
       continue
@@ -775,6 +905,79 @@ for (const name of BROWSERS) {
       results.push({ browser: name, addressCardsAfterPass: cards })
       await context.close()
       return `${cards} address card(s) shown after the pass`
+    })
+
+    for (const [checkout, open, place, notice] of [
+      ["block", openBlock, PLACE_BLOCK, ".wc-block-components-notice-banner.is-error"],
+      ["classic", openClassic, "#place_order", "[data-navexa-agecheck-notice]"],
+    ]) {
+      await check(`${name}: ${checkout} checkout: after a fail in the frame, the next Place order opens a new check in the modal, and a pass places the order`, async () => {
+        const context = await newContext(browser)
+        await prepareCart(context, { ...ADDRESS, email: `retry-${checkout}@example.com` })
+        const { page } = await open(context)
+        const creates = await requests("CreateVerification")
+        await page.click(place)
+        await answerInFrame(page, "fail")
+        await page.waitForFunction(([sel, re]) => [...document.querySelectorAll(sel)].some((n) => new RegExp(re).test(n.textContent ?? "")), [notice, "could not verify your age"], { timeout: 30000 })
+        await page.waitForFunction((sel) => !document.querySelector(sel), MODAL, { timeout: 10000 })
+        await page.waitForFunction(() => !document.querySelector(".blockUI"), null, { timeout: 20000 })
+        await page.click(place)
+        await answerInFrame(page, "pass")
+        await page.waitForURL(/order-received/, { timeout: 45000 })
+        assert.equal((await requests("CreateVerification")) - creates, 2, "a new check for the second attempt")
+        await context.close()
+      })
+
+      await check(`${name}: ${checkout} checkout, AgeCheck down and the store refusing (the default): Place order opens no modal, says it is unavailable and places no order`, async () => {
+        const context = await newContext(browser)
+        const seen = await watchStatus(context)
+        await prepareCart(context, { ...ADDRESS, email: `down-${checkout}@example.com` })
+        const { page } = await open(context)
+        const posts = countCheckoutPosts(page)
+        await mock("config", { down: true })
+        try {
+          await page.click(place)
+          await page.waitForFunction(([sel, re]) => [...document.querySelectorAll(sel)].some((n) => new RegExp(re).test(n.textContent ?? "")), [notice, "temporarily unavailable"], { timeout: 30000 })
+          await page.waitForTimeout(1500)
+        } finally {
+          await mock("config", { down: false })
+        }
+        assert.equal(seen.modal, false, "no modal")
+        assert.ok(!/order-received/.test(page.url()), "no order")
+        if (checkout === "classic") assert.equal(posts.n, 0, "WooCommerce never posted the order")
+        assert.ok(!seen.texts.some((t) => HOLD_COPY.test(t.text)), "no hold copy")
+        await context.close()
+      })
+    }
+
+    await check(`${name}: a guest's billing email typed on the page reaches the start on block and classic checkout while AgeCheck offers the returning-guest code (TAX-1839)`, async () => {
+      await mock("config", { reuse: "on", org: { displayName: "Mock Store" } })
+      await setup("mode", "prepayment") // flushes the cached GetIntegrationInfo
+      try {
+        for (const [checkout, open, place, field] of [
+          ["block", openBlock, PLACE_BLOCK, "#email"],
+          ["classic", openClassic, "#place_order", "#billing_email"],
+        ]) {
+          const typed = `typed-${checkout}-${name}@example.com`
+          const context = await newContext(browser)
+          await prepareCart(context, { ...ADDRESS, email: `stale-${checkout}@example.com` })
+          const { page } = await open(context)
+          await page.fill(field, typed)
+          await page.locator(field).blur()
+          const before = (await calls("CreateVerification")).length
+          await page.click(place)
+          await page.waitForSelector(FRAME, { timeout: 30000 })
+          const creates = (await calls("CreateVerification")).slice(before)
+          assert.equal(creates.length, 1, `${checkout}: one start`)
+          assert.equal(creates[0].identity?.email, typed, `${checkout}: the email the shopper typed`)
+          assert.match(creates[0].idempotencyKey, /:e[0-9a-f]{16}$/, `${checkout}: the key carries the email's tag`)
+          await page.keyboard.press("Escape")
+          await context.close()
+        }
+      } finally {
+        await mock("config", { reuse: "off" })
+        await setup("mode", "prepayment")
+      }
     })
 
     const pages = await embedPages()

@@ -72,6 +72,14 @@ final class IntegrationInfo {
 	public $organization_id = '';
 
 	/**
+	 * Whether AgeCheck offers the document retry to a verification created
+	 * with allowDocRetry (TAX-1838): a store-level read.
+	 *
+	 * @var bool
+	 */
+	public $doc_retry = false;
+
+	/**
 	 * Builds the value from a decoded response. Accepts proto3 JSON names
 	 * (originAllowed) and the original field names (origin_allowed).
 	 *
@@ -105,6 +113,8 @@ final class IntegrationInfo {
 		if ( is_string( $org ) ) {
 			$info->organization_id = $org;
 		}
+
+		$info->doc_retry = true === self::field( $body, 'docRetry', 'doc_retry' );
 		return $info;
 	}
 
@@ -122,6 +132,7 @@ final class IntegrationInfo {
 				'minimum_age'     => isset( $data['minimum_age'] ) ? $data['minimum_age'] : null,
 				'display_name'    => isset( $data['display_name'] ) ? $data['display_name'] : '',
 				'organization_id' => isset( $data['organization_id'] ) ? $data['organization_id'] : '',
+				'doc_retry'       => isset( $data['doc_retry'] ) ? $data['doc_retry'] : false,
 			)
 		);
 	}
@@ -129,7 +140,7 @@ final class IntegrationInfo {
 	/**
 	 * Plain array for caching.
 	 *
-	 * @return array{livemode: bool, scopes: string[], origin_allowed: bool, minimum_age: int|null, display_name: string, organization_id: string}
+	 * @return array{livemode: bool, scopes: string[], origin_allowed: bool, minimum_age: int|null, display_name: string, organization_id: string, doc_retry: bool}
 	 */
 	public function to_array(): array {
 		return array(
@@ -139,6 +150,7 @@ final class IntegrationInfo {
 			'minimum_age'     => $this->minimum_age,
 			'display_name'    => $this->display_name,
 			'organization_id' => $this->organization_id,
+			'doc_retry'       => $this->doc_retry,
 		);
 	}
 

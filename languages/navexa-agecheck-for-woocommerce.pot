@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-11-26T00:24:28+00:00\n"
+"POT-Creation-Date: 2026-11-26T06:44:32+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: navexa-agecheck-for-woocommerce\n"
@@ -88,258 +88,272 @@ msgstr ""
 msgid "You are not allowed to do that."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:69
+#: includes/Admin/OrderPanel.php:70
 #: includes/Settings.php:51
 msgid "AgeCheck"
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:84
+#: includes/Admin/OrderPanel.php:85
 msgid "TEST MODE: no real age check happens."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:93
+#: includes/Admin/OrderPanel.php:94
 msgid "To ship this order without an age check, type why, tick the box, choose \"AgeCheck: release without age check\" in Order actions and update the order. Your name and reason are recorded on the order."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:97
+#: includes/Admin/OrderPanel.php:98
 msgid "Reason (for example: ID checked in person)"
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:102
+#: includes/Admin/OrderPanel.php:103
 msgid "I checked the buyer is of legal age myself."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:117
-#: includes/Admin/OrderPanel.php:122
+#: includes/Admin/OrderPanel.php:118
+#: includes/Admin/OrderPanel.php:123
 #: includes/Admin/ProductField.php:41
-#: includes/OrderVerify.php:118
-#: includes/OrderVerify.php:503
+#: includes/OrderVerify.php:119
+#: includes/OrderVerify.php:524
 #: includes/ReturnPage.php:100
 msgid "Age check"
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:119
+#: includes/Admin/OrderPanel.php:120
 msgid "Not evaluated yet."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:126
+#: includes/Admin/OrderPanel.php:127
 msgid "Why"
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:131
+#: includes/Admin/OrderPanel.php:132
 msgid "Verification"
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:135
+#: includes/Admin/OrderPanel.php:136
 msgid "Passed by"
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:139
+#: includes/Admin/OrderPanel.php:140
 msgid "Verification link"
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:143
+#: includes/Admin/OrderPanel.php:144
 msgid "Link withdrawal"
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:148
+#: includes/Admin/OrderPanel.php:149
 msgid "Refunded automatically."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:149
+#: includes/Admin/OrderPanel.php:150
 msgid "Refund or cancel this order yourself."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:150
+#: includes/Admin/OrderPanel.php:151
 msgid "Refunded or cancelled by staff."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:152
+#: includes/Admin/OrderPanel.php:153
 msgid "Refund"
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:156
+#: includes/Admin/OrderPanel.php:157
 msgid "Held since"
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:160
+#: includes/Admin/OrderPanel.php:161
 msgid "Released by"
 msgstr ""
 
 #. translators: 1: staff name, 2: date.
-#: includes/Admin/OrderPanel.php:162
+#: includes/Admin/OrderPanel.php:163
 #, php-format
 msgid "%1$s on %2$s"
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:182
+#: includes/Admin/OrderPanel.php:183
 msgid "AgeCheck: check now"
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:183
+#: includes/Admin/OrderPanel.php:184
 msgid "AgeCheck: release without age check"
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:186
-msgid "AgeCheck: resend verification email"
+#: includes/Admin/OrderPanel.php:188
+msgid "AgeCheck: let the shopper try again (email a new link)"
 msgstr ""
 
 #: includes/Admin/OrderPanel.php:189
+msgid "AgeCheck: resend verification email"
+msgstr ""
+
+#: includes/Admin/OrderPanel.php:192
 msgid "AgeCheck: withdraw verification link"
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:209
+#: includes/Admin/OrderPanel.php:212
 msgid "AgeCheck cleared the order and released it."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:210
+#: includes/Admin/OrderPanel.php:213
 msgid "AgeCheck cleared the order."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:211
+#: includes/Admin/OrderPanel.php:214
 msgid "AgeCheck: the shopper has not passed yet. The order stays held."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:212
+#: includes/Admin/OrderPanel.php:215
 msgid "AgeCheck: the shopper did not pass. The order stays held."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:213
+#: includes/Admin/OrderPanel.php:216
 msgid "AgeCheck: test keys never release orders automatically."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:214
-#: includes/Admin/OrderPanel.php:266
-#: includes/Admin/OrderPanel.php:291
+#: includes/Admin/OrderPanel.php:217
+#: includes/Admin/OrderPanel.php:269
+#: includes/Admin/OrderPanel.php:294
 msgid "AgeCheck is already checking this order. Try again in a minute."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:215
+#: includes/Admin/OrderPanel.php:218
 msgid "AgeCheck could not be reached. The order stays held; it is checked again automatically."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:217
+#: includes/Admin/OrderPanel.php:220
 msgid "AgeCheck: the order stays held. See the AgeCheck panel for why."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:235
+#: includes/Admin/OrderPanel.php:238
 msgid "AgeCheck: the order was not released. Type a reason and tick the confirmation box in the AgeCheck panel, then choose the action again."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:239
+#: includes/Admin/OrderPanel.php:242
 msgid "AgeCheck: the order could not be released. Reload the order and try again."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:257
+#: includes/Admin/OrderPanel.php:260
 msgid "AgeCheck is busy right now, so no email was sent. Try again in a few minutes."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:258
+#: includes/Admin/OrderPanel.php:261
 msgid "AgeCheck could not be reached, so no email was sent. Try again in a few minutes."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:263
+#: includes/Admin/OrderPanel.php:266
 msgid "AgeCheck emailed the shopper a new verification link. Earlier links no longer work."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:264
+#: includes/Admin/OrderPanel.php:267
 msgid "AgeCheck made a new verification link but emailed nobody: test mode emails only your confirmed AgeCheck notification recipients."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:265
+#: includes/Admin/OrderPanel.php:268
 msgid "AgeCheck has already emailed this shopper 5 verification links in the last 24 hours, so no email was sent. Try again later."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:267
+#: includes/Admin/OrderPanel.php:270
 msgid "AgeCheck: this order's age check cannot be emailed (it is not waiting on the shopper, or it was started at checkout)."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:268
+#: includes/Admin/OrderPanel.php:271
 msgid "AgeCheck is not sending verification emails yet, so no email was sent."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:269
+#: includes/Admin/OrderPanel.php:272
 msgid "AgeCheck cannot email verification links until you set your store name in the AgeCheck dashboard."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:270
+#: includes/Admin/OrderPanel.php:273
 msgid "Verification emails are turned off on this site (NAVEXA_AGECHECK_EMAIL_LINKS), so no email was sent."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:272
+#: includes/Admin/OrderPanel.php:275
 msgid "AgeCheck did not email the shopper. See the AgeCheck panel and the order notes for why."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:287
+#: includes/Admin/OrderPanel.php:290
 msgid "AgeCheck could not be reached, so the link was not withdrawn. Try again in a few minutes."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:295
+#: includes/Admin/OrderPanel.php:298
 msgid "AgeCheck: this order has no emailed verification link to withdraw."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:298
+#: includes/Admin/OrderPanel.php:301
 msgid "AgeCheck withdrew the emailed verification link. The shopper can no longer use it."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:317
+#. translators: %s: a date and time.
+#: includes/Admin/OrderPanel.php:321
+#, php-format
+msgid "Failed: the shopper may try again until %s. Do not ship."
+msgstr ""
+
+#: includes/Admin/OrderPanel.php:326
+msgid "Retrying: the shopper is trying the age check again. Do not ship."
+msgstr ""
+
+#: includes/Admin/OrderPanel.php:330
 msgid "Passed. AgeCheck cleared the order."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:319
+#: includes/Admin/OrderPanel.php:332
 msgid "Failed. Do not ship this order."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:321
-#: includes/Release.php:632
+#: includes/Admin/OrderPanel.php:334
+#: includes/Release.php:695
 msgid "Released by staff without an age check."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:323
+#: includes/Admin/OrderPanel.php:336
 msgid "Awaiting the shopper's age check."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:325
+#: includes/Admin/OrderPanel.php:338
 msgid "Required. Checked when the order is paid."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:337
+#: includes/Admin/OrderPanel.php:350
 msgid "Returning customer (reused verification)"
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:339
+#: includes/Admin/OrderPanel.php:352
 msgid "ID check"
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:341
+#: includes/Admin/OrderPanel.php:354
 msgid "Data check"
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:343
+#: includes/Admin/OrderPanel.php:356
 msgid "Government-source database check"
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:345
+#: includes/Admin/OrderPanel.php:358
 msgid "Database check that cannot clear orders"
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:347
+#: includes/Admin/OrderPanel.php:360
 msgid "Override in the AgeCheck dashboard"
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:361
+#: includes/Admin/OrderPanel.php:374
 msgid "Not needed: local pickup. Check the buyer's ID at the counter."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:363
+#: includes/Admin/OrderPanel.php:376
 msgid "Not needed: the customer has an exempt role."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:365
+#: includes/Admin/OrderPanel.php:378
 msgid "Not needed: placed before AgeCheck was set up."
 msgstr ""
 
-#: includes/Admin/OrderPanel.php:367
+#: includes/Admin/OrderPanel.php:380
 msgid "Not needed: no age-restricted products."
 msgstr ""
 
@@ -371,72 +385,72 @@ msgstr ""
 msgid "Never needs an age check"
 msgstr ""
 
-#: includes/Binding.php:276
+#: includes/Binding.php:279
 msgid "AgeCheck: this order carried age check details copied from another order. They were removed; this order needs its own age check."
 msgstr ""
 
 #. translators: %s: AgeCheck verification id.
-#: includes/Binding.php:445
+#: includes/Binding.php:453
 #, php-format
 msgid "AgeCheck: started an age check for this order (%s)."
 msgstr ""
 
 #. translators: %s: machine reason, e.g. ship_to_changed.
-#: includes/Binding.php:476
+#: includes/Binding.php:484
 #, php-format
 msgid "AgeCheck: the shopper's earlier age check cannot be used for this order (%s). A new age check is needed."
 msgstr ""
 
-#: includes/Checkout/Classic.php:139
+#: includes/Checkout/Classic.php:141
 #: includes/Frontend.php:142
 msgid "Age verified."
 msgstr ""
 
-#: includes/Checkout/Classic.php:140
+#: includes/Checkout/Classic.php:142
 #: includes/Frontend.php:140
 #: assets/build/verify-age-no-payment/index.js:1
 #: assets/build/verify-age/index.js:1
 msgid "This order contains age-restricted items. Verify your age to place it."
 msgstr ""
 
-#: includes/Checkout/Classic.php:157
+#: includes/Checkout/Classic.php:159
 #: includes/Frontend.php:150
 msgid "Security check"
 msgstr ""
 
-#: includes/Checkout/Classic.php:162
+#: includes/Checkout/Classic.php:164
 #: includes/Frontend.php:137
 #: assets/build/verify-age-no-payment/index.js:1
 #: assets/build/verify-age/index.js:1
 msgid "Verify age"
 msgstr ""
 
-#: includes/Checkout/Gate.php:340
+#: includes/Checkout/Gate.php:363
 msgid "Your shipping address changed after your age check. Verify your age again for the new address."
 msgstr ""
 
-#: includes/Checkout/Gate.php:342
+#: includes/Checkout/Gate.php:365
 msgid "Age-restricted items ship only to US addresses, including US territories and APO/FPO addresses. Change the shipping address or remove those items."
 msgstr ""
 
-#: includes/Checkout/Gate.php:344
+#: includes/Checkout/Gate.php:367
 msgid "Enter your full shipping address, then verify your age."
 msgstr ""
 
-#: includes/Checkout/Gate.php:346
+#: includes/Checkout/Gate.php:369
 msgid "Age verification is temporarily unavailable, so this order cannot be placed right now. Please try again in a few minutes."
 msgstr ""
 
-#: includes/Checkout/Gate.php:348
+#: includes/Checkout/Gate.php:371
 #: includes/Frontend.php:143
 msgid "We could not verify your age, so this order cannot be placed."
 msgstr ""
 
-#: includes/Checkout/Gate.php:350
+#: includes/Checkout/Gate.php:373
 msgid "Your shipping address changed since this order was started, so it was set aside. Your age check for the new address is still valid: place your order again."
 msgstr ""
 
-#: includes/Checkout/Gate.php:352
+#: includes/Checkout/Gate.php:375
 msgid "Verify your age on the checkout page before placing this order."
 msgstr ""
 
@@ -466,6 +480,12 @@ msgstr ""
 
 #: includes/Denial.php:153
 msgid "AgeCheck: refund or cancel this order. It is listed under \"AgeCheck: denied, refund required\" on the Orders screen."
+msgstr ""
+
+#. translators: %s: a date and time.
+#: includes/DocRetry.php:221
+#, php-format
+msgid "AgeCheck: the shopper's age check did not pass. They may try again until %s; a refund waits until then. Do not ship."
 msgstr ""
 
 #: includes/EntryGate.php:132
@@ -519,8 +539,8 @@ msgid "Finish your age check in the window that opened. This page updates when y
 msgstr ""
 
 #: includes/Frontend.php:144
-#: includes/OrderVerify.php:489
-#: includes/Start.php:738
+#: includes/OrderVerify.php:510
+#: includes/Start.php:749
 msgid "Age verification is temporarily unavailable. Please try again in a few minutes."
 msgstr ""
 
@@ -752,8 +772,8 @@ msgid "AgeCheck refused to email the shopper a verification link (check billing 
 msgstr ""
 
 #. translators: %s: an AgeCheck order note.
-#: includes/Meta.php:294
-#: includes/Release.php:491
+#: includes/Meta.php:315
+#: includes/Release.php:539
 #, php-format
 msgid "TEST %s"
 msgstr ""
@@ -766,73 +786,91 @@ msgstr ""
 msgid "Your Navexa AgeCheck keys are test keys: checks use the simulator, no real age check happens, and held orders are not released automatically. Switch to live keys before selling age-restricted products."
 msgstr ""
 
-#: includes/OrderVerify.php:119
+#: includes/OrderVerify.php:120
 msgid "This order has age-restricted items. We are finishing your age check, and the store ships the order once it is complete."
 msgstr ""
 
-#: includes/OrderVerify.php:123
+#: includes/OrderVerify.php:127
+msgid "Your ID check didn't pass"
+msgstr ""
+
+#. translators: %s: a date and time.
+#: includes/OrderVerify.php:131
+#, php-format
+msgid "You can try again until %s. Use a valid government photo ID in the name on the order."
+msgstr ""
+
+#: includes/OrderVerify.php:136
 msgid "Verify your age"
 msgstr ""
 
-#: includes/OrderVerify.php:124
+#: includes/OrderVerify.php:137
 msgid "This order has age-restricted items. The store ships it once you pass an age check."
 msgstr ""
 
-#: includes/OrderVerify.php:126
+#: includes/OrderVerify.php:140
 msgid "We have also emailed you a link to the age check."
 msgstr ""
 
-#: includes/OrderVerify.php:135
+#: includes/OrderVerify.php:149
+msgid "Try again"
+msgstr ""
+
+#: includes/OrderVerify.php:149
 msgid "Verify now"
 msgstr ""
 
-#: includes/OrderVerify.php:147
+#: includes/OrderVerify.php:161
 msgid "This order will not ship"
 msgstr ""
 
-#: includes/OrderVerify.php:150
+#: includes/OrderVerify.php:164
 msgid "Age-restricted items ship only to US addresses, so the store cannot ship this order."
 msgstr ""
 
-#: includes/OrderVerify.php:151
+#: includes/OrderVerify.php:165
 msgid "We could not verify your age, so the store cannot ship this order."
 msgstr ""
 
-#: includes/OrderVerify.php:154
+#: includes/OrderVerify.php:168
 msgid "Your payment has been refunded."
 msgstr ""
 
-#: includes/OrderVerify.php:156
+#: includes/OrderVerify.php:170
 msgid "The order has been cancelled."
 msgstr ""
 
-#: includes/OrderVerify.php:158
+#: includes/OrderVerify.php:172
 msgid "If you have paid, the store will refund your payment."
 msgstr ""
 
-#: includes/OrderVerify.php:234
-#: includes/OrderVerify.php:237
+#: includes/OrderVerify.php:248
+#: includes/OrderVerify.php:251
 msgid "This page has expired. Go back to your order and select Verify now again."
 msgstr ""
 
-#: includes/OrderVerify.php:256
-#: includes/Start.php:209
+#: includes/OrderVerify.php:270
+#: includes/Start.php:211
 msgid "Too many age check attempts. Please wait a while and try again."
 msgstr ""
 
-#: includes/OrderVerify.php:278
+#: includes/OrderVerify.php:292
 msgid "We could not start your age check online. The store will contact you about this order."
 msgstr ""
 
-#: includes/OrderVerify.php:335
+#: includes/OrderVerify.php:323
+msgid "This order's age check can't be tried again. Contact the store about it."
+msgstr ""
+
+#: includes/OrderVerify.php:356
 msgid "Thank you. The store ships your order once AgeCheck confirms your age check, and emails you as usual."
 msgstr ""
 
-#: includes/OrderVerify.php:335
+#: includes/OrderVerify.php:356
 msgid "Your age check is finished"
 msgstr ""
 
-#: includes/OrderVerify.php:524
+#: includes/OrderVerify.php:545
 msgid "Back to the store"
 msgstr ""
 
@@ -981,128 +1019,140 @@ msgstr ""
 msgid "AgeCheck: the shopper's age check failed. Test keys never deny or refund orders: cancel it yourself."
 msgstr ""
 
-#: includes/Release.php:487
+#: includes/Release.php:504
+msgid "AgeCheck: the shopper is trying the age check again. Do not ship yet."
+msgstr ""
+
+#: includes/Release.php:535
 msgid "AgeCheck: age check passed (confirmed on a repeated clearance answer). Order released."
 msgstr ""
 
-#: includes/Release.php:488
+#: includes/Release.php:536
 msgid "AgeCheck: age check passed. Order released."
 msgstr ""
 
 #. translators: %s: a sentence saying why.
-#: includes/Release.php:525
+#: includes/Release.php:588
 #, php-format
 msgid "AgeCheck: the order stays held. %s"
 msgstr ""
 
-#: includes/Release.php:601
+#: includes/Release.php:664
 msgid "AgeCheck: this order has waited more than 30 days for its age check. Contact the shopper, or cancel and refund it."
 msgstr ""
 
-#: includes/Release.php:628
+#: includes/Release.php:691
 msgid "Waiting for the shopper to verify their age."
 msgstr ""
 
-#: includes/Release.php:629
+#: includes/Release.php:692
 msgid "The shopper did not pass the age check."
 msgstr ""
 
-#: includes/Release.php:630
+#: includes/Release.php:693
 msgid "The order ships outside the US. AgeCheck verifies US addresses only (including US territories and APO/FPO)."
 msgstr ""
 
-#: includes/Release.php:631
+#: includes/Release.php:694
 msgid "AgeCheck refused to clear the order."
 msgstr ""
 
-#: includes/Release.php:633
+#: includes/Release.php:696
 msgid "Subscription renewal: AgeCheck cannot reuse the earlier age check yet, so review the order and release it yourself."
 msgstr ""
 
-#: includes/Release.php:634
+#: includes/Release.php:697
 msgid "AgeCheck is not set up: add the fulfilment key in WooCommerce > Settings > AgeCheck, or confirm this site."
 msgstr ""
 
-#: includes/Release.php:635
+#: includes/Release.php:698
 msgid "Test keys never release orders automatically."
 msgstr ""
 
-#: includes/Release.php:636
+#: includes/Release.php:699
 msgid "The order has no complete shipping address."
 msgstr ""
 
-#: includes/Release.php:637
+#: includes/Release.php:700
 msgid "The order has no billing name to check the ID against."
 msgstr ""
 
-#: includes/Release.php:638
+#: includes/Release.php:701
 msgid "AgeCheck refused the shipping address."
 msgstr ""
 
-#: includes/Release.php:639
+#: includes/Release.php:702
 msgid "AgeCheck does not know the shopper's verification (were the keys changed, or switched between live and test?)."
 msgstr ""
 
-#: includes/Release.php:640
+#: includes/Release.php:703
 msgid "AgeCheck has this order linked to another verification."
 msgstr ""
 
-#: includes/Release.php:641
+#: includes/Release.php:704
 msgid "AgeCheck refused to start an age check for this order. It will try again later."
 msgstr ""
 
-#: includes/Release.php:642
+#: includes/Release.php:705
 msgid "AgeCheck cannot start age checks for this store right now (check billing and live access in the Navexa dashboard)."
 msgstr ""
 
-#: includes/Release.php:643
+#: includes/Release.php:706
 msgid "AgeCheck refused the clearance request (did the shipping address change?)."
 msgstr ""
 
-#: includes/Release.php:644
+#: includes/Release.php:707
 msgid "AgeCheck answered in the other mode (live versus test) than this store's key."
 msgstr ""
 
-#: includes/Release.php:645
+#: includes/Release.php:708
 msgid "The shopper passed a check that cannot clear orders. Ask them to verify with their ID."
 msgstr ""
 
-#: includes/Release.php:646
+#: includes/Release.php:709
 msgid "The shipping address differs from the one the age check covers. Restore it, then check again."
 msgstr ""
 
-#: includes/Release.php:647
+#: includes/Release.php:710
 msgid "AgeCheck has no verification for this order."
 msgstr ""
 
-#: includes/Release.php:648
+#: includes/Release.php:711
 msgid "The order is not linked to an age check."
 msgstr ""
 
-#: includes/Release.php:649
+#: includes/Release.php:712
 msgid "AgeCheck gave an answer this plugin does not know. Update the plugin."
 msgstr ""
 
-#: includes/Release.php:650
+#: includes/Release.php:713
 msgid "The shopper verified for a different shipping address."
 msgstr ""
 
-#: includes/Release.php:651
+#: includes/Release.php:714
 msgid "The shopper's verification is already used by another order."
 msgstr ""
 
-#: includes/Release.php:652
+#: includes/Release.php:715
 msgid "The shopper's age check expired before the order was released."
 msgstr ""
 
+#: includes/Release.php:716
+msgid "The shopper passed the age check after the order was denied. Check whether it was refunded, then release it without age check or cancel it."
+msgstr ""
+
+#: includes/Release.php:717
+msgid "The shopper did not pass the age check but may try again; a refund waits until then. Do not ship."
+msgstr ""
+
 #. translators: %s: an error code, e.g. permission_denied.
-#: includes/Release.php:659
+#: includes/Release.php:724
 #, php-format
 msgid "AgeCheck refused the request (%s). Check the fulfilment key and its scopes in the Navexa dashboard."
 msgstr ""
 
 #. translators: %s: a reason code.
-#: includes/Release.php:662
+#: includes/Release.php:727
 #, php-format
 msgid "Reason: %s."
 msgstr ""
@@ -1581,43 +1631,43 @@ msgstr ""
 msgid "X-Forwarded-For (last address)"
 msgstr ""
 
-#: includes/Start.php:178
+#: includes/Start.php:180
 msgid "This page is out of date. Reload it and try again."
 msgstr ""
 
-#: includes/Start.php:311
+#: includes/Start.php:322
 msgid "Contract version."
 msgstr ""
 
-#: includes/Start.php:317
+#: includes/Start.php:328
 msgid "Whether the cart needs an age check before checkout."
 msgstr ""
 
-#: includes/Start.php:323
+#: includes/Start.php:334
 msgid "Age check status."
 msgstr ""
 
-#: includes/Start.php:330
+#: includes/Start.php:341
 msgid "Where the shopper verifies; only in the response to a start."
 msgstr ""
 
-#: includes/Start.php:336
+#: includes/Start.php:347
 msgid "Text to show the shopper."
 msgstr ""
 
-#: includes/Start.php:460
+#: includes/Start.php:471
 msgid "Your age check is being processed. Select Verify age again in a minute to see if it is done."
 msgstr ""
 
-#: includes/Start.php:611
+#: includes/Start.php:622
 msgid "Nothing in your cart needs an age check."
 msgstr ""
 
-#: includes/Start.php:617
+#: includes/Start.php:628
 msgid "Pickup orders are age-checked in store."
 msgstr ""
 
-#: includes/Start.php:729
+#: includes/Start.php:740
 msgid "The security check did not pass. Complete it, then select Verify age again."
 msgstr ""
 
@@ -1630,12 +1680,16 @@ msgid "Navexa AgeCheck was uninstalled while this order was awaiting its age che
 msgstr ""
 
 #. translators: %d: hours.
-#: includes/Webhook.php:207
+#: includes/Webhook.php:212
 #, php-format
 msgid "AgeCheck: this order has waited %d hour for the shopper's age check."
 msgid_plural "AgeCheck: this order has waited %d hours for the shopper's age check."
 msgstr[0] ""
 msgstr[1] ""
+
+#: includes/Webhook.php:229
+msgid "AgeCheck: the shopper is trying the age check again."
+msgstr ""
 
 #: assets/build/verify-age-no-payment/index.js:1
 #: assets/build/verify-age/index.js:1

@@ -303,7 +303,7 @@ final class Links {
 			&& Meta::STATUS_DENIED !== Meta::get( $order, Meta::STATUS )
 			&& '' !== Meta::get( $order, Meta::VERIFICATION_ID )
 			&& 'create' === Meta::get( $order, Meta::BOUND_BY )
-			&& in_array( Meta::get( $order, Meta::VERIFICATION_STATUS ), self::HOSTED_STATES, true );
+			&& ( in_array( Meta::get( $order, Meta::VERIFICATION_STATUS ), self::HOSTED_STATES, true ) || DocRetry::open( $order ) );
 	}
 
 	/**

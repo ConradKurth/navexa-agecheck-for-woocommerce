@@ -104,6 +104,9 @@ final class Binding {
 		Meta::SHIPMENT_REPORTED,
 		Meta::NEXT_CHECK_AT,
 		Meta::HOLD_STALE_AT,
+		Meta::DOC_RETRY,
+		Meta::RETRY_UNTIL,
+		Meta::RETRY_OPEN,
 		Meta::STALE_NOTED_AT,
 		Meta::OVERRIDE_BY,
 		Meta::OVERRIDE_AT,
@@ -400,6 +403,10 @@ final class Binding {
 			'shipTo'            => $ship_to,
 			// Always REQUIRED with order_external_id (E4a): the ID's name must match identity.name.
 			'documentNameCheck' => 'DOCUMENT_NAME_CHECK_REQUIRED',
+			// TAX-1838: this plugin keeps a failed order while its shopper may
+			// try the ID check again (DocRetry). An engine before it ignores
+			// the field.
+			'allowDocRetry'     => true,
 		);
 		$return  = self::return_url( $order );
 		if ( '' !== $return ) {
@@ -437,6 +444,7 @@ final class Binding {
 			throw new ConnectError( 'CreateVerification', 'internal', 200, null, '', ConnectError::REASON_UNREADABLE_RESPONSE );
 		}
 		self::mark_bound( $order, $vid, 'create', $ship_to );
+		Meta::set( $order, Meta::DOC_RETRY, 'yes' );
 		self::record_verification( $order, $verification );
 		Meta::note(
 			$order,
@@ -464,7 +472,7 @@ final class Binding {
 			$previous[] = $vid;
 			Meta::set( $order, Meta::PREVIOUS_VERIFICATION_IDS, implode( ',', array_slice( array_unique( $previous ), -10 ) ) );
 		}
-		foreach ( array( Meta::VERIFICATION_ID, Meta::ATTACH_PENDING, Meta::BOUND_AT, Meta::BOUND_BY, Meta::SHIP_TO_HASH, Meta::CLEARANCE_KEY, Meta::LINK, Meta::LINK_ID, Meta::LINK_EXPIRES_AT, Meta::LINK_SENT_AT, Meta::LINK_KEY, Meta::VERIFICATION_STATUS, Meta::PASS_CLASS ) as $key ) {
+		foreach ( array( Meta::VERIFICATION_ID, Meta::ATTACH_PENDING, Meta::BOUND_AT, Meta::BOUND_BY, Meta::SHIP_TO_HASH, Meta::CLEARANCE_KEY, Meta::LINK, Meta::LINK_ID, Meta::LINK_EXPIRES_AT, Meta::LINK_SENT_AT, Meta::LINK_KEY, Meta::VERIFICATION_STATUS, Meta::PASS_CLASS, Meta::DOC_RETRY, Meta::RETRY_UNTIL, Meta::RETRY_OPEN ) as $key ) {
 			Meta::set( $order, $key, '' );
 		}
 		Meta::set( $order, Meta::CREATE_ATTEMPT, Meta::get_int( $order, Meta::CREATE_ATTEMPT ) + 1 );
@@ -539,6 +547,11 @@ final class Binding {
 	 */
 	public static function record_verification( \WC_Order $order, array $verification ): string {
 		$status = self::status_name( $verification );
+		if ( 'failed' === $status && 'failed' !== Meta::get( $order, Meta::VERIFICATION_STATUS ) ) {
+			// A new failure (TAX-1838): whether it may be retried is AgeCheck's
+			// to confirm again (DocRetry::defer()).
+			Meta::set( $order, Meta::RETRY_OPEN, '' );
+		}
 		Meta::set( $order, Meta::VERIFICATION_STATUS, $status );
 		Meta::set( $order, Meta::PASS_CLASS, 'passed' === $status ? self::pass_class_name( $verification ) : '' );
 		return $status;

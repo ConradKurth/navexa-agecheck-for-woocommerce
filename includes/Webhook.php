@@ -184,10 +184,15 @@ final class Webhook {
 			return 'ignored';
 		}
 		$state = isset( $event['state'] ) && is_string( $event['state'] ) ? $event['state'] : '';
-		if ( ! $hold && ! in_array( $state, array( 'passed', 'failed' ), true ) ) {
+		if ( ! $hold && ! in_array( $state, array( 'passed', 'failed', 'needs_doc' ), true ) ) {
 			return 'ignored';
 		}
 		$order = self::order_for( $external, $vid );
+		if ( ! $hold && 'needs_doc' === $state && ( null === $order || ! DocRetry::waiting( $order ) ) ) {
+			// needs_doc matters only after a failure the shopper may retry
+			// (TAX-1838); every other one is the check's start.
+			return 'ignored';
+		}
 		if ( null === $order ) {
 			// A verification passed before it was bound carries no order: the
 			// release run queued on entering the hold binds and clears it.
@@ -210,9 +215,18 @@ final class Webhook {
 			);
 			return 'noted';
 		}
+		if ( 'failed' === $state ) {
+			// TAX-1838: the window runs from this failure's own time, however
+			// late the release run reads it.
+			DocRetry::observe_failure( $order, isset( $event['occurred_at'] ) && is_string( $event['occurred_at'] ) ? $event['occurred_at'] : '' );
+		}
 		if ( ! Release::enqueue( $order->get_id(), Release::TRIGGER_WEBHOOK ) ) {
 			// handle() drops the claim and answers 500, so AgeCheck redelivers.
 			throw new \RuntimeException( 'release run not queued' );
+		}
+		if ( 'needs_doc' === $state ) {
+			// A hint only: the release run records where the check stands.
+			Meta::note( $order, __( 'AgeCheck: the shopper is trying the age check again.', 'navexa-agecheck-for-woocommerce' ) );
 		}
 		return 'queued';
 	}

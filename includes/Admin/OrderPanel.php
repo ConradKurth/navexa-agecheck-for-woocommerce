@@ -9,6 +9,7 @@ namespace Navexa\AgeCheck\Admin;
 
 use Navexa\AgeCheck\Client;
 use Navexa\AgeCheck\ConnectError;
+use Navexa\AgeCheck\DocRetry;
 use Navexa\AgeCheck\Hold;
 use Navexa\AgeCheck\LinkRevoke;
 use Navexa\AgeCheck\Links;
@@ -183,7 +184,9 @@ final class OrderPanel {
 			$actions[ self::ACTION_OVERRIDE ] = __( 'AgeCheck: release without age check', 'navexa-agecheck-for-woocommerce' );
 		}
 		if ( Links::can_resend( $order ) ) {
-			$actions[ self::ACTION_RESEND ] = __( 'AgeCheck: resend verification email', 'navexa-agecheck-for-woocommerce' );
+			$actions[ self::ACTION_RESEND ] = DocRetry::open( $order )
+				? __( 'AgeCheck: let the shopper try again (email a new link)', 'navexa-agecheck-for-woocommerce' )
+				: __( 'AgeCheck: resend verification email', 'navexa-agecheck-for-woocommerce' );
 		}
 		if ( Links::can_withdraw( $order ) ) {
 			$actions[ self::ACTION_WITHDRAW ] = __( 'AgeCheck: withdraw verification link', 'navexa-agecheck-for-woocommerce' );
@@ -312,6 +315,16 @@ final class OrderPanel {
 	 * @param \WC_Order $order Order.
 	 */
 	private static function status_text( \WC_Order $order ): string {
+		if ( DocRetry::open( $order ) ) {
+			return sprintf(
+				/* translators: %s: a date and time. */
+				__( 'Failed: the shopper may try again until %s. Do not ship.', 'navexa-agecheck-for-woocommerce' ),
+				DocRetry::date( DocRetry::until( $order ) )
+			);
+		}
+		if ( DocRetry::retrying( $order ) ) {
+			return __( 'Retrying: the shopper is trying the age check again. Do not ship.', 'navexa-agecheck-for-woocommerce' );
+		}
 		switch ( Meta::get( $order, Meta::STATUS ) ) {
 			case Meta::STATUS_CLEARED:
 				return __( 'Passed. AgeCheck cleared the order.', 'navexa-agecheck-for-woocommerce' );

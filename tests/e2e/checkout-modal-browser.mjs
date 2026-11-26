@@ -12,8 +12,8 @@
 // Playwright browsers (npx playwright-core install chromium webkit firefox):
 //
 //   node tests/e2e/checkout-modal-browser.mjs --site http://localhost:8888 --mock http://127.0.0.1:8787 \
-//     --product <id> --exempt <id> --block <page id> --classic <page id> [--browsers chromium,webkit,firefox] [--only <text>]
-//     [--turnstile-interactive]
+//     --product <id> --exempt <id> --free-product <id> --block <page id> --classic <page id> [--browsers chromium,webkit,firefox]
+//     [--only <text>] [--turnstile-interactive]
 //
 // --mock must be the 127.0.0.1 address: it is also the hosted pages' base.
 // Checks: the modal passes and the order is placed without leaving checkout;
@@ -28,7 +28,12 @@
 // Place order errors: Place order is disabled while WooCommerce awaits the
 // observer, so the loader's return to it fails); another plugin's false from a
 // checkout_place_order handler bound before the glue still stops WooCommerce
-// (a cart that needs no check, and the resubmit after a pass).
+// (a cart that needs no check, and the resubmit after a pass); a second Place
+// order while the start is in flight starts nothing more (one modal, one
+// hosted session, one order; classic: the status container is aria-busy and
+// the live region a polite status outside the replaced fragment); a cart that
+// needs no payment (--free-product: the block checkout's fallback status
+// block, no payment step) opens the modal and places the order on a pass.
 //
 // --turnstile-interactive: the site runs Turnstile with Cloudflare's
 // force-interactive test site key (3x00000000000000000000FF) and the
@@ -51,6 +56,7 @@ const SITE = arg("--site", "http://localhost:8888").replace(/\/+$/, "")
 const MOCK = arg("--mock", "http://127.0.0.1:8787").replace(/\/+$/, "")
 const PRODUCT = Number(arg("--product", "0"))
 const EXEMPT = Number(arg("--exempt", "0"))
+const FREE = Number(arg("--free-product", "0"))
 const BLOCK = Number(arg("--block", "0"))
 const CLASSIC = Number(arg("--classic", "0"))
 const BROWSERS = arg("--browsers", "chromium,webkit,firefox").split(",")
@@ -130,15 +136,33 @@ async function embedPages() {
 }
 
 /** Fills the cart and the session's addresses through the Store API, in the browser's session. */
-async function prepareCart(context, address = ADDRESS, product = PRODUCT) {
+async function prepareCart(context, address = ADDRESS, product = PRODUCT, method = "flat_rate") {
   const cart = await context.request.get(`${SITE}/wp-json/wc/store/v1/cart`)
   const headers = { Nonce: cart.headers()["nonce"], "Content-Type": "application/json" }
   const added = await context.request.post(`${SITE}/wp-json/wc/store/v1/cart/add-item`, { headers, data: { id: product, quantity: 1 } })
   assert.equal(added.status(), 201)
   const updated = await context.request.post(`${SITE}/wp-json/wc/store/v1/cart/update-customer`, { headers, data: { billing_address: address, shipping_address: address } })
   assert.equal(updated.status(), 200)
-  const rate = ((await updated.json()).shipping_rates?.[0]?.shipping_rates ?? []).find((r) => r.method_id === "flat_rate")
-  if (rate) await context.request.post(`${SITE}/wp-json/wc/store/v1/cart/select-shipping-rate`, { headers, data: { package_id: 0, rate_id: rate.rate_id } })
+  const rate = ((await updated.json()).shipping_rates?.[0]?.shipping_rates ?? []).find((r) => r.method_id === method)
+  if (rate) {
+    const chosen = await context.request.post(`${SITE}/wp-json/wc/store/v1/cart/select-shipping-rate`, { headers, data: { package_id: 0, rate_id: rate.rate_id } })
+    assert.equal(chosen.status(), 200)
+  }
+}
+
+/**
+ * Holds the page's Store API cart/extensions calls (the start and the
+ * refresh) back for ms, so the busy phase can be observed; then hands them
+ * to the context's route (its client IP header).
+ */
+async function delayStarts(page, ms) {
+  await page.route(
+    (url) => decodeURIComponent(url.toString()).includes("/cart/extensions"),
+    async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, ms))
+      await route.fallback().catch(() => {})
+    },
+  )
 }
 
 let nextIp = 1
@@ -494,6 +518,92 @@ for (const name of BROWSERS) {
       assert.equal(await requests("CreateHostedSession"), sessions, "no second check: the session had passed")
       await context.close()
     })
+
+    await check(`${name}: classic checkout: a second Place order while the start is in flight starts nothing more: one modal, one hosted session, one order; the container is aria-busy meanwhile and the live region a polite status outside the replaced fragment`, async () => {
+      const context = await newContext(browser)
+      await prepareCart(context, { ...ADDRESS, email: "classic-busy@example.com" })
+      const { page } = await openClassic(context)
+      const posts = countCheckoutPosts(page)
+      const creates = await requests("CreateVerification")
+      const sessions = await requests("CreateHostedSession")
+      await delayStarts(page, 3000)
+      await page.focus("#place_order")
+      await page.keyboard.press("Enter")
+      await page.waitForFunction(() => document.querySelector('[data-navexa-agecheck="1"]')?.getAttribute("aria-busy") === "true", null, { timeout: 15000 })
+      // Enter again on the focused button under WooCommerce's overlay, and a scripted click (another double-submit path).
+      await page.keyboard.press("Enter")
+      await page.evaluate(() => document.querySelector("#place_order")?.click())
+      await page.waitForSelector(FRAME, { timeout: 30000 })
+      await page.waitForTimeout(1000)
+      assert.equal(await page.locator(MODAL).count(), 1, "one modal")
+      assert.equal((await requests("CreateVerification")) - creates, 1, "one verification")
+      assert.equal((await requests("CreateHostedSession")) - sessions, 1, "one hosted session")
+      assert.equal(await page.locator('[data-navexa-agecheck="1"]').getAttribute("aria-busy"), "false", "not busy while the shopper is in the modal")
+      const region = await page.evaluate(() => {
+        const el = document.getElementById("navexa-agecheck-live")
+        return { role: el?.getAttribute("role"), live: el?.getAttribute("aria-live"), outside: !el?.closest(".woocommerce-checkout-review-order, #order_review") }
+      })
+      assert.deepEqual(region, { role: "status", live: "polite", outside: true })
+      await answerInFrame(page, "pass")
+      await page.waitForURL(/order-received/, { timeout: 45000 })
+      assert.equal(posts.n, 1, "one order placed")
+      await context.close()
+    })
+
+    await check(`${name}: block checkout: a second Place order while the start is in flight starts nothing more: one modal, one hosted session, one order`, async () => {
+      const context = await newContext(browser)
+      await prepareCart(context, { ...ADDRESS, email: "block-busy@example.com" })
+      const { page } = await openBlock(context)
+      const creates = await requests("CreateVerification")
+      const sessions = await requests("CreateHostedSession")
+      const orders = { n: 0 }
+      page.on("request", (req) => {
+        if (req.method() === "POST" && /\/wc\/store\/v1\/checkout(\?|$)/.test(decodeURIComponent(req.url()))) orders.n++
+      })
+      await delayStarts(page, 3000)
+      await page.click(PLACE_BLOCK)
+      await page.waitForTimeout(300)
+      const during = await page.evaluate((sel) => {
+        const button = document.querySelector(sel)
+        button?.click()
+        return { disabled: !!button?.disabled, busy: button?.getAttribute("aria-disabled") ?? null }
+      }, PLACE_BLOCK)
+      await page.waitForSelector(FRAME, { timeout: 30000 })
+      await page.waitForTimeout(1000)
+      assert.equal(await page.locator(MODAL).count(), 1, "one modal")
+      assert.equal((await requests("CreateVerification")) - creates, 1, "one verification")
+      assert.equal((await requests("CreateHostedSession")) - sessions, 1, "one hosted session")
+      await answerInFrame(page, "pass")
+      await page.waitForURL(/order-received/, { timeout: 45000 })
+      assert.equal(orders.n, 1, "one checkout POST")
+      await context.close()
+      return `Place order while the start was in flight: disabled=${during.disabled}`
+    })
+
+    if (FREE > 0) {
+      for (const [checkout, open, place] of [
+        ["block", openBlock, PLACE_BLOCK],
+        ["classic", openClassic, "#place_order"],
+      ]) {
+        await check(`${name}: ${checkout} checkout, a cart that needs no payment: ${checkout === "block" ? "the fallback status block shows with no payment step; " : ""}Place order opens the modal and a pass places the order`, async () => {
+          const context = await newContext(browser)
+          await prepareCart(context, { ...ADDRESS, email: `free-${checkout}@example.com` }, FREE, "free_shipping")
+          const { page } = await open(context)
+          if (checkout === "block") {
+            assert.equal(await page.locator(".wc-block-checkout__payment-method").count(), 0, "no payment step")
+            assert.equal(await page.locator('.navexa-agecheck[data-navexa-agecheck="1"]').count(), 1, "one status block: the fallback")
+          } else {
+            assert.equal(await page.locator("#payment .wc_payment_methods").count(), 0, "no payment methods")
+          }
+          const creates = await requests("CreateVerification")
+          await page.click(place)
+          await answerInFrame(page, "pass")
+          await page.waitForURL(/order-received/, { timeout: 45000 })
+          assert.equal((await requests("CreateVerification")) - creates, 1, "one verification")
+          await context.close()
+        })
+      }
+    }
 
     /** Classic checkout: Place order with the always-declining test gateway, a pass in the modal, the decline shown. */
     async function passThenDecline(context, email) {

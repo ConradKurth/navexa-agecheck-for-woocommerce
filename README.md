@@ -140,7 +140,8 @@ node tests/e2e/gate-browser.mjs --site http://localhost:8888 --mock http://local
 # the 1.1.0 checkout in browsers (npx playwright-core install chromium webkit firefox); --mock must be the 127.0.0.1
 # address (the hosted pages' base, cross-site to localhost); the mock must listen on 0.0.0.0
 node tests/e2e/checkout-modal-browser.mjs --site http://localhost:8888 --mock http://127.0.0.1:8787 \
-  --product <product> --exempt <exempt_product> --block <block_checkout> --classic <classic_checkout> --browsers chromium,webkit,firefox [--only <text>]
+  --product <product> --exempt <exempt_product> --free-product <free_product> --block <block_checkout> --classic <classic_checkout> \
+  --browsers chromium,webkit,firefox [--only <text>]
 # Turnstile's interactive challenge in the modal flow: Turnstile on, site key 3x00000000000000000000FF,
 # secret 1x0000000000000000000000000000000AA (wp option update navexa_agecheck_turnstile{,_site_key,_secret} ...), then off again
 node tests/e2e/checkout-modal-browser.mjs --site http://localhost:8888 --mock http://127.0.0.1:8787 \

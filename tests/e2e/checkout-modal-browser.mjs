@@ -12,7 +12,7 @@
 // Playwright browsers (npx playwright-core install chromium webkit firefox):
 //
 //   node tests/e2e/checkout-modal-browser.mjs --site http://localhost:8888 --mock http://127.0.0.1:8787 \
-//     --product <id> --block <page id> --classic <page id> [--browsers chromium,webkit,firefox] [--only <text>]
+//     --product <id> --exempt <id> --block <page id> --classic <page id> [--browsers chromium,webkit,firefox] [--only <text>]
 //
 // --mock must be the 127.0.0.1 address: it is also the hosted pages' base.
 // Checks: the modal passes and the order is placed without leaving checkout;
@@ -22,7 +22,12 @@
 // full-page redirect and back; the name and ship-to lock after a pass, a
 // declined payment retried with no second check, Change details, and a
 // devtools edit of a locked field refused by the server; the modal's dialog
-// semantics and the focus back on Place order.
+// semantics, its focus trap, and the focus on the classic refusal notice after
+// it closes (the block leaves it where WooCommerce leaves it after its own
+// Place order errors: Place order is disabled while WooCommerce awaits the
+// observer, so the loader's return to it fails); another plugin's false from a
+// checkout_place_order handler bound before the glue still stops WooCommerce
+// (a cart that needs no check, and the resubmit after a pass).
 
 import assert from "node:assert/strict"
 import { chromium, firefox, webkit } from "playwright-core"
@@ -35,6 +40,7 @@ function arg(name, fallback) {
 const SITE = arg("--site", "http://localhost:8888").replace(/\/+$/, "")
 const MOCK = arg("--mock", "http://127.0.0.1:8787").replace(/\/+$/, "")
 const PRODUCT = Number(arg("--product", "0"))
+const EXEMPT = Number(arg("--exempt", "0"))
 const BLOCK = Number(arg("--block", "0"))
 const CLASSIC = Number(arg("--classic", "0"))
 const BROWSERS = arg("--browsers", "chromium,webkit,firefox").split(",")
@@ -59,6 +65,42 @@ const BLOCK_POPUPS = () => {
   window.open = () => null
 }
 
+/**
+ * Another plugin that refuses Place order from a generic checkout_place_order
+ * handler, bound before the glue (as jQuery ready handlers are: the glue
+ * binds at DOMContentLoaded). window.__other.refuses switches it off.
+ */
+const OTHER_PLUGIN = () => {
+  document.addEventListener("DOMContentLoaded", () => {
+    const form = document.querySelector("form.checkout")
+    if (!form || !window.jQuery) return
+    const other = { calls: 0, refuses: true, fn: null }
+    other.fn = () => {
+      other.calls++
+      return other.refuses ? false : undefined
+    }
+    window.__other = other
+    window.jQuery(form).on("checkout_place_order", other.fn)
+  })
+}
+
+/** Whether the other plugin's handler is bound first and the glue's after it. */
+function otherBoundFirst(page) {
+  return page.evaluate(() => {
+    const handlers = window.jQuery._data(document.querySelector("form.checkout"), "events")?.checkout_place_order ?? []
+    return handlers.length >= 2 && handlers[0].handler === window.__other?.fn
+  })
+}
+
+/** Counts WooCommerce's checkout POSTs (the order being placed). */
+function countCheckoutPosts(page) {
+  const posts = { n: 0 }
+  page.on("request", (req) => {
+    if (req.method() === "POST" && req.url().includes("wc-ajax=checkout")) posts.n++
+  })
+  return posts
+}
+
 const MODAL = '[data-navexa-agecheck="verify"] .nac-modal'
 const FRAME = `${MODAL} iframe`
 const PLACE_BLOCK = ".wc-block-components-checkout-place-order-button"
@@ -77,10 +119,10 @@ async function embedPages() {
 }
 
 /** Fills the cart and the session's addresses through the Store API, in the browser's session. */
-async function prepareCart(context, address = ADDRESS) {
+async function prepareCart(context, address = ADDRESS, product = PRODUCT) {
   const cart = await context.request.get(`${SITE}/wp-json/wc/store/v1/cart`)
   const headers = { Nonce: cart.headers()["nonce"], "Content-Type": "application/json" }
-  const added = await context.request.post(`${SITE}/wp-json/wc/store/v1/cart/add-item`, { headers, data: { id: PRODUCT, quantity: 1 } })
+  const added = await context.request.post(`${SITE}/wp-json/wc/store/v1/cart/add-item`, { headers, data: { id: product, quantity: 1 } })
   assert.equal(added.status(), 201)
   const updated = await context.request.post(`${SITE}/wp-json/wc/store/v1/cart/update-customer`, { headers, data: { billing_address: address, shipping_address: address } })
   assert.equal(updated.status(), 200)
@@ -227,28 +269,34 @@ for (const name of BROWSERS) {
       await context.close()
     })
 
-    await check(`${name}: block checkout: closing the modal places no order and says so; Place order again reuses the verification and passes`, async () => {
+    await check(`${name}: block checkout: Enter on Place order opens the modal, Escape closes it, no order and it says so; Place order again reuses the verification and passes`, async () => {
       const context = await newContext(browser)
       await prepareCart(context, { ...ADDRESS, email: "block-close@example.com" })
       const { page } = await openBlock(context)
       const creates = await requests("CreateVerification")
       const sessions = await requests("CreateHostedSession")
-      await page.click(PLACE_BLOCK)
+      await page.focus(PLACE_BLOCK)
+      await page.keyboard.press("Enter")
       await page.waitForSelector(FRAME, { timeout: 30000 })
       await page.waitForFunction((sel) => document.activeElement?.closest?.(sel) !== null, MODAL, { timeout: 10000 })
       await page.keyboard.press("Escape")
       await page.waitForSelector(".wc-block-components-notice-banner.is-error", { timeout: 30000 })
       assert.match(await page.locator(".wc-block-components-notice-banner.is-error").first().textContent(), /closed before it finished/)
       assert.equal(await page.locator(MODAL).count(), 0)
+      // WooCommerce keeps Place order disabled while it awaits the observer, so
+      // the loader's focus return to it finds it disabled: the focus is where
+      // WooCommerce leaves it after its own Place order errors (reported, not asserted).
+      const focusAfter = await page.evaluate(() => document.activeElement?.tagName.toLowerCase() ?? "none")
       await page.click(PLACE_BLOCK)
       await answerInFrame(page, "pass")
       await page.waitForURL(/order-received/, { timeout: 45000 })
       assert.equal((await requests("CreateVerification")) - creates, 1, "one verification for both attempts")
       assert.equal((await requests("CreateHostedSession")) - sessions, 2, "two hosted sessions")
       await context.close()
+      return `focus on ${focusAfter} after Escape`
     })
 
-    await check(`${name}: classic checkout: keyboard: Enter on Place order opens the modal with the focus trapped in it; its close button ends the attempt with the closed message announced`, async () => {
+    await check(`${name}: classic checkout: keyboard: Enter on Place order opens the modal with the focus trapped in it; its close button ends the attempt with the closed message announced and focused`, async () => {
       const context = await newContext(browser)
       await prepareCart(context, { ...ADDRESS, email: "classic-close@example.com" })
       const { page } = await openClassic(context)
@@ -261,6 +309,9 @@ for (const name of BROWSERS) {
       })
       await page.click(`${MODAL} .nac-x`)
       await page.waitForSelector("[data-navexa-agecheck-notice]", { timeout: 30000 })
+      await page.waitForFunction(() => !!document.activeElement?.closest?.("[data-navexa-agecheck-notice]"), null, { timeout: 5000 }).catch(() => {
+        throw new Error("the focus moves to the closed message in the checkout notices (the glue's refusal rule)")
+      })
       assert.match(await page.locator("[data-navexa-agecheck-notice]").textContent(), /closed before it finished/)
       await page.waitForFunction(() => /closed before it finished/.test(document.getElementById("navexa-agecheck-live")?.textContent ?? ""), null, { timeout: 10000 })
       const inert = await page.evaluate(() => document.querySelector("form.checkout")?.closest("[inert]") !== null)
@@ -318,6 +369,57 @@ for (const name of BROWSERS) {
       } finally {
         await mock("config", { embed: "serve" })
       }
+    })
+
+    await check(`${name}: classic checkout, a cart that needs no check: another plugin's false from a checkout_place_order handler bound before the glue still stops WooCommerce`, async () => {
+      assert.ok(EXEMPT > 0, "--exempt <exempt product id> is required")
+      const context = await newContext(browser, OTHER_PLUGIN)
+      await prepareCart(context, { ...ADDRESS, email: "other-plugin-exempt@example.com" }, EXEMPT)
+      const page = await context.newPage()
+      const posts = countCheckoutPosts(page)
+      await page.goto(`${SITE}/?page_id=${CLASSIC}`)
+      await page.waitForSelector("#place_order", { timeout: 20000 })
+      await page.waitForFunction(() => !document.querySelector(".blockUI"), null, { timeout: 20000 })
+      const setup = await page.evaluate(() => ({ glue: !!window.navexaAgeCheckClassic, container: !!document.querySelector('[data-navexa-agecheck="1"]') }))
+      assert.deepEqual(setup, { glue: true, container: false }, "the glue loads, the cart needs no check")
+      assert.equal(await otherBoundFirst(page), true, "the other handler is bound before the glue's")
+      await page.check("#payment_method_cod").catch(() => {})
+      await page.waitForFunction(() => !document.querySelector(".blockUI"), null, { timeout: 20000 })
+      await page.check("#terms").catch(() => {})
+      await page.click("#place_order")
+      await page.waitForFunction(() => window.__other.calls > 0, null, { timeout: 10000 })
+      await page.waitForTimeout(1500)
+      assert.equal(posts.n, 0, "no checkout POST: the glue must not answer true over the other handler's false")
+      assert.ok(!/order-received/.test(page.url()))
+      await page.evaluate(() => {
+        window.__other.refuses = false
+      })
+      await page.click("#place_order")
+      await page.waitForURL(/order-received/, { timeout: 45000 })
+      assert.equal(posts.n, 1, "control: the order is placed once the other handler stops refusing")
+      await context.close()
+    })
+
+    await check(`${name}: classic checkout: another plugin's false still stops the resubmit after a pass; with it gone the next Place order goes through with no second check`, async () => {
+      const context = await newContext(browser, OTHER_PLUGIN)
+      await prepareCart(context, { ...ADDRESS, email: "other-plugin-pass@example.com" })
+      const { page } = await openClassic(context)
+      assert.equal(await otherBoundFirst(page), true, "the other handler is bound before the glue's")
+      const posts = countCheckoutPosts(page)
+      await page.click("#place_order")
+      await answerInFrame(page, "pass")
+      await page.waitForSelector('[data-navexa-agecheck="1"][data-status="passed"]', { timeout: 30000 })
+      await page.waitForFunction(() => /order-received/.test(location.href) || ((window.__other?.calls ?? 0) >= 2 && !document.querySelector(".blockUI")), null, { timeout: 30000 })
+      await page.waitForTimeout(1500)
+      assert.equal(posts.n, 0, "the resubmit past the bypass is still refused by the other handler")
+      const sessions = await requests("CreateHostedSession")
+      await page.evaluate(() => {
+        window.__other.refuses = false
+      })
+      await page.click("#place_order")
+      await page.waitForURL(/order-received/, { timeout: 45000 })
+      assert.equal(await requests("CreateHostedSession"), sessions, "no second check: the session had passed")
+      await context.close()
     })
 
     /** Classic checkout: Place order with the always-declining test gateway, a pass in the modal, the decline shown. */
